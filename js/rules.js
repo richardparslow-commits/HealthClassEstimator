@@ -1465,8 +1465,237 @@ const CARRIER_RULES = {
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 10 years, gastric bypass 1 year, heart event 5 years, epilepsy 5 years) or pending workup.", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "On the Quantum decline lists (cancer within 10 years, diabetes with A1c 7+, HIV, dementia, kidney/liver disease, respiratory disorder, etc.) — carrier direction required.", color: "#b3364a" }
     }
+  },
+
+  /* ====================================================================
+   * F&G PATHSETTER — Fidelity & Guaranty Life Insurance Company
+   * "F&G Pathsetter Agent Guide" (IUL; company underwriting standards per
+   * the F&G Quantum guidelines, ADV5691, 07-2025). Issue ages 0-80.
+   * ==================================================================== */
+  fg_pathsetter: {
+    id: "fg_pathsetter",
+    name: "F&G Pathsetter",
+    company: "Fidelity & Guaranty Life Insurance Company (F&G)",
+    guide: {
+      title: "F&G Pathsetter Agent Guide",
+      version: "(IUL; company underwriting standards per ADV5691, 07-2025)",
+      note: "Pathsetter eligibility: issue ages 0-80, minimum $50,000, through Table H (300%) with retention $1,000,000, automatic reinsurance binding to $10,000,000, jumbo limit $20,000,000. Exam-Free Underwriting for ages 0-60 through $1,000,000 (MIB, MVR, credit/public-records, RX/lab/medical-claims databases, InstantID — a paramedical exam will not improve the rate class); above those ages/amounts, paramedical + HOS/blood (+ EKG at 71+ or higher amounts) are ordered. Applicants who do not qualify for Preferred or Standard may be approved at Express Standard Tobacco / Express Standard Non-Tobacco rates without medical requirements; Express Standard is also used when individuals 45-60 have not seen a medical professional in the previous 3 years. Impairment specifics follow F&G company standards (Quantum guidelines, ADV5691). Non-working spouse: maximum $1,000,000 per primary insured, not to exceed the wage earner's in-force coverage. Large case ($2,000,000+ face or $20,000+ planned annual premium): Large Case Transmittal form + illustration required."
+    },
+
+    /* ---- Nicotine ----------------------------------------------------- */
+    nicotine: {
+      classes: [
+        { klass: "preferred_plus", lookbackMonths: 24, label: "Preferred Non-Tobacco (no tobacco use past 2 years)" },
+        { klass: "standard", lookbackMonths: 12, label: "Non-Tobacco (no tobacco use past 1 year)" }
+      ],
+      tobaccoLookbackMonths: 12,
+      tobaccoDefinition: "No tobacco use, including nicotine substitutes, e-cigarettes, and vaping, within the last 24 months for Preferred Non-Tobacco or 12 months for Non-Tobacco; the applicant must not test positive for nicotine in urine or saliva. Misrepresentation of the tobacco use question is treated as significant misrepresentation.",
+      cigarException: {
+        note: "Occasional cigar use may qualify for Non-Tobacco rates if fully disclosed on the application (no frequency published in the guide — verify with underwriting).",
+        maxPerMonth: 1,
+        maxPerYear: 12
+      },
+      marijuana: "Marijuana use less than 4 times per week and no more than 4 grams per week is acceptable; daily marijuana use is a decline. Occupations involving the production, processing, or sale of marijuana are a decline."
+    },
+
+    /* ---- Build: sex-specific chart with Preferred / Standard columns ---
+       Adult minimum weights and Table H (300%) maximums per page 14. */
+    build: {
+      chart: {
+        56:  { male: { pp: 166, std: 183 }, female: { pp: 152, std: 167 }, min: 74, tableMax: 207 },
+        57:  { male: { pp: 170, std: 187 }, female: { pp: 155, std: 171 }, min: 77, tableMax: 214 },
+        58:  { male: { pp: 174, std: 191 }, female: { pp: 157, std: 173 }, min: 79, tableMax: 222 },
+        59:  { male: { pp: 178, std: 196 }, female: { pp: 160, std: 176 }, min: 82, tableMax: 230 },
+        60:  { male: { pp: 182, std: 200 }, female: { pp: 163, std: 179 }, min: 85, tableMax: 238 },
+        61:  { male: { pp: 186, std: 205 }, female: { pp: 166, std: 183 }, min: 88, tableMax: 246 },
+        62:  { male: { pp: 190, std: 209 }, female: { pp: 169, std: 186 }, min: 91, tableMax: 254 },
+        63:  { male: { pp: 196, std: 216 }, female: { pp: 174, std: 191 }, min: 94, tableMax: 262 },
+        64:  { male: { pp: 202, std: 222 }, female: { pp: 179, std: 197 }, min: 97, tableMax: 270 },
+        65:  { male: { pp: 207, std: 228 }, female: { pp: 183, std: 201 }, min: 100, tableMax: 279 },
+        66:  { male: { pp: 213, std: 234 }, female: { pp: 189, std: 208 }, min: 103, tableMax: 288 },
+        67:  { male: { pp: 217, std: 239 }, female: { pp: 193, std: 212 }, min: 106, tableMax: 296 },
+        68:  { male: { pp: 223, std: 245 }, female: { pp: 198, std: 218 }, min: 109, tableMax: 305 },
+        69:  { male: { pp: 228, std: 251 }, female: { pp: 202, std: 222 }, min: 112, tableMax: 314 },
+        70:  { male: { pp: 235, std: 259 }, female: { pp: 208, std: 229 }, min: 115, tableMax: 324 },
+        71:  { male: { pp: 241, std: 265 }, female: { pp: 214, std: 235 }, min: 119, tableMax: 333 },
+        72:  { male: { pp: 248, std: 273 }, female: { pp: 221, std: 243 }, min: 122, tableMax: 342 },
+        73:  { male: { pp: 253, std: 278 }, female: { pp: 225, std: 248 }, min: 126, tableMax: 352 },
+        74:  { male: { pp: 260, std: 286 }, female: { pp: 232, std: 255 }, min: 129, tableMax: 362 },
+        75:  { male: { pp: 267, std: 294 }, female: { pp: 237, std: 261 }, min: 133, tableMax: 372 },
+        76:  { male: { pp: 276, std: 304 }, female: { pp: 246, std: 271 }, min: 136, tableMax: 382 },
+        77:  { male: { pp: 284, std: 312 }, female: { pp: 253, std: 278 }, min: 140, tableMax: 392 },
+        78:  { male: { pp: 293, std: 322 }, female: { pp: 261, std: 287 }, min: 143, tableMax: 402 },
+        79:  { male: { pp: 301, std: 331 }, female: { pp: 268, std: 295 }, min: 147, tableMax: 412 },
+        80:  { male: { pp: 308, std: 341 }, female: { pp: 274, std: 308 }, min: 151, tableMax: 423 },
+        81:  { male: { pp: 315, std: 349 }, female: { pp: 282, std: 316 }, min: 154, tableMax: 433 },
+        82:  { male: { pp: 325, std: 359 }, female: { pp: 288, std: 326 }, min: 157, tableMax: 443 },
+        83:  { male: { pp: 336, std: 369 }, female: { pp: 293, std: 336 }, min: 160, tableMax: 454 },
+        84:  { male: { pp: 345, std: 378 }, female: { pp: 298, std: 345 }, min: 164, tableMax: 465 }
+      },
+      rules: {
+        minHeightIn: 56,
+        maxHeightIn: 84,
+        chartMinWeight: 74,
+        halfInchRounding: "Half-inch measurements round up to the next inch.",
+        applyWeightLossAdjustment: false,
+        ageAddLbs: [
+          { ageMin: 51, ageMax: 65, add: 5, note: "For ages 51-65, add 5 pounds to the build-chart thresholds." },
+          { ageMin: 66, ageMax: 200, add: 10, note: "For ages 66 and up, add 10 pounds to the build-chart thresholds." }
+        ],
+        weightLossAdjustment: "Weight stability is reviewed; significant recent weight change (gain or loss) — manual underwriting review.",
+        lowBuildReview: "Weight below the adult minimum for height, or below the 5th-percentile growth chart for juveniles, -> manual underwriting review.",
+        belowChartMin: 18.5,
+        aboveStandard: "Weight above the Table H (300%) maximum for height -> manual underwriting review; substandard ratings run through Table H.",
+        tableCeilingLabel: "substandard (through Table H / 300%)",
+        tableCeilingRating: "H",
+        note: "Sex-specific build chart (Preferred / Standard columns, ages 16-50); add 5 lb at ages 51-65 and 10 lb at 66+. Above Standard but within the adult maximum (Table H 300%) -> substandard rating through Table H. Juvenile build uses WHO/CDC growth-chart percentiles (not modeled)."
+      }
+    },
+    /* ---- Blood pressure (age bands; treatment allowed if the 2-year
+           average meets parameters) ---------------------------------- */
+    bp: {
+      preferred_plus:   [{ ageMin: 18, ageMax: 50, sys: 150, dia: 90 }, { ageMin: 51, ageMax: 65, sys: 160, dia: 95 }, { ageMin: 66, ageMax: 200, sys: 160, dia: 95 }],
+      preferred:        null,
+      standard_plus:    null,
+      standard:         [{ ageMin: 18, ageMax: 50, sys: 155, dia: 95 }, { ageMin: 51, ageMax: 65, sys: 160, dia: 95 }, { ageMin: 66, ageMax: 200, sys: 165, dia: 95 }]
+    },
+    bpTreatmentNote: "Treatment for high blood pressure may be allowed as long as the current and historical readings averaged over the last two years meet the stated parameters.",
+
+    /* ---- Cholesterol (age bands; treatment allowed if 2-yr average OK) */
+    cholesterol: {
+      total: {
+        preferred_plus: [{ ageMin: 18, ageMax: 50, max: 260 }, { ageMin: 51, ageMax: 65, max: 280 }, { ageMin: 66, ageMax: 200, max: 300 }],
+        standard:      [{ ageMin: 18, ageMax: 50, max: 300 }, { ageMin: 51, ageMax: 65, max: 300 }, { ageMin: 66, ageMax: 200, max: 300 }]
+      },
+      ratio: {
+        preferred_plus: [{ ageMin: 18, ageMax: 200, max: 7 }],
+        standard:      [{ ageMin: 18, ageMax: 200, max: 8 }]
+      },
+      note: "Cholesterol treatment accepted as long as the current and historical levels averaged over the last two years meet the parameter. Preferred: total 260 (18-50) / 280 (51-65) / 300 (66+), ratio 7; Standard: total up to 300 (band ranges 261-300 / 281-300 / 300), ratio 8."
+    },
+
+    /* ---- Driving ------------------------------------------------------ */
+    driving: {
+      preferred_plus:   { maxViolations3yr: 2, cleanYears: 5, note: "No more than 2 moving violations in 3 years; no DWI/DUI offenses within 5 years." },
+      preferred:        null,
+      standard_plus:    null,
+      standard:         { maxViolations3yr: 0, cleanYears: 5, note: "No rateable violations (a rateable violation takes the case below Standard)." }
+    },
+    drivingDeclineNote: "Non-medical declines: driving without a valid license; suspended or revoked driver's license; DUI/DWI/reckless driving in the last 5 years.",
+
+    /* ---- Family history ---------------------------------------------- */
+    familyHistory: {
+      mapping: { none: "preferred_plus", parent: "preferred_plus", parent_sibling: "standard", multiple: "standard" },
+      preferred_plus: { text: "No more than 1 death due to coronary artery or cancer disease prior to age 60 (parents/siblings). Breast, ovarian, and prostate cancer family history may be disregarded in applicants of the opposite gender." },
+      preferred:      { text: "No more than 1 death due to coronary artery or cancer disease prior to age 60 (parents/siblings)." },
+      standard_plus:  { text: "Family history is not applicable to the Standard class." },
+      standard:       { text: "Family history is not applicable to the Standard class." }
+    },
+    /* Preferred medical history: no diabetes, heart disease, alcohol or
+       substance abuse, or listed cancers. Drug use within 5 years = decline.
+       Impairment specifics follow F&G company standards (Quantum guidelines,
+       ADV5691) — see the shared lists below the RULES object. */
+    medicalStandardCap: ["diabetes", "cad", "heart_disease", "other_cancer", "substance_treatment"],
+    autoDeclineIds: ["hiv", "dementia", "schizophrenia", "liver_disease", "kidney_disease", "transplant", "paralysis", "copd"],
+    autoDeclineSevereIds: ["heart_disease", "stroke"],
+
+    drugDeclineYears: 5,
+    drugRecoveryTiers: [{ minYears: 5, klass: "standard" }],
+    substanceTiers: { declineYears: 5, tiers: [{ minYears: 5, klass: "standard" }, { minYears: 0, klass: "table" }] },
+
+    conditionModels: {
+      anxiety: { best: "standard" },
+      depression: { best: "standard" },
+      asthma: { best: "standard" },
+      sleep_apnea: { best: "standard" },
+      bipolar: { best: "table" },
+      other_cancer: { declineWithinYears: 10, afterCeiling: "table" }
+    },
+
+    /* Diabetes: Type 1 or Type 2 with A1c of 7 or above within the last year,
+       or with neuropathy/retinopathy/kidney/heart disease or stroke history, = decline. */
+    diabetes: { type1Ceiling: "table", type2Ceiling: "standard", a1cDeclineMin: 7 },
+
+    /* Aviation/avocation: Preferred allows flat-extra ratings for certain
+       aviation/avocation activities; the Standard class requires no rateable
+       activity — so hazardous activities do not cap Preferred, they add a
+       flat extra. */
+    avocation: {
+      classCap: "preferred_plus",
+      currentHazardousText: "Hazardous occupation/avocation disclosed — F&G Preferred allows flat-extra ratings for aviation/avocation; the Standard class requires no rateable activity. Flat-extra schedules are reviewed by underwriting.",
+      cleanText: "No hazardous occupation or avocation disclosed."
+    },
+
+    /* Shared F&G company lists (medicalCeilings, postponeTriggers,
+       declineTriggers) are assigned below the RULES object. */
+    /* __PATH_SHARED__ */
+
+    /* ---- Evidence / workflow ----------------------------------------- */
+    evidence: {
+      apsAge: 70,
+      genericGrid: false,
+      apsConditions: [
+        "Cancer", "Diabetes", "Heart (cardiac) disease", "Stroke / TIA", "COPD / emphysema",
+        "Kidney disease", "Liver disease", "Mental-health disorders", "Substance abuse/dependence",
+        "Multiple sclerosis", "Parkinson's disease", "Muscular dystrophy", "Rheumatoid arthritis", "Lupus",
+        "Organ transplant", "Paralysis", "HIV", "Sleep apnea", "Seizure disorders"
+      ],
+      amountRules: [
+        { ageMin: 0, ageMax: 60, amountMin: 50000, amountMax: 1000000, items: ["Exam-Free Underwriting (MIB, InstantID, MVR, RX/lab/medical-claims databases, credit/public-records)"] },
+        { ageMin: 0, ageMax: 17, amountMin: 500001, items: ["APS (attending physician statement)"] },
+        { ageMin: 18, ageMax: 40, amountMin: 3000001, items: ["APS (attending physician statement)"] },
+        { ageMin: 41, ageMax: 60, amountMin: 2000001, items: ["APS (attending physician statement)"] },
+        { ageMin: 61, ageMax: 69, amountMin: 1000001, items: ["APS (attending physician statement)"] },
+        { ageMin: 70, ageMax: 200, amountMin: 1, items: ["APS (attending physician statement)"] },
+        { ageMin: 61, ageMax: 80, amountMin: 50000, items: ["Paramedical exam + HOS/blood"] },
+        { ageMin: 18, ageMax: 80, amountMin: 1000001, items: ["Paramedical exam + HOS/blood"] },
+        { ageMin: 71, ageMax: 80, amountMin: 50000, items: ["EKG"] },
+        { ageMin: 51, ageMax: 80, amountMin: 1000001, items: ["EKG"] },
+        { ageMin: 41, ageMax: 80, amountMin: 2000001, items: ["EKG"] },
+        { ageMin: 18, ageMax: 200, amountMin: 2000000, items: ["Telephone interview + Large Case Transmittal form (ADMIN 5481) + illustration"] },
+        { ageMin: 0, ageMax: 17, amountMin: 1, items: ["Juvenile: up to 50% of parent's coverage (max $1,000,000); growth-chart build; parents' coverage details required"] }
+      ],
+      acceleratedUw: { ageMin: 0, ageMax: 60, amountMin: 50000, amountMax: 1000000, note: "Exam-Free Underwriting for ages 0-60 through $1,000,000: MIB, MVR, credit/public-records insurance report, RX/lab/medical-claims databases, and InstantID. A paramedical exam should not be ordered and will not improve the rate class." },
+      note: "Requirements by age and face amount (p. 16-17): Exam-Free Underwriting for ages 0-60 through $1,000,000; APS thresholds by age/amount (0-17 >$500K; 18-40 >$3M; 41-60 >$2M; 61-69 >$1M; 70+ all amounts); paramedical + HOS/blood from age 61 or above $1,000,000; EKG at 71+ or above $1M (51+) / $2M (41+); telephone interview + Large Case Transmittal at $2,000,000+.",
+      temporaryCoverage: "F&G's liability under the Conditional Receipt is limited to $500,000 subject to its terms — coverage exists only when the exact receipt conditions are met."
+    },
+
+    /* ---- Financial justification ------------------------------------- */
+    financial: {
+      incomeMultipliers: [
+        { ageMin: 20, ageMax: 40, multiplier: 30 },
+        { ageMin: 41, ageMax: 50, multiplier: 25 },
+        { ageMin: 51, ageMax: 65, multiplier: 15 },
+        { ageMin: 66, ageMax: 70, multiplier: 10 },
+        { ageMin: 71, ageMax: 200, multiplier: 5 }
+      ],
+      premiumToIncome: "Acceptable ratio of premium to income (net worth based): up to 25% at or below $5M net worth; up to 40% above $5M to $10M; up to 60% above $10M.",
+      note: "Income replacement: 30X (20-40), 25X (41-50), 15X (51-65), 10X (66-70), 5X (71+). Large case: $2,000,000+ face or $20,000+ planned annual premium requires the Large Case Transmittal form + F&G illustration. Non-working spouse: maximum $1,000,000 per primary insured, not to exceed the wage earner's in-force coverage; over that, underwriting consultation. Juveniles: up to 50% of parent's coverage, maximum $1,000,000 per primary insured. STOLI contracts will not be issued."
+    },
+
+    /* No credit program is published in the Pathsetter guide. */
+    credit: null,
+
+    classInfo: {
+      preferred_plus: { name: "Preferred Non-Tobacco", meaning: "No tobacco 2 years; no ratable conditions; no diabetes/heart disease/alcohol or substance abuse/listed cancer history; ≤2 moving violations and no DUI in 5 years; BP ≤150/90 (18-50), chol ≤260, ratio ≤7; family: ≤1 early coronary/cancer death.", color: "#0e7a5f" },
+      preferred: { name: "Non-Tobacco (Standard-equivalent)", meaning: "No tobacco 1 year; meets Standard criteria. F&G publishes only Preferred Non-Tobacco and Non-Tobacco as the non-tobacco classes.", color: "#1b9a7a" },
+      standard_plus: { name: "Non-Tobacco", meaning: "F&G publishes no Standard Plus class; Non-Tobacco (Standard) is the second non-tobacco class.", color: "#3b82b0" },
+      standard: { name: "Non-Tobacco", meaning: "No tobacco 1 year; no rateable conditions. Applicants who do not qualify for Preferred or Standard may be approved at Express Standard Tobacco / Express Standard Non-Tobacco rates without medical requirements.", color: "#4a6fa5" },
+      table: { name: "Substandard (through Table H / 300%)", meaning: "Substandard ratings through Table H (300%) — build above Standard within the Table H maximum, or an impairment reviewed individually.", color: "#b8860b" },
+      postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 10 years, gastric bypass 1 year, heart event 5 years, epilepsy 5 years) or pending workup.", color: "#8a5fb8" },
+      decline: { name: "Decline / specialist review", meaning: "On the F&G decline lists (cancer within 10 years, diabetes with A1c 7+, HIV, dementia, kidney/liver disease, respiratory disorder, etc.) — carrier direction required.", color: "#b3364a" }
+    }
   }
 };
+
+/* F&G Pathsetter defers impairment specifics to F&G company standards,
+ * published in the Quantum underwriting guidelines (ADV5691, 07-2025) — the
+ * Pathsetter agent guide lists the same Preferred exclusions and decline
+ * philosophy. Share the Quantum medical/impairment lists by reference so the
+ * two F&G products stay in sync. */
+CARRIER_RULES.fg_pathsetter.medicalCeilings = CARRIER_RULES.fg_quantum.medicalCeilings;
+CARRIER_RULES.fg_pathsetter.postponeTriggers = CARRIER_RULES.fg_quantum.postponeTriggers;
+CARRIER_RULES.fg_pathsetter.declineTriggers = CARRIER_RULES.fg_quantum.declineTriggers;
 
 /* ======================================================================
  * Medication reference dictionary

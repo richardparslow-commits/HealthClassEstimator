@@ -97,13 +97,20 @@ const Engine = (() => {
       band = Object.assign({}, rawBand, rawBand[sexKey]);
       band._sex = sexKey;
     }
-    // Carrier age-based threshold adjustment (e.g., F&G: ages 51-60 add 5 lb)
+    // Carrier age-based threshold adjustment (single step, e.g., F&G Quantum:
+    // ages 51-60 add 5 lb; or multiple steps, e.g., F&G Pathsetter: +5 lb at
+    // 51-65 and +10 lb at 66+).
     const ageNow = d.age ? Number(d.age) : null;
-    const ageAddLbs = rules.build.rules.ageAddLbs;
-    if (ageAddLbs && ageNow !== null && ageNow >= ageAddLbs.ageMin && ageNow <= ageAddLbs.ageMax) {
-      ["pp", "p", "sp", "stdCredit", "std", "tableMax", "min"].forEach(k => {
-        if (band[k] !== undefined) band[k] += ageAddLbs.add;
-      });
+    const ageAddSteps = rules.build.rules.ageAddLbs;
+    const steps = Array.isArray(ageAddSteps) ? ageAddSteps : (ageAddSteps ? [ageAddSteps] : []);
+    if (ageNow !== null) {
+      for (const step of steps) {
+        if (ageNow >= step.ageMin && ageNow <= step.ageMax) {
+          ["pp", "p", "sp", "stdCredit", "std", "tableMax", "min"].forEach(k => {
+            if (band[k] !== undefined) band[k] += step.add;
+          });
+        }
+      }
     }
 
     let adjustedWeight = Number(d.weightLb);
@@ -157,10 +164,10 @@ const Engine = (() => {
         tableRating = tableHit.table;
       } else if (band.tableMax !== undefined && adjustedWeight <= band.tableMax) {
         // Carrier publishes a substandard ceiling instead of a table ladder
-        // (e.g., F&G Quantum: substandard through Table D/200%).
+        // (e.g., F&G Quantum: Table D/200%; F&G Pathsetter: Table H/300%).
         klass = "table";
-        bandName = "substandard (Table A-D / 200%)";
-        tableRating = "A-D";
+        bandName = rules.build.rules.tableCeilingLabel || "substandard (Table A-D / 200%)";
+        tableRating = rules.build.rules.tableCeilingRating || "A-D";
       } else {
         klass = "substandard_review";
         bandName = "above the highest published weight";
