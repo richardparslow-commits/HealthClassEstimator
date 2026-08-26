@@ -1288,7 +1288,24 @@ const App = (() => {
       }
       if (age !== null && age >= 75) evUl.appendChild(el("li", {}, "Activities of Daily Living Questionnaire required (age 75+)."));
       evUl.appendChild(el("li", {}, "Non-medical issue limits: check amount against product limits (" + rules.evidence.ageAmountNote.split(".")[0] + ")."));
+      evUl.appendChild(el("li", {}, "PlanRight whole-life lane (separate simplified-issue product): its own build chart applies — check build against the PlanRight minimum/maximum weights — and any history of congestive heart failure, regardless of when diagnosed or treated, is not eligible for PlanRight."));
+      const pr = rules.planright && rules.planright.drugRules;
+      if (pr) {
+        const prWords = String(state.medicationsText || "").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+        const prHit = (list) => list.some(w => prWords.includes(w));
+        const prNeph = prHit(pr.nephropathy), prNeuro = prHit(pr.neuropathy), prDiab = prHit(pr.diabetes);
+        const prA = prHit(pr.listA), prB = prHit(pr.listB), prC = prHit(pr.listC);
+        if (prA && prB && prC) evUl.appendChild(el("li", {}, "PlanRight drug-rule flag: a List A (ACE/ARB) + List B (beta-blocker) + List C (diuretic) medication combination is disclosed — PlanRight would not be eligible for coverage on this profile."));
+        else if ((prNeph || prNeuro) && prDiab) evUl.appendChild(el("li", {}, "PlanRight drug-rule flag: a nephropathy/neuropathy medication combined with a diabetes medication is disclosed (within the past 2 years) — PlanRight would offer at most the Basic death benefit."));
+      }
     } else if (out.carrier === "Transamerica") {
+      if (age !== null && age <= 85 && Number(state.faceAmount || 0) >= 1000) {
+        const feBands = (rules.feLane && rules.feLane.faceBands) || [];
+        const feMax = feBands.reduce((m, b) => { const lo = parseInt(b.ages.split("-")[0], 10); const hi = parseInt(b.ages.split("-")[1], 10); return (age >= lo && age <= hi) ? b.max : m; }, 0);
+        if (Number(state.faceAmount || 0) <= feMax) {
+          evUl.appendChild(el("li", {}, "Final Expense Solutions lane applies at this age/face band (Immediate Solution / 10-Pay / Easy Solution, $1,000-" + feMax.toLocaleString() + ") — decisions are Preferred / Standard / Graded / Decline with no table ratings; nicotine within 12 months receives a tobacco rating; the Activity Credit (3+ days/week exercise) can improve a build-only Standard to Preferred."));
+        }
+      }
       evUl.appendChild(el("li", {}, "Transamerica orders all requirements through approved vendors; digital underwriting (iGO e-App) may produce a decision within minutes."));
       if (age !== null && age >= 70 && Number(state.faceAmount || 0) >= 100000) {
         evUl.appendChild(el("li", {}, "Minnesota Cognitive Acuity Screen required (age 70+, face amount $100,000+)."));
@@ -1356,6 +1373,9 @@ const App = (() => {
       }
       if (age !== null && age >= 50 && age <= 85 && Number(state.faceAmount || 0) >= 2500 && Number(state.faceAmount || 0) <= 50000) {
         evUl.appendChild(el("li", {}, "Dignity Solutions final-expense lane applies at this age/face band — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers; coverage is declined if any of the first three health questions are answered yes."));
+      }
+      if (age !== null && age >= 20 && age <= 75 && Number(state.faceAmount || 0) >= 25000 && Number(state.faceAmount || 0) <= 300000) {
+        evUl.appendChild(el("li", {}, "Home Certainty mortgage-protection lane applies at this age/face band — simplified-issue level term to age 95 (10/15/20/25/30-yr premium periods), $25,000-$300,000, shares the Express Term build chart; a current mortgage is required for eligibility."));
       }
       evUl.appendChild(el("li", {}, "Underwriting is standard through Table 4 on an accept/reject basis — no table ratings are offered; conditions on the impairment-guide decline list and build outside the chart should not be submitted."));
     } else if (out.carrier === "John Hancock") {

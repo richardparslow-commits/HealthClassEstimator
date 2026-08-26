@@ -1030,6 +1030,68 @@ cadd("Age 81 -> above maximum issue age (80) -> decline", d => { d.age = 81; }, 
 
 cadd("Organ transplant -> decline (ever)", d => { d.conditions = [{ id: "transplant", status: "current", severity: "severe" }]; }, { klass: "decline", tobacco: false });
 
+/* ---- Lane-data integrity (Transamerica FE / Foresters PlanRight / AMAM Home Certainty) ---- */
+const LANES = context.__CARRIERS;
+let lanePass = 0, laneFail = 0;
+function laneAssert(name, fn) {
+  try {
+    fn();
+    lanePass++;
+    console.log("PASS | lane-data " + name);
+  } catch (e) {
+    laneFail++;
+    console.log("FAIL | lane-data " + name + ": " + e.message);
+  }
+}
+
+// Transamerica Final Expense lane
+laneAssert("Transamerica feLane exists with 12-month tobacco lookback", () => {
+  const fe = LANES.transamerica.feLane;
+  if (!fe) throw new Error("feLane missing");
+  if (fe.tobaccoLookbackMonths !== 12) throw new Error("tobaccoLookbackMonths != 12");
+  if (!fe.activityCredit || !fe.activityCredit.includes("3+ days")) throw new Error("activityCredit missing");
+});
+laneAssert("Transamerica feLane build chart covers 53-84in with worked-example row", () => {
+  const chart = LANES.transamerica.feLane.buildChart;
+  for (let h = 53; h <= 84; h++) if (!chart[h]) throw new Error("missing height " + h);
+  const r = chart[66]; // 5'6"
+  if (r.min !== 115 || r.pref !== 247 || r.std !== 278 || r.graded !== 297) throw new Error("5'6\" row wrong: " + JSON.stringify(r));
+  // 5'6\" 250 lb is between pref (247) and std (278) — the guide's own example: Standard, upgradeable to Preferred with Activity Credit
+  if (!(250 > r.pref && 250 <= r.std)) throw new Error("worked example band broken");
+});
+laneAssert("Transamerica feLane face bands cap at published maxima", () => {
+  const bands = LANES.transamerica.feLane.faceBands;
+  const byAge = Object.fromEntries(bands.map(b => [b.ages, b.max]));
+  if (byAge["0-55"] !== 50000 || byAge["56-65"] !== 40000 || byAge["66-75"] !== 30000 || byAge["76-85"] !== 25000) throw new Error("face bands wrong");
+  if (LANES.transamerica.feLane.declineScreens.length < 20) throw new Error("declineScreens too short");
+});
+
+// Foresters PlanRight lane
+laneAssert("Foresters planright build chart covers 56-81in with row spot-check", () => {
+  const chart = LANES.foresters.planright.buildChart;
+  for (let h = 56; h <= 81; h++) if (!chart[h]) throw new Error("missing height " + h);
+  const r = chart[66]; // 5'6"
+  if (r.min !== 104 || r.pref !== 275 || r.std !== 294 || r.basic !== 315) throw new Error("5'6\" row wrong: " + JSON.stringify(r));
+  if (!LANES.foresters.planright.chfRule.includes("congestive heart failure")) throw new Error("chfRule missing");
+});
+laneAssert("Foresters planright drug lists non-empty and combo rules wired", () => {
+  const dr = LANES.foresters.planright.drugRules;
+  for (const k of ["nephropathy", "neuropathy", "diabetes", "listA", "listB", "listC"]) {
+    if (!dr[k] || !dr[k].length) throw new Error("drug list " + k + " empty");
+  }
+  if (!dr.nephropathy.includes("aranesp") || !dr.neuropathy.includes("gabapentin") || !dr.diabetes.includes("metformin")) throw new Error("spot-check meds missing");
+  if (!dr.listA.includes("lisinopril") || !dr.listB.includes("metoprolol") || !dr.listC.includes("furosemide")) throw new Error("spot-check list meds missing");
+});
+
+// AMAM Home Certainty lane
+laneAssert("AMAM homeCertainty lane present with mortgage requirement", () => {
+  const hc = LANES.amam.homeCertainty;
+  if (!hc) throw new Error("homeCertainty missing");
+  if (hc.minIssueAge !== 20 || hc.maxIssueAge !== 75) throw new Error("issue ages wrong");
+  if (!hc.faceRange.includes("300,000")) throw new Error("faceRange wrong");
+  if (!hc.mortgageRequirement.includes("mortgage")) throw new Error("mortgage requirement missing");
+});
+
 let pass = 0, fail = 0;
 
 // ---- cross-carrier gate-dedup probe --------------------------------------
@@ -1287,5 +1349,5 @@ for (const s of scenarios) {
     console.log("      fin:", JSON.stringify(out.financial));
   }
 }
-console.log("\n" + pass + " passed, " + fail + " failed");
+console.log("\n" + (pass + lanePass) + " passed, " + (fail + laneFail) + " failed");
 process.exit(fail ? 1 : 0);

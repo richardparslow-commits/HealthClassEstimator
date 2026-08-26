@@ -542,7 +542,8 @@ const CARRIER_RULES = {
       charts: [
         { product: "Your Term (non-medical)", ages: "18-80", face: "To $400,000 (18-55) / $150,000 (56-80)" },
         { product: "Strong Foundation (non-medical)", ages: "18-80", face: "To $500,000 (18-55) / $250,000 (56-80); substandard to $300,000 / $150,000" },
-        { product: "SMART UL / Advantage Plus II (non-medical)", ages: "0-75", face: "To $400,000 (16-55); $150,000 (0-15 and 56-75)" }
+        { product: "SMART UL / Advantage Plus II (non-medical)", ages: "0-75", face: "To $400,000 (16-55); $150,000 (0-15 and 56-75)" },
+        { product: "PlanRight whole life (separate lane)", ages: "By plan (Medical Reference Guide 503461 US 11/19)", face: "Its own min/Preferred/Standard/Basic build chart; CHF any history = not eligible" }
       ]
     },
 
@@ -723,6 +724,62 @@ const CARRIER_RULES = {
       note: "Earned income = salary, commissions, bonuses (not investment, interest, retirement, or rental income). Estate protection and non-income-earning spouse considered individually."
     },
 
+
+    /* ---- PlanRight whole-life lane (Medical Reference Guide 503461 US 11/19) ------
+       PlanRight is a separate simplified-issue whole-life lane with its own build
+       chart and medication-based medical reference. Outside the chart's minimum or
+       maximum weight (or height range) — declined. Any history of congestive heart
+       failure — regardless of when diagnosed or treated — is not eligible for
+       PlanRight. Not modeled as a class; the estimate reflects the non-medical
+       term/UL lanes and the PlanRight rules surface as lane guidance. ---------- */
+    planright: {
+      note: "PlanRight whole life is a separate simplified-issue lane (Medical Reference Guide 503461 US 11/19). Insurance is declined if the Proposed Insured is outside the minimum or maximum weight for their height, or below/above the chart's height range. Any history of congestive heart failure — regardless of when diagnosed or treated — is not eligible for PlanRight. Not modeled as a class — the estimate reflects the non-medical term/UL lanes.",
+      buildChart: {
+        56: { min: 74, pref: 201, std: 216, basic: 232 },
+        57: { min: 77, pref: 208, std: 223, basic: 239 },
+        58: { min: 80, pref: 215, std: 230, basic: 246 },
+        59: { min: 83, pref: 222, std: 237, basic: 253 },
+        60: { min: 86, pref: 229, std: 245, basic: 262 },
+        61: { min: 89, pref: 237, std: 253, basic: 271 },
+        62: { min: 92, pref: 246, std: 262, basic: 280 },
+        63: { min: 95, pref: 253, std: 269, basic: 288 },
+        64: { min: 98, pref: 260, std: 278, basic: 297 },
+        65: { min: 101, pref: 268, std: 286, basic: 306 },
+        66: { min: 104, pref: 275, std: 294, basic: 315 },
+        67: { min: 107, pref: 284, std: 304, basic: 325 },
+        68: { min: 110, pref: 292, std: 313, basic: 334 },
+        69: { min: 113, pref: 299, std: 321, basic: 343 },
+        70: { min: 117, pref: 308, std: 330, basic: 353 },
+        71: { min: 121, pref: 316, std: 339, basic: 362 },
+        72: { min: 125, pref: 325, std: 348, basic: 372 },
+        73: { min: 129, pref: 333, std: 356, basic: 381 },
+        74: { min: 133, pref: 341, std: 366, basic: 391 },
+        75: { min: 137, pref: 349, std: 373, basic: 399 },
+        76: { min: 142, pref: 357, std: 382, basic: 409 },
+        77: { min: 147, pref: 365, std: 392, basic: 419 },
+        78: { min: 152, pref: 373, std: 406, basic: 434 },
+        79: { min: 159, pref: 381, std: 413, basic: 442 },
+        80: { min: 162, pref: 389, std: 421, basic: 450 },
+        81: { min: 167, pref: 397, std: 430, basic: 460 }
+      },
+      buildNote: "Minimum weight applies to all PlanRight plans; maximum weights by class: Preferred / Standard / Basic. Outside the chart's minimum/maximum weight or height range — declined.",
+      chfRule: "Any history of congestive heart failure (CHF) — regardless of when diagnosed or treated — is not eligible for PlanRight.",
+      drugRules: {
+        nephropathy: ["aranesp", "auryxia", "calcifediol", "calcitriol", "calcium acetate", "ferric citrate", "fosrenol", "hectorol", "doxercalciferol", "kuvan", "phoslo", "renagel", "sensipar", "triferic", "velphoro", "zemplar"],
+        neuropathy: ["gabapentin", "gralise", "lyrica", "neurontin", "pregabalin"],
+        diabetes: ["actos", "amaryl", "avandamet", "avandaryl", "avandia", "basaglar", "byetta", "farxiga", "fortamet", "glimepiride", "glipizide", "glucophage", "glucotrol", "glucovance", "glyburide", "glynase", "glyset", "glyxambi", "humalog", "humulin", "invokana", "janumet", "januvia", "jardiance", "lantus", "levemir", "metformin", "novolin", "novolog", "onglyza", "prandin", "precose", "starlix", "toujeo", "tradjenta", "tresiba", "trulicity", "victoza"],
+        listA: ["accupril", "accuretic", "quinaretic", "aceon", "altace", "ramipril", "lotrel", "exforge", "azor", "atacand", "avalide", "avapro", "irbesartan", "benazepril", "lotensin", "benicar", "capoten", "captopril", "cozaar", "losartan", "diovan", "valsartan", "enalapril", "vasotec", "fosinopril", "monopril", "hyzaar", "lexxel", "lisinopril", "prinivil", "zestril", "micardis", "telmisartan", "prestalia", "twynsta", "valturna"],
+        listB: ["ziac", "bisoprolol", "zebeta", "byvalson", "carvedilol", "coreg", "coreg cr", "metoprolol", "lopressor", "toprol xl"],
+        listC: ["aldactazide", "aldactone", "carospir", "spironolactone", "bumetanide", "bumex", "demadex", "torsemide", "edecrin", "eplerenone", "inspra", "ethacrynic acid", "furosemide", "lasix", "sodium edecrin"]
+      },
+      drugRulesNote: "Medications from the nephropathy list AND the diabetes list within the past 2 years → Basic death benefit. Medications from the neuropathy list AND the diabetes list within the past 2 years → Basic death benefit. Medications from List A (ACE/ARB nephropathy agents) AND List B (beta-blockers) AND List C (diuretics) at the same time → not eligible for coverage.",
+      medicalReference: [
+        "CHF — any history: not eligible for PlanRight.",
+        "Nephropathy or neuropathy PLUS diabetes medications (within past 2 years): Basic death benefit.",
+        "List A + List B + List C medications simultaneously: not eligible for coverage.",
+        "Full benefit-eligibility is set per medication by the alphabetical drug list in the Medical Reference Guide; the drug lists are not exhaustive and off-label uses are considered by the underwriter."
+      ]
+    },
     /* No one-class credit is published in the current Foresters guides. */
     credit: null,
 
@@ -765,7 +822,8 @@ const CARRIER_RULES = {
       charts: [
         { product: "Trendsetter Super / Trendsetter LB", ages: "18-85", face: "$25,000-$10,000,000+ by band (LB band one $25K-$99,999 not available ages 18-22)" },
         { product: "Financial Choice IUL (I/II)", ages: "0-85", face: "$250,000-$10,000,000+ by band" },
-        { product: "Financial Foundation IUL (I/II) & TFLIC equivalents", ages: "0-85", face: "$25,000-$10,000,000+ by band" }
+        { product: "Financial Foundation IUL (I/II) & TFLIC equivalents", ages: "0-85", face: "$25,000-$10,000,000+ by band" },
+        { product: "Final Expense Solutions (separate lane — Immediate / 10-Pay / Easy)", ages: "0-85 (Easy Solution 18-80)", face: "$1,000-$50,000 by age band (0-55: $50K; 56-65: $40K; 66-75: $30K; 76-85: $25K); Easy $25K max" }
       ]
     },
 
@@ -1031,6 +1089,99 @@ const CARRIER_RULES = {
       note: "Income = salary, bonuses, commissions, and deferred compensation (excludes investment income). High-net-worth applicants may be considered beyond the formula with cover letter and financial evidence. IRS Form 4506-C required at $5M+."
     },
 
+
+    /* ---- Final Expense Solutions lane (Live Smart portfolio) -------------------
+       Immediate Solution / 10-Pay Solution / Easy Solution — simplified-issue
+       final-expense whole life, ages 0-85, face $1,000-$50,000 by age band
+       (Easy Solution ages 18-80 to $25,000, graded benefit). Decisions are
+       Preferred / Standard / Graded / Decline — no table ratings; any nicotine
+       use within 12 months receives a tobacco rating. The Adult Single Condition
+       Decision Chart assigns each condition/lifestyle factor a rating; four or
+       more Standard/Graded conditions decline. Not modeled as a class — the
+       estimate reflects the term/IUL lane and the FE rules surface as lane
+       guidance. ----------------------------------------------------------------- */
+    feLane: {
+      note: "Transamerica Final Expense Solutions (Immediate Solution, 10-Pay Solution, Easy Solution) is a separate simplified-issue final-expense whole-life lane — ages 0-85, face $1,000-$50,000 by age band (Easy Solution ages 18-80, $25,000 max, graded benefit; Immediate Solution & 10-Pay issue 0-85). Decisions are Preferred / Standard / Graded / Decline with no table ratings; any nicotine use within the last 12 months receives a tobacco rating. Not modeled as a class — the estimate reflects the term/IUL lane.",
+      products: "Immediate Solution (level premiums to age 121), 10-Pay Solution (level 10 years), Easy Solution (graded death benefit, ages 18-80)",
+      issueAges: "0-85 (Immediate & 10-Pay); 18-80 (Easy Solution)",
+      maxIssueAge: 85,
+      faceBands: [
+        { ages: "0-55", max: 50000 },
+        { ages: "56-65", max: 40000 },
+        { ages: "66-75", max: 30000 },
+        { ages: "76-85", max: 25000 }
+      ],
+      tobaccoLookbackMonths: 12,
+      activityCredit: "Activity Credit (adults 18+, applies only to adults): routine physical activity 3+ days per week for at least 10 consecutive minutes each time — walking the dog, gardening, mowing, manual labor, jogging, elliptical, rowing, stationary bike, weights, or similar. Can improve build-only Standard to Preferred, and a single Standard-rated respiratory (COPD, black lung, chronic bronchitis), stroke/TIA, or recent-hospitalization condition to Preferred.",
+      buildChart: {
+        53: { min: 74, pref: 159, std: 179, graded: 191 },
+        54: { min: 77, pref: 165, std: 186, graded: 199 },
+        55: { min: 80, pref: 172, std: 193, graded: 206 },
+        56: { min: 83, pref: 178, std: 200, graded: 214 },
+        57: { min: 86, pref: 184, std: 207, graded: 221 },
+        58: { min: 89, pref: 191, std: 215, graded: 229 },
+        59: { min: 92, pref: 198, std: 222, graded: 237 },
+        60: { min: 95, pref: 204, std: 230, graded: 245 },
+        61: { min: 98, pref: 211, std: 238, graded: 254 },
+        62: { min: 102, pref: 218, std: 246, graded: 262 },
+        63: { min: 105, pref: 225, std: 254, graded: 270 },
+        64: { min: 108, pref: 233, std: 262, graded: 279 },
+        65: { min: 112, pref: 240, std: 270, graded: 288 },
+        66: { min: 115, pref: 247, std: 278, graded: 297 },
+        67: { min: 119, pref: 255, std: 287, graded: 306 },
+        68: { min: 122, pref: 263, std: 295, graded: 315 },
+        69: { min: 126, pref: 270, std: 304, graded: 325 },
+        70: { min: 129, pref: 278, std: 313, graded: 334 },
+        71: { min: 133, pref: 286, std: 322, graded: 344 },
+        72: { min: 137, pref: 294, std: 331, graded: 353 },
+        73: { min: 141, pref: 303, std: 341, graded: 363 },
+        74: { min: 145, pref: 311, std: 350, graded: 373 },
+        75: { min: 149, pref: 320, std: 360, graded: 384 },
+        76: { min: 152, pref: 328, std: 369, graded: 394 },
+        77: { min: 157, pref: 337, std: 379, graded: 404 },
+        78: { min: 161, pref: 346, std: 389, graded: 415 },
+        79: { min: 165, pref: 355, std: 399, graded: 426 },
+        80: { min: 169, pref: 364, std: 409, graded: 436 },
+        81: { min: 173, pref: 373, std: 419, graded: 447 },
+        82: { min: 177, pref: 382, std: 430, graded: 459 },
+        83: { min: 182, pref: 391, std: 440, graded: 470 },
+        84: { min: 186, pref: 401, std: 451, graded: 481 }
+      },
+      buildNote: "Adult height/weight chart — rate classes are the best possible decision for height/weight alone, before any medical conditions or lifestyle factors. Minimum weight = BMI > 18.5; Preferred maximum = BMI < 40; Standard maximum = BMI < 45; Graded maximum = BMI < 48. If build exceeds the graded maximum — no coverage available.",
+      declineScreens: [
+        "AIDS / HIV / ARC",
+        "Alcoholism or alcohol abuse — diagnosed, treated, or advised within the past 2 years",
+        "ALS (Lou Gehrig's disease) or other motor neuron disease",
+        "Alzheimer's / dementia / memory loss / cognitive disorders",
+        "Amputation other than due to accident or trauma",
+        "Assisted living / long-term care facility / home healthcare — current",
+        "Bone marrow transplant (including donor stem cells)",
+        "Cancer other than basal cell — onset within 2 years, metastatic, recurrent, multiple, or metastasis to lymph nodes",
+        "Cerebral palsy",
+        "Cystic fibrosis",
+        "Diabetic coma",
+        "Down syndrome",
+        "Driving — DUI/DWI/OWI/reckless within 2 years, or multiple offenses within 5 years",
+        "Drug use/abuse (including prescription drugs) within 2 years",
+        "Employment in the cannabis industry or a cannabis-related business",
+        "Felony conviction/no contest — within 3 years, or multiple offenses within 10 years",
+        "Gaucher's disease",
+        "Hospice",
+        "Hunter syndrome / Huntington's disease / Niemann-Pick disease / Pompe disease / Wilson's disease / Wiskott-Aldrich syndrome",
+        "Incarceration — current",
+        "Mental incapacity / mental retardation",
+        "Oxygen use",
+        "Parole/probation — currently or within 2 years",
+        "Pulmonary fibrosis",
+        "Sickle cell anemia",
+        "Suicide attempt within 2 years",
+        "Surgery advised or planned requiring general anesthesia",
+        "Terminal illness (death expected within 18 months)",
+        "Transplant recipient — organ or stem cell",
+        "Wasting syndrome"
+      ],
+      decisionNote: "Preferred requires ALL medical conditions, lifestyle factors, and height/weight Preferred. Standard: all conditions Preferred with lifestyle/build Standard, or one Standard condition with Preferred build. Graded: one Graded condition (or two Standard conditions, or all lifestyle/build Graded) with conditions Preferred or better. Decline: any single Decline-rated condition or lifestyle factor, Decline build, or four or more Standard/Graded conditions."
+    },
     /* No one-class credit is published in the Transamerica field guide. */
     credit: null,
 
@@ -2219,7 +2370,7 @@ CARRIER_RULES.amam = {
       note: "American Amicable's simplified-issue products are underwritten standard through Table 4 on an accept/reject basis — no table ratings are offered (a Table 1-4 risk is issued at Standard rates; above Table 4 is not eligible). Eligibility is based on the simplified application, MIB, a pharmaceutical (prescription) facility check, an MVR, and a telephone interview by age and amount (mandatory at age 65+ on Term Made Simple). These 12/24 and 1/25 editions update the prior 01/20 / 02/20 guides. Dignity Solutions (final-expense whole life, ages 50-85) is a separate lane modeled in eligibility and evidence."
     },
     eligibility: {
-      products: "Express Term (level term to 95: 10/20/25/30-yr periods, + Return of Premium), Term Made Simple (level term to 95: 10/15/20/30-yr); Dignity Solutions final-expense whole life is a separate lane (ages 50-85)",
+      products: "Express Term (level term to 95: 10/20/25/30-yr periods, + Return of Premium), Term Made Simple (level term to 95: 10/15/20/30-yr); Dignity Solutions final-expense whole life (50-85) and Home Certainty mortgage-protection term (20-75) are separate lanes",
       issueAges: "Express Term: 18-75 (10-yr), 18-65 (20-yr), 18-60 (25-yr), 18-55 (30-yr); ROP: 20-yr 18-60, 25-yr 18-55, 30-yr 18-50. TMS: 10-yr 18-75, 15-yr 18-70, 20-yr 18-65, 30-yr 18-55. Dignity: 50-85",
       maxIssueAge: 75,
       faceRange: "Express Term: $25,000 minimum ($25/mo premium), $500,000 maximum (18-45) / $300,000 (46-75). TMS: $50,000 minimum, $500,000 maximum. Dignity: $2,500 minimum, $50,000 maximum (Immediate 50-75) / $25,000 (76-85 and Graded/ROP)",
@@ -2233,9 +2384,10 @@ CARRIER_RULES.amam = {
       charts: [
         { product: "Express Term (10/20/25/30-yr + ROP)", ages: "18-75 by term length (18-50 for 30-yr ROP)", face: "$25,000-$500,000 (18-45); $25,000-$300,000 (46-75)" },
         { product: "Term Made Simple (10/15/20/30-yr)", ages: "18-75 by term length (18-55 for 30-yr)", face: "$50,000-$500,000" },
-        { product: "Dignity Solutions (final expense — separate lane)", ages: "50-85", face: "$2,500-$50,000 (Immediate 50-75); $25,000 max (76-85, Graded, ROP)" }
+        { product: "Dignity Solutions (final expense — separate lane)", ages: "50-85", face: "$2,500-$50,000 (Immediate 50-75); $25,000 max (76-85, Graded, ROP)" },
+        { product: "Home Certainty (mortgage-protection term — separate lane)", ages: "20-75 by term (10/15/20/25/30-yr)", face: "$25,000-$300,000" }
       ],
-      chartNote: "Express Term and Term Made Simple share the same simplified-issue build chart (minimum weight, Table-2 and Table-4 maximums) and the same Preferred build chart (unisex). Dignity Solutions uses its own three-plan build chart (Immediate / Graded / Return of Premium)."
+      chartNote: "Express Term and Term Made Simple share the same simplified-issue build chart (minimum weight, Table-2 and Table-4 maximums) and the same Preferred build chart (unisex). Dignity Solutions uses its own three-plan build chart (Immediate / Graded / Return of Premium). Home Certainty (mortgage-protection term) shares the Express Term build family."
     },
 
     /* ---- Nicotine ----------------------------------------------------- */
@@ -2484,6 +2636,23 @@ CARRIER_RULES.amam = {
         "Multiple sclerosis, muscular dystrophy, Parkinson's disease, seizures, or paralysis within 3 years", "Ulcerative colitis within 3 years", "Liver disease treated within 3 years"
       ]
     },
+    /* ---- Home Certainty lane (mortgage-protection term) ------------------------
+       Home Certainty is a simplified-issue mortgage-protection term plan (level
+       term to age 95 with 10/15/20/25/30-year level premium periods; ROP for the
+       20/25/30-year periods). A current mortgage is required regardless of when
+       taken or refinanced. Shares the Express Term simplified-issue build family
+       and the same application workflow. Not modeled as a class. ------------ */
+    homeCertainty: {
+      note: "Home Certainty is a simplified-issue mortgage-protection term plan (level term to age 95, 10/15/20/25/30-year level premium periods, Return of Premium for the 20/25/30-year periods) — a current mortgage is required regardless of when it was taken or refinanced. Issue ages 20-75 by term (10-yr 20-75; 15-yr 20-65; 20-yr 20-60; 25-yr 20-55; 30-yr 20-50); minimum $25,000 face or $25/month premium; maximum $300,000. Shares the Express Term build chart and application workflow. Not modeled as a class — the estimate reflects the simplified-issue term lane.",
+      products: "Home Certainty level term to age 95 (10/15/20/25/30-yr) + Return of Premium (20/25/30-yr)",
+      issueAges: "20-75 by term: 10-yr 20-75; 15-yr 20-65; 20-yr 20-60; 25-yr 20-55; 30-yr 20-50",
+      maxIssueAge: 75,
+      minIssueAge: 20,
+      faceRange: "$25,000 minimum (or $25/month premium) — $300,000 maximum",
+      mortgageRequirement: "A current mortgage is required to be eligible, regardless of the date originally taken or refinanced; co-applicants on the mortgage/deed may each be eligible if both have lived in the home for a minimum of 3 months.",
+      buildFamily: "Shares the Express Term / Term Made Simple simplified-issue build chart (minimum weight, Table-2 and Table-4 maximums) and Preferred chart (unisex)."
+    },
+
 
     /* ---- Evidence / workflow ----------------------------------------- */
     evidence: {
