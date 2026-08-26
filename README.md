@@ -156,6 +156,12 @@ product is selected, so the exact set depends on the product — the union is th
 - The footer links to the consumer-report record-request pages the disclaimer references: **MIB Consumer File**
   (https://www.mib.com/request_your_record.html) and **Milliman IntelliScript**
   (https://www.rxhistories.com/for-consumers/insurance/).
+- Acceptance is stored as a **dated record** (`hce_ack_v1` = `{ accepted, acceptedAt }`). A **Print
+  acknowledgment** button (footer, and on the results page) produces a one-page record a producer can file
+  with the case file: acceptance date/time, app version, optional case reference, current case context,
+  the full acknowledgment + legal disclaimer text, the consumer-report links, and producer signature/date
+  lines. It prints via a dedicated `body.print-ack` layout, separate from the comparison sheet and full
+  results print.
 
 ## Reference documents
 

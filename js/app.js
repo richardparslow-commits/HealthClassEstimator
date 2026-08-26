@@ -1217,6 +1217,7 @@ const App = (() => {
     actions.appendChild(el("button", { class: "btn btn-compare", id: "btn-compare", onclick: () => toggleComparison() }, "Compare across carriers"));
     actions.appendChild(el("button", { class: "btn btn-print", id: "btn-print-compare", onclick: () => printComparison() }, "Print comparison"));
     actions.appendChild(el("button", { class: "btn btn-print", onclick: () => window.print() }, "Print / save PDF"));
+    actions.appendChild(el("button", { class: "btn btn-print", onclick: () => printAckRecord() }, "Print acknowledgment"));
     actions.appendChild(el("button", { class: "btn btn-ghost", onclick: () => { $("#results-content").classList.add("hidden"); $("#step-content").classList.remove("hidden"); render(); } }, "Edit answers"));
     actions.appendChild(el("button", { class: "btn btn-danger-ghost", onclick: () => { if (confirm("Start a new case? Current answers will be cleared.")) resetState(); } }, "New case"));
     wrap.appendChild(actions);
@@ -1337,6 +1338,72 @@ const App = (() => {
     return sheet;
   }
 
+  /* ---------- printable acknowledgment record ------------------------ */
+
+  /* One-page print layout (body.print-ack), distinct from the comparison
+     sheet and the full results print. A hidden #ack-sheet is populated with
+     the stored acceptance date, the case context (if any), the full
+     acknowledgment + legal disclaimer text, the consumer-report links, and
+     signature lines — a record the producer can file with the case file. */
+  function printAckRecord() {
+    const ack = readAck();
+    let caseRef = "";
+    try { caseRef = (window.prompt("Optional case reference (e.g., applicant initials or file #) to print on the record — leave blank to omit:", "") || "").trim(); } catch (e) { /* ignore */ }
+    const sheet = buildAckSheet(ack, caseRef);
+    document.body.classList.add("print-ack");
+    window.addEventListener("afterprint", () => document.body.classList.remove("print-ack"), { once: true });
+    window.print();
+    setTimeout(() => document.body.classList.remove("print-ack"), 1500);
+  }
+
+  function buildAckSheet(ack, caseRef) {
+    let sheet = document.getElementById("ack-sheet");
+    if (!sheet) {
+      sheet = el("div", { id: "ack-sheet" });
+      document.body.appendChild(sheet);
+    }
+    sheet.innerHTML = "";
+
+    const head = el("div", { class: "print-sheet-head" });
+    head.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
+    head.appendChild(el("div", { class: "print-sheet-title" }, "Acknowledgment record"));
+    const meta = el("div", { class: "print-sheet-meta" });
+    meta.appendChild(el("span", {}, "Accepted: " + (ack && ack.acceptedAt ? new Date(ack.acceptedAt).toLocaleString() : "before dated records were stored")));
+    meta.appendChild(el("span", {}, "App version " + (window.HCE_VERSION || "?") + " · printed " + new Date().toLocaleDateString()));
+    head.appendChild(meta);
+    sheet.appendChild(head);
+
+    if (caseRef) sheet.appendChild(el("div", { class: "ack-record-ref" }, "Case reference: " + caseRef));
+
+    const profLine = profileLine();
+    if (profLine !== "Applicant profile not entered") {
+      sheet.appendChild(el("div", { class: "print-sheet-profile" }, "Case context — " + (CARRIER_RULES[state.carrier] ? CARRIER_RULES[state.carrier].name + "; " : "") + profLine));
+    }
+
+    const body = el("div", { class: "ack-record-body" });
+    body.appendChild(el("p", { class: "ack-record-statement" },
+      "The undersigned acknowledges that this tool is used to help estimate a person's health class for life-insurance pre-underwriting and case triage. The estimate is preliminary and non-binding. All carriers have the final and absolute say on the client's underwriting and health class."));
+    const disc = el("div", { class: "ack-record-disclaimer" });
+    disc.appendChild(el("strong", {}, "Legal disclaimer. "));
+    disc.appendChild(document.createTextNode("This tool is not a medical diagnostic tool and does not issue insurance, bind coverage, or replace a carrier underwriter's decision. The estimate is based only on disclosed information. The carrier may obtain medical records, prescription history, laboratory/paramedical results, consumer reports, and information from other insurers or MIB, subject to authorization — those sources can change the estimate. Never suggest withholding information or \"answering around\" a condition: applications state that answers influence acceptance and that material misrepresentation or nondisclosure can jeopardize coverage. Temporary coverage exists only if the exact carrier receipt conditions are met, not because this tool gives a favorable estimate."));
+    body.appendChild(disc);
+    body.appendChild(el("p", { class: "ack-record-check" },
+      "I have read and acknowledge the above. I understand this estimate is not binding and that each carrier has the final and absolute say on the client's underwriting and health class."));
+    sheet.appendChild(body);
+
+    const links = el("div", { class: "ack-record-links" });
+    links.appendChild(el("div", { class: "ack-record-links-label" }, "Consumer-report record requests:"));
+    links.appendChild(el("div", {}, "MIB Consumer File — https://www.mib.com/request_your_record.html"));
+    links.appendChild(el("div", {}, "Milliman IntelliScript — https://www.rxhistories.com/for-consumers/insurance/"));
+    sheet.appendChild(links);
+
+    const sig = el("div", { class: "ack-record-sig" });
+    sig.appendChild(el("div", { class: "sig-line" }, "Producer signature: "));
+    sig.appendChild(el("div", { class: "sig-line" }, "Date: "));
+    sheet.appendChild(sig);
+    return sheet;
+  }
+
   function questionnaireNames(conditions) {
     const map = {
       diabetes: "Diabetes", heart_disease: "Heart murmur/irregular heartbeat or chest pain", cad: "Chest pain",
@@ -1400,6 +1467,18 @@ const App = (() => {
      accepted. */
   const ACK_KEY = "hce_ack_v1";
 
+  /* Read the stored acknowledgment. Records are { accepted, acceptedAt };
+     the legacy bare "1" (pre-dated-record) still counts as accepted. */
+  function readAck() {
+    try {
+      const raw = localStorage.getItem(ACK_KEY);
+      if (!raw) return null;
+      if (raw === "1") return { accepted: true, acceptedAt: null };
+      const rec = JSON.parse(raw);
+      return rec && rec.accepted ? rec : null;
+    } catch (e) { return null; }
+  }
+
   function boot() {
     loadState();
     $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name;
@@ -1407,16 +1486,17 @@ const App = (() => {
       saveState();
       showToast("Draft saved to this browser.");
     });
+    const btnPrintAck = $("#btn-print-ack");
+    if (btnPrintAck) btnPrintAck.addEventListener("click", () => printAckRecord());
 
     const gate = $("#ack-gate");
     const check = $("#ack-check");
     const accept = $("#ack-accept");
-    let acknowledged = false;
-    try { acknowledged = localStorage.getItem(ACK_KEY) === "1"; } catch (e) { /* ignore */ }
+    let acknowledged = !!readAck();
 
     check.addEventListener("change", () => { accept.disabled = !check.checked; });
     accept.addEventListener("click", () => {
-      try { localStorage.setItem(ACK_KEY, "1"); } catch (e) { /* ignore */ }
+      try { localStorage.setItem(ACK_KEY, JSON.stringify({ accepted: true, acceptedAt: new Date().toISOString() })); } catch (e) { /* ignore */ }
       gate.classList.add("hidden");
       render();
     });

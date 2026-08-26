@@ -580,6 +580,12 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   body.print-compare .app-main > *:not(#print-sheet) { display: none !important; }
   body.print-compare #print-sheet { display: block !important; }
   #print-sheet .klass-chip, #print-sheet tr.print-current { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Acknowledgment record (body.print-ack mode) — a one-page record the
+     producer can file with the case file. */
+  body.print-ack #ack-gate, body.print-ack #step-content, body.print-ack #results-content,
+  body.print-ack .app-main > *:not(#ack-sheet) { display: none !important; }
+  body.print-ack #ack-sheet { display: block !important; }
 }
 
 /* Hidden on screen; shown only via print (body.print-compare). */
@@ -607,6 +613,59 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .print-sheet-table tr { break-inside: avoid; }
 .print-sheet-table tr.print-current { background: #eef7f3; }
 .print-sheet-table .print-carrier { font-weight: 700; white-space: nowrap; }
+
+/* Hidden on screen; shown only via print (body.print-ack). */
+#ack-sheet {
+  display: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1a2430;
+  max-width: 7.4in;
+  margin: 0 auto;
+}
+.ack-record-ref { font-size: 11px; font-weight: 700; margin: 8px 0 4px; }
+.ack-record-body { font-size: 12px; line-height: 1.5; margin-top: 10px; }
+.ack-record-statement { margin: 0 0 8px; font-weight: 600; }
+.ack-record-disclaimer {
+  background: #eef7f3;
+  border-left: 4px solid #0e7a5f;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+.ack-record-check { margin: 0; font-size: 11.5px; }
+.ack-record-links {
+  margin-top: 12px;
+  font-size: 11px;
+  color: #55606e;
+  border-top: 1px solid #d9e0e7;
+  padding-top: 8px;
+}
+.ack-record-links-label { font-weight: 700; color: #1a2430; }
+.ack-record-sig {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 26px;
+}
+.sig-line {
+  flex: 1;
+  font-size: 12px;
+  border-bottom: 1px solid #1a2430;
+  padding-bottom: 4px;
+}
+
+.footer-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.footer-link-btn:hover { color: var(--navy); }
 .print-sheet-table .print-version { font-size: 9px; color: #66707c; font-weight: 400; }
 .print-sheet-foot { margin-top: 12px; border-top: 1px solid #c3ccd4; padding-top: 7px; font-size: 9.5px; color: #55606e; }
 .print-sheet-sources { margin-top: 4px; font-size: 8.5px; color: #7b8490; }
