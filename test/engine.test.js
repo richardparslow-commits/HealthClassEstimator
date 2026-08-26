@@ -23,10 +23,13 @@ const base = {
   carrier: "banner", age: 35, sex: "male", state: "TX",
   faceAmount: 500000, income: 120000, existingCoverage: 0,
   policyPurpose: "income", replacement: "no", financing: "no",
+  ownership: "personal", premiumPayor: "self",
   usedNicotine: false, nicotineLastUse: "",
   heightIn: 70, weightLb: 165,
   bpSys: 120, bpDia: 78, cholTotal: 190, cholHdl: 60,
   movingViolations3yr: 0, seriousDriving: false,
+  occupationHazardous: "no", aviation: "no", hazardousSports: "no", foreignTravel: "no",
+  criminalActive: false, paroleCurrent: "no", parolePast: "no",
   alcoholConcern: "no", drugAbuse: "no", marijuana: "none",
   conditions: [],
   medicationsText: "none",
@@ -770,9 +773,20 @@ add("Banner financed premium -> accelerated UW excluded", d => { d.financing = "
 add("Banner replacement -> accelerated UW excluded", d => { d.replacement = "yes"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible" });
 add("Policy purpose business -> BIQ evidence listed", d => { d.policyPurpose = "business"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Business insurance questionnaire"] });
 add("Hazardous occupation unanswered -> missing, no cap", d => { d.occupationHazardous = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["avocation"] });
-add("Driving + substance skipped -> Moderate confidence", d => { d.movingViolations3yr = ""; d.alcoholConcern = ""; d.drugAbuse = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Moderate" });
-add("All key radios skipped -> Low confidence", d => { d.usedNicotine = ""; d.famCardio = ""; d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Low" });
+add("Lifestyle & substance domains skipped -> Moderate confidence", d => { d.movingViolations3yr = ""; d.alcoholConcern = ""; d.drugAbuse = ""; d.paroleCurrent = ""; d.parolePast = ""; d.aviation = ""; d.hazardousSports = ""; d.foreignTravel = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Moderate" });
+add("All key radios skipped -> Low confidence", d => { d.usedNicotine = ""; d.famCardio = ""; d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; d.occupationHazardous = ""; d.ownership = ""; d.premiumPayor = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Low" });
 add("Fully answered profile -> High confidence", d => {}, { klass: "preferred_plus", tobacco: false, wantConfidence: "High" });
+
+/* ---- New lifestyle / criminal / financial questions ------------------- */
+add("Currently on probation -> decline gate", d => { d.paroleCurrent = "yes"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("Past parole only -> review flag, no decline", d => { d.parolePast = "yes"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "criminal_history", wantNoFlag: "possible_decline" });
+add("Aviation exposure -> MOO flat extra on Standard Plus", d => { d.carrier = "mutual_of_omaha"; d.aviation = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatExtra: true, wantFlatBase: "standard_plus" });
+add("Hazardous sport -> F&G flat extra on Preferred", d => { d.carrier = "fg_quantum"; d.hazardousSports = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatExtra: true, wantFlatBase: "preferred" });
+add("Foresters 25 cigarettes/day -> Standard Tobacco", d => { d.carrier = "foresters"; d.usedNicotine = true; d.nicotineLastUse = monthsAgo(1); d.nicotineProduct = "cigarette"; d.nicotineAmount = 25; }, { klass: "standard", tobacco: true, wantTobaccoPlus: false });
+add("Foresters 10 cigarettes/day -> Tobacco Plus", d => { d.carrier = "foresters"; d.usedNicotine = true; d.nicotineLastUse = monthsAgo(1); d.nicotineProduct = "cigarette"; d.nicotineAmount = 10; }, { klass: "preferred_plus", tobacco: true, wantTobaccoPlus: true });
+add("Foreign travel -> evidence note", d => { d.foreignTravel = "yes"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Foreign travel disclosed"] });
+add("Third-party premium payor -> Banner AU excluded", d => { d.premiumPayor = "third_party"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible", wantEvidence: ["accelerated underwriting not available"] });
+add("Business ownership -> ownership evidence note", d => { d.ownership = "business"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Business-owned coverage"] });
 
 let pass = 0, fail = 0;
 
@@ -994,6 +1008,7 @@ for (const s of scenarios) {
   if (ok && s.expect.wantPostponeGates !== undefined) ok = (out.gates.postpone || []).length === s.expect.wantPostponeGates;
   if (ok && s.expect.wantFlatExtra !== undefined) ok = (!!out.flatExtra) === s.expect.wantFlatExtra;
   if (ok && s.expect.wantFlatBase !== undefined) ok = out.flatExtra && out.flatExtra.baseClass === s.expect.wantFlatBase;
+  if (ok && s.expect.wantTobaccoPlus !== undefined) ok = (!!out.tobaccoPlus) === s.expect.wantTobaccoPlus;
   if (ok && s.expect.noCredit) ok = !out.possibleCredit;
   if (ok && s.expect.wantCredit) ok = !!out.possibleCredit;
   if (ok && s.expect.wantMeds) {

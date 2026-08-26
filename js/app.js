@@ -30,13 +30,15 @@ const App = (() => {
     return {
       carrier: "banner",
       age: "", sex: "", state: "", occupation: "", occupationHazardous: "",
+      aviation: "", hazardousSports: "", foreignTravel: "",
       faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "", financing: "",
-      usedNicotine: "", nicotineProduct: "cigarette", nicotineLastUse: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
+      ownership: "", premiumPayor: "",
+      usedNicotine: "", nicotineProduct: "cigarette", nicotineLastUse: "", nicotineAmount: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
       marijuana: "",
       heightFt: "", heightIn: "", weightLb: "", weightOneYearAgoLb: "", weightIntentional: false, weightChangeUnintentional: false,
       bpSys: "", bpDia: "", cholTotal: "", cholHdl: "", a1c: "",
       movingViolations3yr: "", seriousDriving: false, seriousDrivingYears: "",
-      criminalActive: false, bankruptcyActive: false,
+      criminalActive: false, paroleCurrent: "", parolePast: "", bankruptcyActive: false,
       alcoholConcern: "", drugAbuse: "", drugAbuseYears: "",
       conditions: [],
       medicationsText: "",
@@ -440,11 +442,20 @@ const App = (() => {
     const r2 = el("div", { class: "field-row" });
     r2.appendChild(field("State of residence", textInput("state", { placeholder: "e.g. TX" })));
     r2.appendChild(field("Occupation", textInput("occupation", { placeholder: "Job title / duties" })));
-    r2.appendChild(field("Hazardous occupation (heights, explosives, military, aviation, corrections, etc.)", radioPill("occupationHazardous", [["no", "No"], ["yes", "Yes"], ["unknown", "Unsure"]])));
+    r2.appendChild(field("Hazardous occupation (heights, explosives, military, corrections, etc.)", radioPill("occupationHazardous", [["no", "No"], ["yes", "Yes"], ["unknown", "Unsure"]])));
     c.appendChild(r2);
+
+    const r3 = el("div", { class: "field-row" });
+    r3.appendChild(field("Aviation exposure (pilot, crew, frequent flying hours)", radioPill("aviation", [["no", "No"], ["yes", "Yes"]])));
+    r3.appendChild(field("Hazardous sports (racing, skydiving, scuba, climbing, etc.)", radioPill("hazardousSports", [["no", "No"], ["yes", "Yes"]])));
+    r3.appendChild(field("Frequent foreign travel", radioPill("foreignTravel", [["no", "No"], ["yes", "Yes"]])));
+    c.appendChild(r3);
 
     _radioHandlers.sex = () => {};
     _radioHandlers.occupationHazardous = () => {};
+    _radioHandlers.aviation = () => {};
+    _radioHandlers.hazardousSports = () => {};
+    _radioHandlers.foreignTravel = () => {};
     return c;
   }
 
@@ -465,6 +476,11 @@ const App = (() => {
     r2.appendChild(field("Third-party or financed premium?", radioPill("financing", [["no", "No"], ["yes", "Yes"]])));
     c.appendChild(r2);
 
+    const r3 = el("div", { class: "field-row" });
+    r3.appendChild(field("Coverage ownership", selectInput("ownership", [["personal", "Personal"], ["business", "Business / key person"], ["trust", "Trust / estate"]])));
+    r3.appendChild(field("Premium payor", selectInput("premiumPayor", [["self", "Self"], ["employer", "Employer-paid"], ["third_party", "Third party"], ["financed", "Financed / loan"]])));
+    c.appendChild(r3);
+
     _radioHandlers.replacement = () => {};
     _radioHandlers.financing = () => {};
     return c;
@@ -481,9 +497,18 @@ const App = (() => {
 
     const det = el("div", { class: (state.usedNicotine === "yes" ? "" : "hidden") });
     const r1 = el("div", { class: "field-row" });
+    const amountLabel = {
+      cigarette: "Cigarettes per day",
+      cigar: "Cigars per month",
+      vape: "Vaping sessions per day (approx.)",
+      smokeless: "Dips / cans per week",
+      nicotine_sub: "Pieces per day",
+      other: "Amount per day"
+    }[state.nicotineProduct] || "Amount";
     r1.appendChild(field("Product", selectInput("nicotineProduct", [["cigarette", "Cigarettes"], ["cigar", "Cigars (occasional)"], ["vape", "Vaping / e-cigarettes"], ["smokeless", "Chewing tobacco / snuff"], ["nicotine_sub", "Nicotine substitutes (gum, patch, pouch)"], ["other", "Other / multiple"]], { onChange: () => render() })));
     r1.appendChild(field("Date last used", dateInput("nicotineLastUse")));
     r1.appendChild(field("Frequency", selectInput("nicotineFrequency", [["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["occasional", "Occasional"]])));
+    r1.appendChild(field(amountLabel, numInput("nicotineAmount", { min: 0, step: 1 }), "Foresters Tobacco Plus requires ≤ 1 pack (20 cigarettes) per day; heavier use lands in Standard Tobacco."));
     det.appendChild(r1);
 
     const cigarBox = el("div", { class: (state.nicotineProduct === "cigar" ? "" : "hidden") });
@@ -564,11 +589,19 @@ const App = (() => {
     c.appendChild(r1);
 
     const r2 = el("div", { class: "field-row" });
-    r2.appendChild(field("Currently in jail, awaiting trial, on probation/parole, or major convictions?", checkPill("criminalActive", "Yes")));
-    r2.appendChild(field("Active bankruptcy (Ch. 7 not discharged / Ch. 13 < 2 yrs)?", checkPill("bankruptcyActive", "Yes")));
+    r2.appendChild(field("Currently in jail, awaiting trial, or major convictions?", checkPill("criminalActive", "Yes")));
+    r2.appendChild(field("Currently on probation or parole?", radioPill("paroleCurrent", [["no", "No"], ["yes", "Yes"]])));
+    r2.appendChild(field("Ever been on probation or parole (including in the past)?", radioPill("parolePast", [["no", "No"], ["yes", "Yes"]])));
     c.appendChild(r2);
 
-    c.appendChild(el("div", { class: "note-box" }, "Driving limits vary by carrier and class — DUI/reckless/suspension lookbacks of 2-5 years and violation limits are applied per the selected carrier. Criminal exposure or active bankruptcy is a decline screen."));
+    const r3 = el("div", { class: "field-row" });
+    r3.appendChild(field("Active bankruptcy (Ch. 7 not discharged / Ch. 13 < 2 yrs)?", checkPill("bankruptcyActive", "Yes")));
+    c.appendChild(r3);
+
+    _radioHandlers.paroleCurrent = () => {};
+    _radioHandlers.parolePast = () => {};
+
+    c.appendChild(el("div", { class: "note-box" }, "Driving limits vary by carrier and class — DUI/reckless/suspension lookbacks of 2-5 years and violation limits are applied per the selected carrier. Currently on probation/parole, current criminal exposure, or active bankruptcy is a decline screen; a past (resolved) probation/parole history is reviewed by the carrier for recency and offense severity."));
     return c;
   }
 
@@ -826,6 +859,13 @@ const App = (() => {
     box.classList.remove("hidden");
     box.innerHTML = "";
     box.appendChild(resultsView(out));
+    // Default output is the all-carrier comparison — the client's possible
+    // health class under every carrier, with the primary carrier's full
+    // estimate below. The compare button hides/shows it.
+    const comp = renderComparison(runComparison());
+    box.insertBefore(comp, box.firstChild);
+    const btnComp = $("#btn-compare");
+    if (btnComp) btnComp.textContent = "Hide comparison";
     window.scrollTo(0, 0);
 
     const btnNext = $("#btn-next");
@@ -948,8 +988,8 @@ const App = (() => {
     let heroInfo;
     if (out.finalClass === "manual_review") {
       heroInfo = { name: "Manual underwriting review", meaning: "Key evidence is missing or conflicting. Complete the intake and obtain records before estimating.", color: "#5b6b7b" };
-    } else if (out.tobaccoClass && state.carrier === "foresters" && out.finalClass === "preferred_plus") {
-      heroInfo = { name: "Tobacco Plus", meaning: "Nicotine use within the past year AND meets all Preferred Plus criteria (≤1 pack per day) — Foresters Tobacco Plus, subject to full evidence and carrier rules.", color: "#b8860b" };
+    } else if (out.tobaccoClass && state.carrier === "foresters" && out.tobaccoPlus) {
+      heroInfo = { name: "Tobacco Plus", meaning: "Nicotine use within the past year AND meets all Preferred Plus criteria (≤1 pack per day for cigarettes) — Foresters Tobacco Plus, subject to full evidence and carrier rules.", color: "#b8860b" };
     } else if (out.tobaccoClass && (out.finalClass === "preferred_plus" || out.finalClass === "preferred")) {
       heroInfo = { name: "Preferred Tobacco", meaning: "Otherwise favorable profile with nicotine use — carrier's Preferred Tobacco class, subject to full evidence and carrier rules.", color: "#b8860b" };
     } else if (out.tobaccoClass && (out.finalClass === "standard_plus" || out.finalClass === "standard")) {
@@ -1227,11 +1267,13 @@ const App = (() => {
 
   function toggleComparison() {
     const existing = $("#comparison");
-    if (existing) { existing.remove(); return; }
+    const btn = $("#btn-compare");
+    if (existing) { existing.remove(); if (btn) btn.textContent = "Compare across carriers"; return; }
     const wrap = renderComparison(runComparison());
     const resultsBox = $("#results-content");
     const anchor = $("#results-actions");
     resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
+    if (btn) btn.textContent = "Hide comparison";
     wrap.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -1246,17 +1288,10 @@ const App = (() => {
      because selectInput sets state.carrier before calling onChange — the guard
      in switchCarrier would see an already-updated state and no-op. */
   function applyCarrierSwitch(id) {
-    const keepOpen = !!document.getElementById("comparison");
     state.carrier = id;
     saveState();
     $("#carrier-badge").textContent = CARRIER_RULES[id].name;
-    runEstimate(); // re-renders the results box, destroying the comparison card
-    if (keepOpen) {
-      const wrap = renderComparison(runComparison());
-      const resultsBox = $("#results-content");
-      const anchor = $("#results-actions");
-      resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
-    }
+    runEstimate(); // re-renders results, including the all-carrier comparison
   }
 
   /* ---------- printable comparison sheet ------------------------------ */
@@ -1443,12 +1478,13 @@ const App = (() => {
     accelerated_uw_possible: "Accelerated UW may apply",
     financial_review: "Financial justification needed",
     undisclosed_meds: "Medication-condition mismatch — confirm",
-    flat_extra: "Flat extra may apply"
+    flat_extra: "Flat extra may apply",
+    criminal_history: "Criminal history disclosed — carrier review"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
     possible_decline: "flag-danger", manual_review: "flag-warn", missing_material_data: "flag-warn",
-    accelerated_uw_possible: "flag-ok", financial_review: "flag-warn", undisclosed_meds: "flag-warn"
+    accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn"
   };
 
   const DOMAIN_LABELS = {

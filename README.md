@@ -17,24 +17,25 @@ No build step, no dependencies — plain HTML/CSS/JavaScript.
 - Or serve the folder: `python3 -m http.server 8000` then open `http://localhost:8000`.
 
 Answers are saved automatically to the browser's localStorage; **Save draft** persists the current state.
-**Run estimate** produces the case-triage page, which can be printed or saved as PDF. From the results page,
-**Compare across carriers** runs the same applicant profile through every carrier ruleset side by side — each
-carrier's estimated class, limiting factors/gates, evidence highlights, and financial outcome — with the
-currently selected carrier highlighted; clicking any row switches the full estimate below to that carrier
-(the comparison stays open, re-highlighted, so you can click through carriers). Toggle to collapse. **Print
-comparison** renders a dedicated one-page sheet (compact profile header + the comparison table + guardrails)
-that prints on its own, distinct from the full results **Print / save PDF** layout.
+**Run estimate** produces the case-triage page, which can be printed or saved as PDF. The app is not tied to a
+single carrier: the results page **defaults to the all-carrier comparison** — the same profile run through every
+carrier ruleset side by side, showing the client's possible health class under each carrier (class, limiting
+factors/gates, evidence highlights, financial outcome), with the primary carrier highlighted. Clicking any row
+switches the full estimate below to that carrier. The **Compare / hide** button collapses the table to just the
+primary carrier's full estimate. **Print comparison** renders a dedicated one-page sheet (compact profile header +
+the comparison table + guardrails) that prints on its own, distinct from the full results **Print / save PDF**
+layout.
 
 ## The interview
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties
-2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source (evaluated: income multipliers, carrier total-line caps, replacement rules, purpose-driven evidence)
-3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception
+1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties, plus aviation exposure, hazardous sports, and frequent foreign travel (aviation/sports feed the hazardous-avocation lane; travel is an evidence/review note)
+2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source, coverage ownership, premium payor (evaluated: income multipliers, carrier total-line caps, replacement rules, purpose-driven evidence, third-party/financed-payor review and accelerated-UW exclusion)
+3. **Tobacco & nicotine** — product (cigarettes, vaping/e-cigarettes, chewing tobacco/snuff, cigars, nicotine substitutes), last-use date, frequency, per-product amount (cigarettes per day feeds Foresters Tobacco Plus ≤1 pack/day; heavier use → Standard Tobacco), cigar exception
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
 5. **Vitals & labs** — blood pressure (readings only — carriers evaluate with or without treatment), total/HDL cholesterol, A1c
-6. **Driving & criminal** — moving violations, DUI/reckless/suspension, criminal status, bankruptcy
+6. **Driving & criminal** — moving violations, DUI/reckless/suspension, criminal status, **current and past probation/parole** (current → decline screen where the carrier publishes one; past → review flag), bankruptcy
 7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration, marijuana (rated separately from tobacco; daily-use declines per F&G/National Life)
 8. **Medical history** — condition picker with per-condition detail (status, severity, control, medications,
    onset, complications, stability, postpone/decline concerns)

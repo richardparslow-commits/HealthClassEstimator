@@ -846,7 +846,10 @@ const Engine = (() => {
     };
     if (d.policyPurpose && purposeEvidence[d.policyPurpose]) list.push(purposeEvidence[d.policyPurpose]);
     if (d.replacement === "yes") list.push("Replacement disclosed — carrier replacement rules and disclosure requirements apply.");
-    if (d.financing === "yes") list.push("Third-party or financed premium disclosed — premium-financing financial review applies.");
+    if (d.financing === "yes" || d.premiumPayor === "third_party" || d.premiumPayor === "financed") list.push("Third-party or financed premium disclosed — premium-financing financial review applies.");
+    if (d.ownership === "business") list.push("Business-owned coverage disclosed — business insurance questionnaire / ownership documentation may be required.");
+    if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) list.push("History of probation/parole disclosed — carriers review recency and offense severity; additional information may be required.");
+    if (isYes(d.foreignTravel)) list.push("Foreign travel disclosed — review destinations and duration; some destinations trigger postponement or additional requirements.");
 
     return { list, apsNeeded, apsList };
   }
@@ -863,7 +866,10 @@ const Engine = (() => {
       ["livingSetting", "living setting"], ["mobility", "mobility"], ["pendingTests", "pending-care status"],
       ["recentHospitalization", "hospitalization status"], ["recentSurgery", "surgery status"], ["activeSymptom", "symptom status"],
       ["age", "age"], ["faceAmount", "face amount"], ["existingCoverage", "existing coverage"], ["policyPurpose", "policy purpose"],
-      ["replacement", "replacement status"], ["financing", "premium financing status"], ["marijuana", "marijuana use"]
+      ["replacement", "replacement status"], ["financing", "premium financing status"], ["marijuana", "marijuana use"],
+      ["paroleCurrent", "probation/parole status (current)"], ["parolePast", "probation/parole history"],
+      ["aviation", "aviation exposure"], ["hazardousSports", "hazardous sports"], ["foreignTravel", "foreign travel"],
+      ["ownership", "coverage ownership"], ["premiumPayor", "premium payor"]
     ];
     for (const [k, label] of checks) {
       total++;
@@ -921,7 +927,7 @@ const Engine = (() => {
       const yr = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
       if (yr === null || yr < drugDeclineYears) declineHits.push("drug_use_recent");
     }
-    if (isYes(d.criminalActive)) declineHits.push("criminal_active");
+    if (isYes(d.criminalActive) || isYes(d.paroleCurrent)) declineHits.push("criminal_active");
     if (isYes(d.bankruptcyActive)) declineHits.push("bankruptcy_active");
     const func = evalFunctional(d);
     if (func.flag === "adl_dependence") declineHits.push("adl_dependence", "facility_care");
@@ -1033,9 +1039,14 @@ const Engine = (() => {
 
     /* Hazardous occupation / avocation (carrier-published class criteria,
        e.g., MOO: PP no hazardous activity in 5 years, P in 2 years,
-       Standard Plus allows flat extras; F&G: Preferred + flat-extra rating). */
+       Standard Plus allows flat extras; F&G: Preferred + flat-extra rating).
+       Any of the hazardous-occupation / aviation / hazardous-sports answers
+       being "yes" triggers the avocation lane; all three must be explicitly
+       "no" for a clean avocation reading. */
     if (rules.avocation) {
-      if (d.occupationHazardous === "yes") {
+      const hazYes = isYes(d.occupationHazardous) || isYes(d.aviation) || isYes(d.hazardousSports);
+      const hazNo = isNo(d.occupationHazardous) && isNo(d.aviation) && isNo(d.hazardousSports);
+      if (hazYes) {
         const fe = rules.avocation.flatExtra;
         if (fe) {
           // Flat-extra lane: the base class is the best class available with a
@@ -1047,7 +1058,7 @@ const Engine = (() => {
           // (e.g., National Life: Verified Standard pending underwriter review).
           domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
         }
-      } else if (d.occupationHazardous === "no") {
+      } else if (hazNo) {
         domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
       } else {
         domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
@@ -1096,6 +1107,16 @@ const Engine = (() => {
       // Preferred Tobacco (per Banner), so cap at Standard Tobacco when table-rated.
       if (final === "table") final = "standard";
       out.tobaccoClass = true;
+    }
+    // Foresters publishes Tobacco Plus (nicotine within the past year AND all
+    // Preferred Plus criteria; <= 1 pack per day for cigarettes). Heavier use,
+    // or any nicotine product above that threshold, cannot claim Tobacco Plus
+    // and lands in Standard Tobacco instead.
+    if (nic.tobacco && carrierId === "foresters" && final === "preferred_plus") {
+      const amt = d.nicotineAmount === "" || d.nicotineAmount === undefined || d.nicotineAmount === null ? NaN : Number(d.nicotineAmount);
+      const heavy = d.nicotineProduct === "cigarette" && !isNaN(amt) && amt > 20;
+      if (heavy) final = "standard";
+      else out.tobaccoPlus = true;
     }
     if (nic.klass && nic.klass !== "tobacco" && !nic.tobacco) {
       // nicotine lookback can cap NT class below other domains
@@ -1163,6 +1184,9 @@ const Engine = (() => {
     if (meds.undisclosed && meds.undisclosed.length) flags.push("undisclosed_meds");
     if (final === "manual_review") flags.push("manual_review");
     if (out.flatExtra) flags.push("flat_extra");
+    // Past (not current) probation/parole is a review item, not an automatic
+    // decline — carriers weigh recency and offense severity.
+    if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) flags.push("criminal_history");
 
     // evidence flags
     const ev = evidenceNeeded(rules, d, condIds);
@@ -1182,7 +1206,7 @@ const Engine = (() => {
       // last 6 months (no internal lapse/replacement within 2 years). Other
       // carriers' AU lanes are unchanged until their guides publish similar
       // conditions.
-      if (rules.financial && rules.financial.auExcludesReplacement && (d.replacement === "yes" || d.financing === "yes")) {
+      if (rules.financial && rules.financial.auExcludesReplacement && (d.replacement === "yes" || d.financing === "yes" || d.premiumPayor === "third_party" || d.premiumPayor === "financed")) {
         ev.list.push("Premium financing or a recent replacement disclosed — accelerated underwriting not available; standard underwriting applies.");
       } else {
         flags.push("accelerated_uw_possible");
