@@ -302,8 +302,11 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 /* Cross-carrier comparison table */
 .compare-table th:first-child, .compare-table td:first-child { min-width: 170px; }
 .compare-table td { font-size: 12.5px; }
-.compare-table tr.compare-row { cursor: default; }
+.compare-table tbody tr { cursor: pointer; transition: background .15s ease; }
+.compare-table tbody tr:hover { background: #eef7f3; }
+.compare-table tbody tr:hover .klass-chip { transform: scale(1.04); }
 .compare-table tr.compare-current { background: #f0faf6; outline: 2px solid #0e7a5f; outline-offset: -2px; }
+.compare-table tr.compare-current:hover { background: #e4f4ec; }
 .compare-version { font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
 #btn-compare.btn-compare {
   background: #0e7a5f; color: #fff; border: none; font-weight: 700;

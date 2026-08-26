@@ -840,7 +840,13 @@ const App = (() => {
     rows.forEach(row => {
       const rules = CARRIER_RULES[row.id];
       const cn = compareClassName(row.out, rules);
-      const tr = el("tr", { class: row.id === state.carrier ? "compare-current" : "compare-row" });
+      const isCurrent = row.id === state.carrier;
+      // Clicking a row switches the results page to that carrier's full estimate.
+      const tr = el("tr", {
+        class: isCurrent ? "compare-current" : "compare-row",
+        title: isCurrent ? "Current carrier — full estimate shown below" : "Open this carrier's full estimate",
+        onclick: () => switchCarrier(row.id)
+      });
       tr.appendChild(el("td", { style: "font-weight:600" }, [rules.name, el("div", { class: "compare-version" }, rules.guide.version)]));
       tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
       tr.appendChild(el("td", {}, compareLimiting(row)));
@@ -853,7 +859,7 @@ const App = (() => {
 
     const note = el("div", { class: "note-box" });
     note.appendChild(el("strong", {}, "How to read this: "));
-    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
+    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. Click any row to switch the full estimate below to that carrier; the highlighted row is the one currently shown. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
     wrap.appendChild(note);
     return wrap;
   }
@@ -1140,6 +1146,23 @@ const App = (() => {
     const anchor = $("#results-actions");
     resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
     wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /* Switch the results page to another carrier's full estimate, keeping the
+     comparison open (re-rendered) so the new row is highlighted. */
+  function switchCarrier(id) {
+    if (id === state.carrier) return;
+    const keepOpen = !!document.getElementById("comparison");
+    state.carrier = id;
+    saveState();
+    $("#carrier-badge").textContent = CARRIER_RULES[id].name;
+    runEstimate(); // re-renders the results box, destroying the comparison card
+    if (keepOpen) {
+      const wrap = renderComparison(runComparison());
+      const resultsBox = $("#results-content");
+      const anchor = $("#results-actions");
+      resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
+    }
   }
 
   function questionnaireNames(conditions) {

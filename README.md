@@ -20,8 +20,8 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 **Run estimate** produces the case-triage page, which can be printed or saved as PDF. From the results page,
 **Compare across carriers** runs the same applicant profile through every carrier ruleset side by side — each
 carrier's estimated class, limiting factors/gates, evidence highlights, and financial outcome — with the
-currently selected carrier highlighted; the current carrier's row is re-computed from the same answers each
-time (toggle to collapse).
+currently selected carrier highlighted; clicking any row switches the full estimate below to that carrier
+(the comparison stays open, re-highlighted, so you can click through carriers). Toggle to collapse.
 
 ## The interview
 
