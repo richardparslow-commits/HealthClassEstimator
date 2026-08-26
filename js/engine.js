@@ -85,9 +85,25 @@ const Engine = (() => {
     if (lookupHeight < rules.build.rules.minHeightIn || lookupHeight > rules.build.rules.maxHeightIn) {
       return { klass: "manual_review", flags: [...flags, "manual_review"], detail: `Height outside the carrier build chart (${rules.build.rules.minHeightIn}"-${rules.build.rules.maxHeightIn}"). Manual underwriting review required.` };
     }
-    const band = chart[lookupHeight];
-    if (!band) {
+    const rawBand = chart[lookupHeight];
+    if (!rawBand) {
       return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "Height not found in build chart." };
+    }
+    // Sex-specific chart shape (e.g., F&G Quantum: male/female Preferred & Standard
+    // columns plus sex-neutral adult minimum and Table D maximum weights).
+    let band = rawBand;
+    if (rawBand.male || rawBand.female) {
+      const sexKey = d.sex === "female" ? "female" : "male";
+      band = Object.assign({}, rawBand, rawBand[sexKey]);
+      band._sex = sexKey;
+    }
+    // Carrier age-based threshold adjustment (e.g., F&G: ages 51-60 add 5 lb)
+    const ageNow = d.age ? Number(d.age) : null;
+    const ageAddLbs = rules.build.rules.ageAddLbs;
+    if (ageAddLbs && ageNow !== null && ageNow >= ageAddLbs.ageMin && ageNow <= ageAddLbs.ageMax) {
+      ["pp", "p", "sp", "stdCredit", "std", "tableMax", "min"].forEach(k => {
+        if (band[k] !== undefined) band[k] += ageAddLbs.add;
+      });
     }
 
     let adjustedWeight = Number(d.weightLb);
@@ -108,7 +124,7 @@ const Engine = (() => {
     const bmi = adjustedWeight / (lookupHeight * lookupHeight) * 703;
     const bmiLow = bmi < rules.build.rules.belowChartMin;
 
-    const chartMin = rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89;
+    const chartMin = band.min !== undefined ? band.min : (rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89);
     let klass = null;
     let bandName = "";
     let tableRating = null;
@@ -139,9 +155,15 @@ const Engine = (() => {
         klass = "table";
         bandName = `Table ${tableHit.table}`;
         tableRating = tableHit.table;
+      } else if (band.tableMax !== undefined && adjustedWeight <= band.tableMax) {
+        // Carrier publishes a substandard ceiling instead of a table ladder
+        // (e.g., F&G Quantum: substandard through Table D/200%).
+        klass = "table";
+        bandName = "substandard (Table A-D / 200%)";
+        tableRating = "A-D";
       } else {
         klass = "substandard_review";
-        bandName = "above the highest published table";
+        bandName = "above the highest published weight";
         flags.push("substandard_build", "manual_review");
       }
     }
@@ -155,7 +177,7 @@ const Engine = (() => {
       bmiLow,
       weightNote,
       flags,
-      detail: `${bandName} band at ${lookupHeight}" (raw height ${rawHeight}", rounded up). ${weightNote}`
+      detail: `${bandName} band at ${lookupHeight}" (raw height ${rawHeight}", rounded up)${band._sex ? ", " + band._sex + " chart" : ""}. ${weightNote}`
     };
   }
 
@@ -255,6 +277,11 @@ const Engine = (() => {
     let klass = null;
     const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
     for (const k of order) {
+      // Skip classes the carrier does not publish (a missing class must not
+      // pass through as if it had no thresholds)
+      const hasTotalBand = rules.cholesterol.total ? rules.cholesterol.total[k] !== undefined : false;
+      const hasRatioBand = rules.cholesterol.ratio ? rules.cholesterol.ratio[k] !== undefined : false;
+      if (!hasTotalBand && !hasRatioBand) continue;
       let ok = true;
       const totalBand = ageBand(rules.cholesterol.total ? rules.cholesterol.total[k] : null, age);
       // totalBand may be a plain number (Banner/Transamerica) or {max} (Foresters band)
@@ -368,8 +395,9 @@ const Engine = (() => {
           const onset = has(c, "onsetAge") ? Number(c.onsetAge) : null;
           const a1c = has(c, "a1c") ? Number(c.a1c) : null;
           const dm = rules.diabetes || null;
-          if (a1c !== null && a1c > 10) {
-            decline.push({ id: c.id, text: `Diabetes A1c ${a1c} > 10 — decline/postpone screen.` });
+          // Carrier may publish a stricter A1c decline threshold (e.g., F&G: A1c 7 or above within the last year)
+          if (a1c !== null && (dm && dm.a1cDeclineMin !== undefined ? a1c >= dm.a1cDeclineMin : a1c > 10)) {
+            decline.push({ id: c.id, text: `Diabetes A1c ${a1c} ${dm && dm.a1cDeclineMin !== undefined ? "≥ " + dm.a1cDeclineMin : "> 10"} — decline/postpone screen.` });
             ceiling = "decline";
           } else if (c.complications === "yes") {
             decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
@@ -411,9 +439,13 @@ const Engine = (() => {
           ceiling = "preferred_plus";
         } else if (meta.id === "other_cancer") {
           const cm = rules.conditionModels && rules.conditionModels.other_cancer;
+          const resolvedYears = c.resolvedYears !== "" && c.resolvedYears !== null && c.resolvedYears !== undefined ? Number(c.resolvedYears) : null;
           if (c.recurrence) { postpone.push({ id: c.id, text: "Cancer recurrence — contact underwriting before submitting." }); ceiling = "postpone"; }
-          else if (cm && cm.waitYears && c.resolvedYears !== "" && c.resolvedYears !== null && c.resolvedYears !== undefined && Number(c.resolvedYears) < cm.waitYears) {
-            postpone.push({ id: c.id, text: `Cancer resolved only ${c.resolvedYears} years ago — carrier wait-out is ${cm.waitYears} years.` }); ceiling = "postpone";
+          else if (cm && cm.declineWithinYears && resolvedYears !== null && resolvedYears < cm.declineWithinYears) {
+            decline.push({ id: c.id, text: `Cancer resolved only ${resolvedYears} years ago — within the carrier's ${cm.declineWithinYears}-year decline window.` }); ceiling = "decline";
+          }
+          else if (cm && cm.waitYears && resolvedYears !== null && resolvedYears < cm.waitYears) {
+            postpone.push({ id: c.id, text: `Cancer resolved only ${resolvedYears} years ago — carrier wait-out is ${cm.waitYears} years.` }); ceiling = "postpone";
           }
           else if (c.treatedWithin12mo) { postpone.push({ id: c.id, text: "Cancer diagnosed/treated within 12 months — contact underwriting before submitting." }); ceiling = "postpone"; }
           else if (cm && cm.afterCeiling) ceiling = cm.afterCeiling;
@@ -509,7 +541,7 @@ const Engine = (() => {
 
   /* ---------- substance / lifestyle ----------------------------------- */
 
-  function evalSubstance(d) {
+  function evalSubstance(rules, d) {
     if (!has(d, "alcoholConcern") && !has(d, "drugAbuse")) {
       return { klass: null, missing: true, detail: "Substance history not provided." };
     }
@@ -520,13 +552,21 @@ const Engine = (() => {
       if (years === null) {
         return { klass: "decline", detail: "Drug abuse disclosed with no recovery duration — treat as decline screen pending details." };
       }
-      if (years < 3) {
-        return { klass: "decline", detail: `Non-marijuana drug use within ${years} years — Banner decline/postpone screen.` };
+      const declineYears = (rules && rules.drugDeclineYears) || 3;
+      if (years < declineYears) {
+        return { klass: "decline", detail: `Non-marijuana drug use within ${years} years — decline/postpone screen (carrier window: ${declineYears} years).` };
       }
-      // Banner class requirements: no abuse in past 7 years (Standard/Standard Plus), 10 years (Preferred)
-      if (years < 7) klass = worstOf(klass, "table");
-      else if (years < 10) klass = worstOf(klass, "standard_plus");
-      else klass = worstOf(klass, "preferred");
+      if (rules && rules.drugRecoveryTiers) {
+        // carrier-published recovery ladder (e.g., F&G: beyond 5 years -> Standard)
+        let k = null;
+        for (const t of rules.drugRecoveryTiers) { if (years >= t.minYears) { k = t.klass; break; } }
+        klass = worstOf(klass, k || "standard");
+      } else {
+        // Banner class requirements: no abuse in past 7 years (Standard/Standard Plus), 10 years (Preferred)
+        if (years < 7) klass = worstOf(klass, "table");
+        else if (years < 10) klass = worstOf(klass, "standard_plus");
+        else klass = worstOf(klass, "preferred");
+      }
       details.push(`Drug abuse history ${years} yr ago — recovery duration reviewed.`);
     }
     if (d.alcoholConcern === "active") {
@@ -679,7 +719,17 @@ const Engine = (() => {
     const face = d.faceAmount ? Number(d.faceAmount) : null;
     const hasAmtRules = (rules.evidence.amountRules || []).length > 0;
 
-    if (!hasAmtRules) {
+    if (hasAmtRules) {
+      // Carrier-published age/amount evidence grid (e.g., Mutual of Omaha p. 16-17)
+      for (const ar of rules.evidence.amountRules) {
+        if (age !== null && face !== null && age >= ar.ageMin && age <= ar.ageMax && face >= ar.amountMin && (ar.amountMax === undefined || face <= ar.amountMax)) {
+          ar.items.forEach(i => { if (!list.includes(i)) list.push(i); });
+        }
+      }
+    } else if (rules.evidence.genericGrid !== false) {
+      // Default age/amount grid (Banner-flavored); carriers that publish no
+      // exam grid (e.g., F&G Quantum, underwritten from electronic databases)
+      // set genericGrid: false and add their own lines on the results page.
       if (age !== null && age > 60) list.push("APS (always required over age 60)");
       if (age !== null && age >= 71) list.push("Daily Activities Questionnaire");
       if (face !== null) {
@@ -690,13 +740,6 @@ const Engine = (() => {
         if (age !== null && age > 60 && face > 250000) list.push("ProBNP");
         if (age !== null && age >= 50 && d.sex === "male") list.push("PSA");
         if (age !== null && age > 50) list.push("CEA");
-      }
-    } else {
-      // Carrier-published age/amount evidence grid (e.g., Mutual of Omaha p. 16-17)
-      for (const ar of rules.evidence.amountRules) {
-        if (age !== null && face !== null && age >= ar.ageMin && age <= ar.ageMax && face >= ar.amountMin && (ar.amountMax === undefined || face <= ar.amountMax)) {
-          ar.items.forEach(i => { if (!list.includes(i)) list.push(i); });
-        }
       }
     }
 
@@ -779,8 +822,9 @@ const Engine = (() => {
     const declineHits = [];
     if (d.alcoholConcern === "active") declineHits.push("alcohol_active");
     if (d.drugAbuse === "yes") {
+      const drugDeclineYears = rules.drugDeclineYears || 3;
       const yr = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
-      if (yr === null || yr < 3) declineHits.push("drug_use_recent");
+      if (yr === null || yr < drugDeclineYears) declineHits.push("drug_use_recent");
     }
     if (isYes(d.criminalActive)) declineHits.push("criminal_active");
     if (isYes(d.bankruptcyActive)) declineHits.push("bankruptcy_active");
@@ -876,7 +920,7 @@ const Engine = (() => {
     const meds = evalMedications(rules, d);
     domains.medications = meds;
 
-    const sub = evalSubstance(d);
+    const sub = evalSubstance(rules, d);
     domains.substance = sub;
 
     /* Hazardous occupation / avocation (carrier-published class criteria,
@@ -884,7 +928,9 @@ const Engine = (() => {
        Standard Plus allows flat extras). */
     if (rules.avocation) {
       if (d.occupationHazardous === "yes") {
-        domains.avocation = { klass: "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
+        // Carrier may allow preferred classes with a flat extra (e.g., F&G) or cap
+        // below preferred (e.g., MOO caps at Standard Plus where flat extras are allowed).
+        domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
       } else if (d.occupationHazardous === "no") {
         domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
       } else {
@@ -1014,6 +1060,12 @@ const Engine = (() => {
     /* ---- 7. Financial -------------------------------------------- */
     out.financial = evalFinancial(rules, d);
     if (out.financial && out.financial.ok === false) out.flags.push("financial_review");
+    if (rules.financial && rules.financial.maxFace && d.faceAmount && Number(d.faceAmount) > rules.financial.maxFace) {
+      out.flags.push("financial_review");
+      out.financial = out.financial || {};
+      out.financial.maxFaceExceeded = true;
+      out.financial.detail = (out.financial.detail ? out.financial.detail + " " : "") + `Face amount ${Number(d.faceAmount).toLocaleString()} exceeds the carrier's ${rules.financial.maxFace.toLocaleString()} maximum — another product is required.`;
+    }
 
     /* ---- 8. Comorbidity flags ------------------------------------- */
     out.comorbidityFlags = med.combos || [];

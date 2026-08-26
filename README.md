@@ -23,7 +23,7 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, or Mutual of Omaha), age, sex, state, occupation, hazardous duties
+1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, or F&G Quantum), age, sex, state, occupation, hazardous duties
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
 3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception, marijuana
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
@@ -80,6 +80,7 @@ justification against income multipliers, and the mandatory guardrails.
 | **Foresters** (secondary) | Preferred Plus / Preferred / Standard Plus / Standard NT, Tobacco Plus, age-band BP & cholesterol ceilings, build charts, family-history and driving rules, non-medical eligibility screens and impairment declines | *Underwriting Guide — Your Term, Advantage Plus II, Strong Foundation and SMART UL*, 506305 US (04/26) |
 | **Transamerica** (secondary) | Trendsetter Super / Trendsetter LB, FFIUL II/IUL, FCIUL II/IUL: Preferred Plus/Preferred Elite, Preferred, Standard Plus, Standard NT + tobacco equivalents; sex-neutral blended BMI chart (age bands, Table A–H, decline ≤16/>46); age-band BP & cholesterol/HDL ceilings; driving, family-history and substance tiers; impairment-table declines | *A Field Guide to Underwriting* (Trendsetter Super/LB, IULs), 03/25 |
 | **Mutual of Omaha** (secondary) | United of Omaha term & permanent: Preferred Plus / Preferred / Standard Plus / Standard NT + Preferred Tobacco; unisex height/weight build chart with published table bands (Table 1 +25 lb through Table 12 +300 lb); BP (<140/85, <145/90, <150/90) & cholesterol ratio (5.0/6.0/7.0, total ≤300) class criteria; family history disregarded at 60+; impairment-table ranges and declines; alcohol/drug 15/10/5-year class tiers; age/amount evidence grid; income multipliers 25X/20X/15X/10X/7X; Fit table-credit program noted, not auto-applied | *Underwriting Guidelines — Life Insurance (Brokerage), For Term and Permanent Products*, 417212_0120 (Jan 2020) |
+| **F&G Quantum** (secondary) | Fidelity & Guaranty Life, ages 0-60, $50K-$1M face: Preferred Non-Tobacco (no tobacco 2 yrs) / Non-Tobacco (1 yr) + Preferred Tobacco / Tobacco; sex-specific build chart with age add-lbs (51-60) and Table D 200% ceiling; BP & cholesterol by age band (treatment allowed if 2-yr averages meet parameters); driving (≤2 violations, no DUI 5 yrs); family (≤1 early coronary/cancer death); electronic-database underwriting (MIB, RX/lab/medical claims) with no paramedical; strict decline lists (cancer within 10 yrs, diabetes A1c 7+, drug use within 5 yrs, etc.); premium-to-income by net worth; $1M total-coverage cap | *Underwriting Guidelines — F&G Quantum*, ADV5691 (07-2025) |
 
 Rules live as **data** in `js/rules.js` (carrier, guide version, effective date, risk domain, thresholds,
 outcomes) so carrier updates can be made without touching engine code. The engine (`js/engine.js`) is
@@ -88,7 +89,9 @@ the life engine — LTC is a separate product silo evaluating ADL/IADL and long-
 Transamerica's build rule is a **blended BMI chart** (sex-neutral), so the engine scores build by BMI with
 age bands for that carrier rather than a height/weight lookup. Mutual of Omaha's build chart is a **unisex
 height/weight chart with published table ratings**, so the engine reads the table ladder directly (above
-Standard, build alone can support Table 1 through Table 12).
+Standard, build alone can support Table 1 through Table 12). F&G Quantum uses a **sex-specific build chart**
+(Preferred/Standard columns, +5 lb at ages 51-60) with a Table D (200%) substandard ceiling, and its classes
+map onto the normalized model as Preferred Non-Tobacco → preferred_plus and Non-Tobacco → standard.
 
 ## Outcome logic
 
@@ -124,6 +127,11 @@ Standard, build alone can support Table 1 through Table 12).
 - `Mutual-of-Omaha-Field-Underwriting-Guide.pdf` — Mutual of Omaha / United of Omaha brokerage guide (Jan 2020)
 - `life_underwriting_carrier_research_checklist_and_schema.pdf` — carrier research checklist + normalized schema
 - `Conduct an exhaustive search for underwriting guidelines.pdf` — medication-limitation research notes
+- `ADV5691 Quantum Field Underwriting Guide 25-0814.pdf` — F&G Quantum (Fidelity & Guaranty Life) guide (07-2025)
+- AMAM simplified-issue agent guides — `AMAM_EXPRESS TERM`, `AMAM_HOME CERTAINTY`, `AMAM Term Made Simple`,
+  `AMAM_DIGNITY SOLUTIONS` (final expense), `AMAM QSFP Prescription Reference Guide` (scanned — no extractable
+  text). These are **simplified-issue product lanes** (Express Term, Home Certainty, Term Made Simple, Dignity
+  Solutions) rather than fully underwritten life; they are noted but not wired into the fully-underwritten engine.
 - `LTC-Underwriting-Guide-June-2025.pdf` (kept in its own product silo)
 
 ## Project layout
@@ -131,7 +139,7 @@ Standard, build alone can support Table 1 through Table 12).
 ```
 index.html          App shell
 css/styles.css      Styling (screen + print)
-js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha), medication dictionary, sources, class metadata
+js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
 ```
@@ -141,7 +149,7 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 103 scenario checks across all four carriers
+node /tmp/engine_test.js   # 139 scenario checks across all five carriers
 ```
 
 Then open `index.html` and walk a sample case through to the estimate.

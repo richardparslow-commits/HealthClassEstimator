@@ -375,7 +375,7 @@ const App = (() => {
     c.appendChild(el("p", { class: "card-sub" }, "Carrier selection picks the underwriting ruleset used for the estimate."));
 
     const r1 = el("div", { class: "field-row" });
-    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, and Mutual of Omaha are additional carrier mappings."));
+    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, Mutual of Omaha, and F&G Quantum are additional carrier mappings."));
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
     r1.appendChild(field("Sex", radioPill("sex", [["male", "Male"], ["female", "Female"]])));
     c.appendChild(r1);
@@ -974,6 +974,15 @@ const App = (() => {
         evUl.appendChild(el("li", {}, "Statement of Policyowner Intent + Premium Funding & Acknowledgement form required (age 65+, $1,000,000+)."));
       }
       if (Number(state.faceAmount || 0) > 5000000) evUl.appendChild(el("li", {}, "Tax returns and 3rd-party verified financials may be required above $5,000,000."));
+    } else if (out.carrier === "F&G Quantum") {
+      evUl.appendChild(el("li", {}, "Quantum underwrites from the application plus electronic databases — MIB on all applications; RX, lab and medical-claims history; ID verification tools; MVR and phone interviews as needed."));
+      evUl.appendChild(el("li", {}, "A paramedical exam will not improve the rate class."));
+      evUl.appendChild(el("li", {}, "Complete prescription list with the reason for each medication is required on the application — incomplete medication details can delay approval or cause a decline."));
+      if (Number(state.faceAmount || 0) > 1000000) {
+        evUl.appendChild(el("li", {}, "Total in-force + applied-for coverage over $1,000,000 requires application and underwriting on another product."));
+      }
+      evUl.appendChild(el("li", {}, "No internal or external replacements are allowed."));
+      if (age !== null && age < 18) evUl.appendChild(el("li", {}, "Juvenile: up to 50% of the parent's coverage, maximum $1,000,000 per primary insured; growth-chart build applies."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));
