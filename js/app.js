@@ -931,8 +931,13 @@ const App = (() => {
 
   function renderComparison(rows) {
     const wrap = el("div", { id: "comparison", class: "card" });
-    wrap.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
-    wrap.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
+    const head = el("div", { class: "compare-head" });
+    const headTxt = el("div", {});
+    headTxt.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
+    headTxt.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
+    head.appendChild(headTxt);
+    head.appendChild(el("a", { class: "btn btn-cta", href: "https://lifeinsurancebrokeradvocate.com/contact", target: "_blank", rel: "noopener noreferrer" }, "Contact your broker advocate →"));
+    wrap.appendChild(head);
 
     /* Prominent primary-carrier panel — same treatment as the applicant step.
        Switching here re-runs the estimate and re-renders the table with the

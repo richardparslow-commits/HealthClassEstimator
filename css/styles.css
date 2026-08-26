@@ -530,6 +530,30 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .footer-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .footer-links a:hover { color: var(--navy); }
 
+/* ---- Comparison header + contact CTA -------------------------------- */
+.compare-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.compare-head h2 { margin-bottom: 6px; }
+.btn-cta {
+  display: inline-block;
+  background: linear-gradient(135deg, #b8860b, #d9a520);
+  color: #fff;
+  border-radius: 9px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(184, 134, 11, .35);
+  transition: filter .12s ease, transform .12s ease;
+}
+.btn-cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
 /* ---- Buttons --------------------------------------------------------- */
 .btn {
   border: none;
