@@ -375,7 +375,7 @@ const App = (() => {
     c.appendChild(el("p", { class: "card-sub" }, "Carrier selection picks the underwriting ruleset used for the estimate."));
 
     const r1 = el("div", { class: "field-row" });
-    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"], ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, Mutual of Omaha, F&G Quantum, and F&G Pathsetter are additional carrier mappings."));
+    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"], ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"], ["national_life", "National Life Group (NL / LSW)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, and National Life Group are additional carrier mappings."));
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
     r1.appendChild(field("Sex", radioPill("sex", [["male", "Male"], ["female", "Female"]])));
     c.appendChild(r1);
@@ -995,6 +995,16 @@ const App = (() => {
       }
       if (age !== null && age < 18) evUl.appendChild(el("li", {}, "Juvenile: up to 50% of the parent's coverage, maximum $1,000,000 per primary insured; growth-chart build applies."));
       evUl.appendChild(el("li", {}, "Applicants who do not qualify for Preferred or Standard may be approved at Express Standard rates without medical requirements."));
+    } else if (out.carrier === "National Life Group") {
+      if (age !== null && age <= 65 && Number(state.faceAmount || 0) <= 250000) {
+        evUl.appendChild(el("li", {}, "Streamlined Underwriting applies (face $250,000 or less, age 65 and under) — MIB, prescription database and MVR; no medical testing. Verified Standard / Express Standard NT / Standard Tobacco classes."));
+      } else if (age !== null && age <= 60 && Number(state.faceAmount || 0) <= 1000000) {
+        evUl.appendChild(el("li", {}, "EZ-Underwriting accelerated lane may apply (ages 18-60, through $1,000,000; ages 61-65 through $250,000) — MIB, Milliman IntelliScript prescription database, LexisNexis Risk Classifier; best class may be available without medical requirements."));
+      }
+      if (age !== null && age >= 70) evUl.appendChild(el("li", {}, "Mature Assessment + EKG + blood/urine required at age 70+; APS on all amounts."));
+      if (Number(state.faceAmount || 0) >= 2000000) evUl.appendChild(el("li", {}, "Face over $2,000,000: APS + Personal Financial Questionnaire (form 1392) + Electronic Inspection Report required."));
+      if (Number(state.faceAmount || 0) >= 5000000) evUl.appendChild(el("li", {}, "Face over $5,000,000: EKG added; income verification (4506T/W2/1099); third-party verified financials (age 70+ at $5M+, all ages at $10M+)."));
+      if (age !== null && age >= 60) evUl.appendChild(el("li", {}, "Age 60+ requires routine health care with a physical within the last 24 months — otherwise declined."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));

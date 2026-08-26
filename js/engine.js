@@ -160,7 +160,7 @@ const Engine = (() => {
       }
       if (tableHit) {
         klass = "table";
-        bandName = `Table ${tableHit.table}`;
+        bandName = tableHit.label || `Table ${tableHit.table}`;
         tableRating = tableHit.table;
       } else if (band.tableMax !== undefined && adjustedWeight <= band.tableMax) {
         // Carrier publishes a substandard ceiling instead of a table ladder
@@ -408,6 +408,11 @@ const Engine = (() => {
             ceiling = "decline";
           } else if (c.complications === "yes") {
             decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
+            ceiling = "decline";
+          } else if (dm && dm.juvenileOnsetDeclineAge && onset !== null && onset < dm.juvenileOnsetDeclineAge) {
+            // Carrier-published juvenile-onset decline (e.g., National Life:
+            // diabetes diagnosed prior to age 20 is on the uninsurable list).
+            decline.push({ id: c.id, text: `Juvenile-onset diabetes (diagnosed at age ${onset}, before ${dm.juvenileOnsetDeclineAge}) — decline.` });
             ceiling = "decline";
           } else if (dm) {
             // carrier-published type model (e.g., MOO: Type 1 -> Table 2-8, Type 2 -> Standard-Table 8)

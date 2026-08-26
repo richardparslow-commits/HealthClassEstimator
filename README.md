@@ -23,7 +23,7 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, or F&G Pathsetter), age, sex, state, occupation, hazardous duties
+1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
 3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception, marijuana
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
@@ -82,6 +82,7 @@ justification against income multipliers, and the mandatory guardrails.
 | **Mutual of Omaha** (secondary) | United of Omaha term & permanent: Preferred Plus / Preferred / Standard Plus / Standard NT + Preferred Tobacco; unisex height/weight build chart with published table bands (Table 1 +25 lb through Table 12 +300 lb); BP (<140/85, <145/90, <150/90) & cholesterol ratio (5.0/6.0/7.0, total ≤300) class criteria; family history disregarded at 60+; impairment-table ranges and declines; alcohol/drug 15/10/5-year class tiers; age/amount evidence grid; income multipliers 25X/20X/15X/10X/7X; Fit table-credit program noted, not auto-applied | *Underwriting Guidelines — Life Insurance (Brokerage), For Term and Permanent Products*, 417212_0120 (Jan 2020) |
 | **F&G Quantum** (secondary) | Fidelity & Guaranty Life, ages 0-60, $50K-$1M face: Preferred Non-Tobacco (no tobacco 2 yrs) / Non-Tobacco (1 yr) + Preferred Tobacco / Tobacco; sex-specific build chart with age add-lbs (51-60) and Table D 200% ceiling; BP & cholesterol by age band (treatment allowed if 2-yr averages meet parameters); driving (≤2 violations, no DUI 5 yrs); family (≤1 early coronary/cancer death); electronic-database underwriting (MIB, RX/lab/medical claims) with no paramedical; strict decline lists (cancer within 10 yrs, diabetes A1c 7+, drug use within 5 yrs, etc.); premium-to-income by net worth; $1M total-coverage cap | *Underwriting Guidelines — F&G Quantum*, ADV5691 (07-2025) |
 | **F&G Pathsetter** (secondary) | Fidelity & Guaranty Life IUL, ages 0-80: same non-tobacco class structure (Preferred NT 2 yrs / NT 1 yr) + tobacco classes + Express Standard fallback lane; sex-specific build chart with **two age add-lbs steps** (+5 lb at 51-65, +10 lb at 66+) and Table H 300% ceiling; BP (150/90→160/95 by age band, Std 155/95→165/95) & cholesterol (260/280/300 by age band, ratio 7/8); driving & family rules identical to Quantum; Exam-Free Underwriting ages 0-60 through $1M (electronic databases, no paramed), paramed + HOS/blood + EKG above; APS thresholds by age/amount; income multipliers 30X/25X/15X/10X/5X; premium-to-income by net worth; $1M non-working-spouse cap; large-case rules at $2M+ | *F&G Pathsetter Agent Guide* (IUL; impairment specifics per F&G standards, ADV5691 07-2025) |
+| **National Life Group** (secondary) | National Life Insurance Co / LSW term, whole life & IUL (Flex Life II, Term, TotalSecure, Protector Life, Peaklife): Elite (no tobacco 60 mo) / Preferred (36 mo) / Select (12 mo) / Verified Standard NT + Preferred/Standard/Express Standard Tobacco; six-column unisex height/weight chart (Elite BMI 18.5-27.1 through Express Standard 2 42.5-46.5 — substandard to 200% = Express Std NT 1, 225-300% = Express Std NT 2); BP 135/85 → 140/90 → 150/90; cholesterol total 260/280/300 with ratio 4.5/5.5/6.5 (5.0/6.0/7.0 at 65+); driving ≤1/2/3 violations + no reckless/alcohol 5 yr, no suspension 3 yr; family history disregarded at 65+ (one parent death → Select); uninsurable list (juvenile-onset diabetes <20, A1c 10+, current cancer treatment/internal organ within 3-5 yr, HIV, dementia, cirrhosis, dialysis, transplant, severe COPD, alcohol tx <2 yr, drug use <3 yr); age 60+ requires a physical within 24 months; three lanes (full medical, Streamlined ≤$250K/65-, EZ-Underwriting 18-60 ≤$1M); income multipliers 40X/35X/25X/15X/10X/5X (earned income only, not applicable 70+) | *Life Insurance Underwriting Guide*, TC102228(0319)P (March 2019) |
 
 Rules live as **data** in `js/rules.js` (carrier, guide version, effective date, risk domain, thresholds,
 outcomes) so carrier updates can be made without touching engine code. The engine (`js/engine.js`) is
@@ -96,7 +97,11 @@ map onto the normalized model as Preferred Non-Tobacco → preferred_plus and No
 F&G Pathsetter shares the same chart numbers but applies **two age add-lbs steps** (+5 lb at 51-65, +10 lb at
 66+) with a Table H (300%) ceiling, and BP/cholesterol bands extend to 66+; its impairment specifics follow
 F&G company standards and reuse the Quantum medical lists by reference. The engine's build path now supports
-multi-step age adjustments and a data-driven table-ceiling label.
+multi-step age adjustments and a data-driven table-ceiling label. National Life Group uses a **six-column unisex
+height/weight chart** where the Express Standard 1/2 columns are substandard rate classes (to 200% and 225-300%),
+so the engine's build table ladder now carries per-band labels; its family history is disregarded at age 65+, and
+diabetes diagnosed before age 20 is a published decline (the engine gained a carrier `juvenileOnsetDeclineAge`
+hook). National Life also illustrates the guide's three underwriting lanes (full medical, Streamlined, EZ).
 
 ## Outcome logic
 
@@ -134,6 +139,14 @@ multi-step age adjustments and a data-driven table-ceiling label.
 - `Conduct an exhaustive search for underwriting guidelines.pdf` — medication-limitation research notes
 - `ADV5691 Quantum Field Underwriting Guide 25-0814.pdf` — F&G Quantum (Fidelity & Guaranty Life) guide (07-2025); `2026 F&G Quantum Underwriting Guidleines.pdf` is the same document (byte-identical)
 - `F&G Pathsetter Agent Guide.pdf` — F&G Pathsetter IUL field underwriting guide
+- `Underwriting Guide 0319.pdf` — National Life Group (National Life / LSW) life underwriting guide (March 2019)
+- `2025 Ensured Legacy Final Expense Risk Assessment Chart.pdf` — Royal Neighbors of America final-expense risk
+  chart (Preferred/Standard/GDB/GI); simplified final-expense lane, noted but not wired into the engine
+- `Transamerica FE Express Solution Agent Guide.pdf` + `08-2023 Immediate Solutions Agent Guide.pdf` (Live Smart
+  final expense) — Transamerica simplified-issue final expense (no exams/labs, real-time decisions, up to $50K);
+  simplified lane, noted but not wired into the engine
+- `2021 SBLI Agent Guide-Easy Track.pdf` — SBLI simplified-issue lane (separate from the historical SBLI guide)
+- `UHL Underwriting Terminology 2019.pdf` — scanned images, no extractable text
 - `Foresters PlanRight Medical Reference Guide 11192019.pdf` — Foresters PlanRight whole-life medical reference (build chart, drug combinations); noted as a separate whole-life lane
 - `2026 Corebridge SimpliNow Legacy SIWL Agent Guide.pdf` + `2026 Corebridge SimpliNow Knockout Questions.pdf` — Corebridge simplified-issue whole life (Level/Graded/Decline decision table); simplified lane, noted but not wired into the fully-underwritten engine
 - AMAM simplified-issue agent guides — `AMAM_EXPRESS TERM`, `AMAM_HOME CERTAINTY`, `AMAM Term Made Simple`,
@@ -147,7 +160,7 @@ multi-step age adjustments and a data-driven table-ceiling label.
 ```
 index.html          App shell
 css/styles.css      Styling (screen + print)
-js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter), medication dictionary, sources, class metadata
+js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
 ```

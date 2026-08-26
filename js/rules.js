@@ -1697,6 +1697,300 @@ CARRIER_RULES.fg_pathsetter.medicalCeilings = CARRIER_RULES.fg_quantum.medicalCe
 CARRIER_RULES.fg_pathsetter.postponeTriggers = CARRIER_RULES.fg_quantum.postponeTriggers;
 CARRIER_RULES.fg_pathsetter.declineTriggers = CARRIER_RULES.fg_quantum.declineTriggers;
 
+/* ====================================================================
+ * NATIONAL LIFE GROUP — National Life Insurance Company / Life
+ * Insurance Company of the Southwest (LSW)
+ * "Life Insurance Underwriting Guide" (TC102228(0319)P, March 2019).
+ * Products: LSW/NL Flex Life II, LSW/NL Term, TotalSecure, Advantage 79,
+ * LifeCycle, LifeBuilder, Income Builder, Protector Life, Peaklife IUL.
+ * ==================================================================== */
+CARRIER_RULES.national_life = {
+  id: "national_life",
+  name: "National Life Group",
+  company: "National Life Insurance Company / Life Insurance Company of the Southwest (LSW)",
+  guide: {
+    title: "Life Insurance Underwriting Guide",
+    version: "TC102228(0319)P (March 2019)",
+    note: "National Life Group (National Life Insurance Co / Life Insurance Company of the Southwest) term, whole life and IUL products. Three underwriting lanes: full medical/financial underwriting (blood profile, urinalysis, paramedical exam, EKG as required); Streamlined Underwriting (face $250,000 or less, age 65 and under — MIB, prescription database, MVR, no medical testing; Verified Standard NT / Express Standard NT / Standard Tobacco classes); and EZ-Underwriting accelerated (ages 18-60 through $1,000,000, ages 61-65 through $250,000 — MIB, prescription database, LexisNexis Risk Classifier, best class may be available with no medical requirements). Applicants age 60 and over must have routine health care with a physical within the last 24 months or the case is declined. If declined by another carrier within the last year, a quick quote is required. IOLI/SOLI (investor/stranger-owned life insurance) is not accepted. Final expense is not a stand-alone product — up to $100,000 of final-expense need may be considered as part of overall need."
+  },
+
+  /* ---- Nicotine ----------------------------------------------------- */
+  nicotine: {
+    classes: [
+      { klass: "preferred_plus", lookbackMonths: 60, label: "Elite Preferred Non-Tobacco (no tobacco/nicotine of any kind in 60 months)" },
+      { klass: "preferred", lookbackMonths: 36, label: "Preferred Non-Tobacco (no tobacco/nicotine in 36 months)" },
+      { klass: "standard_plus", lookbackMonths: 12, label: "Select Non-Tobacco (no tobacco/nicotine in 12 months)" },
+      { klass: "standard", lookbackMonths: 12, label: "Verified Standard Non-Tobacco" }
+    ],
+    tobaccoLookbackMonths: 12,
+    tobaccoDefinition: "No use of tobacco or nicotine-containing products of any kind (cigarettes, cigars, chewing tobacco, pipe, nicotine gum, nicotine patch, e-cigarettes/vaping) within 60 months for Elite, 36 months for Preferred, or 12 months for Select/Verified Standard; current lab testing negative for nicotine. Preferred Tobacco and Standard Tobacco classes are available for tobacco users.",
+    cigarException: {
+      note: "Occasional cigar use may qualify for non-tobacco rates if fully disclosed (no frequency published — verify with underwriting).",
+      maxPerMonth: 1,
+      maxPerYear: 12
+    },
+    marijuana: "Daily marijuana use is a decline; drug use within the last three years is a decline. Occasional use reviewed case by case."
+  },
+
+  /* ---- Build: six-column unisex height/weight chart ------------------
+     Columns: Elite / Preferred / Select / Standard / Express Std 1
+     (substandard to 200%) / Express Std 2 (225-300%). */
+  build: {
+    chart: {
+      56: { pp: 120, p: 133, sp: 145, std: 167, es1: 189, es2: 207, min: 83 },
+      57: { pp: 125, p: 138, sp: 151, std: 173, es1: 196, es2: 214, min: 86 },
+      58: { pp: 129, p: 143, sp: 156, std: 179, es1: 203, es2: 222, min: 89 },
+      59: { pp: 134, p: 148, sp: 161, std: 185, es1: 210, es2: 230, min: 92 },
+      60: { pp: 138, p: 153, sp: 167, std: 191, es1: 217, es2: 238, min: 95 },
+      61: { pp: 143, p: 158, sp: 173, std: 198, es1: 224, es2: 246, min: 98 },
+      62: { pp: 148, p: 163, sp: 178, std: 205, es1: 232, es2: 254, min: 102 },
+      63: { pp: 152, p: 168, sp: 184, std: 211, es1: 239, es2: 262, min: 105 },
+      64: { pp: 157, p: 174, sp: 190, std: 218, es1: 247, es2: 270, min: 108 },
+      65: { pp: 162, p: 179, sp: 196, std: 225, es1: 255, es2: 279, min: 112 },
+      66: { pp: 167, p: 185, sp: 202, std: 232, es1: 263, es2: 288, min: 115 },
+      67: { pp: 172, p: 190, sp: 208, std: 239, es1: 271, es2: 296, min: 119 },
+      68: { pp: 177, p: 196, sp: 215, std: 246, es1: 279, es2: 305, min: 122 },
+      69: { pp: 183, p: 202, sp: 221, std: 253, es1: 287, es2: 314, min: 126 },
+      70: { pp: 188, p: 208, sp: 227, std: 261, es1: 296, es2: 324, min: 129 },
+      71: { pp: 194, p: 214, sp: 234, std: 268, es1: 304, es2: 333, min: 133 },
+      72: { pp: 199, p: 220, sp: 241, std: 276, es1: 313, es2: 342, min: 137 },
+      73: { pp: 205, p: 226, sp: 247, std: 284, es1: 322, es2: 352, min: 141 },
+      74: { pp: 211, p: 232, sp: 254, std: 292, es1: 330, es2: 362, min: 145 },
+      75: { pp: 216, p: 239, sp: 261, std: 299, es1: 339, es2: 371, min: 148 },
+      76: { pp: 222, p: 245, sp: 268, std: 308, es1: 349, es2: 381, min: 152 },
+      77: { pp: 228, p: 252, sp: 275, std: 316, es1: 358, es2: 392, min: 156 },
+      78: { pp: 234, p: 258, sp: 282, std: 324, es1: 367, es2: 402, min: 161 },
+      79: { pp: 240, p: 265, sp: 290, std: 332, es1: 377, es2: 412, min: 165 },
+      80: { pp: 246, p: 272, sp: 297, std: 341, es1: 386, es2: 423, min: 169 }
+    },
+    rules: {
+      minHeightIn: 56,
+      maxHeightIn: 80,
+      chartMinWeight: 83,
+      halfInchRounding: "Half-inch measurements round up to the next inch.",
+      applyWeightLossAdjustment: false,
+      weightLossAdjustment: "Weight stability is reviewed; significant recent weight change — manual underwriting review.",
+      lowBuildReview: "Weight below the chart minimum for height -> manual underwriting review.",
+      belowChartMin: 18.5,
+      aboveStandard: "Above the Express Standard 2 maximum for height (BMI 46.5+) — manual underwriting review.",
+      tableBands: [
+        { key: "es1", label: "Express Standard NT 1 (substandard to 200%)", table: 4 },
+        { key: "es2", label: "Express Standard NT 2 (substandard 225-300%)", table: 8 }
+      ],
+      note: "Six-column unisex chart: Elite (BMI 18.5-27.1), Preferred (27.1-29.9), Select (29.9-32.7), Standard (32.7-37.5), Express Standard 1 (37.5-42.5), Express Standard 2 (42.5-46.5). Above Standard: nonsmoker with substandard rating to 200% -> Express Standard NT 1; 225-300% -> Express Standard NT 2. Other factors (age, disproportionate body measurements) may affect the final decision."
+    }
+  },
+
+  /* ---- Blood pressure (12-month average; one drug treatment OK) ------ */
+  bp: {
+    preferred_plus:   { sys: 135, dia: 85 },
+    preferred:        { sys: 140, dia: 90 },
+    standard_plus:    { sys: 150, dia: 90 },
+    standard:         null
+  },
+  bpTreatmentNote: "Blood pressure treatment acceptable if treated by only one drug and the current reading with a 12-month average meets the class limit.",
+
+  /* ---- Cholesterol (ratio with 65+ age band; one drug treatment OK) -- */
+  cholesterol: {
+    total: {
+      preferred_plus: 260,
+      preferred:      280,
+      standard_plus:  300
+    },
+    ratio: {
+      preferred_plus: [{ ageMin: 18, ageMax: 64, max: 4.5 }, { ageMin: 65, ageMax: 200, max: 5.0 }],
+      preferred:      [{ ageMin: 18, ageMax: 64, max: 5.5 }, { ageMin: 65, ageMax: 200, max: 6.0 }],
+      standard_plus:  [{ ageMin: 18, ageMax: 64, max: 6.5 }, { ageMin: 65, ageMax: 200, max: 7.0 }]
+    },
+    note: "Cholesterol treatment acceptable if treated by only one drug and the ratio is maintained for 12 months. Elite: total <=260, ratio 4.5 (5.0 at 65+); Preferred: total <=280, ratio 5.5 (6.0 at 65+); Select: total <=300, ratio 6.5 (7.0 at 65+)."
+  },
+
+  /* ---- Driving ------------------------------------------------------ */
+  driving: {
+    preferred_plus:   { maxViolations3yr: 1, cleanYears: 5, note: "No reckless driving or alcohol-related moving violation within 5 years; no license suspension within 3 years; no more than 1 moving violation in the last 3 years." },
+    preferred:        { maxViolations3yr: 2, cleanYears: 5, note: "No reckless driving or alcohol-related moving violation within 5 years; no license suspension within 3 years; no more than 2 moving violations in the last 3 years." },
+    standard_plus:    { maxViolations3yr: 3, cleanYears: 5, note: "No reckless driving or alcohol-related moving violation within 5 years; no license suspension within 3 years; no more than 3 moving violations in the last 3 years." },
+    standard:         null
+  },
+  drivingDeclineNote: "Uninsurable: driver's license currently suspended or revoked; single DUI within the last year or multiple DUIs with any within the last 5 years.",
+
+  /* ---- Family history (disregarded at age 65+; gender-specific cancers
+         disregarded for the opposite gender) ------------------------- */
+  familyHistory: {
+    mapping: { none: "preferred_plus", parent: "standard_plus", parent_sibling: "standard", multiple: "standard" },
+    disregardAge: 65,
+    preferred_plus: { text: "No parental family history of death from coronary artery disease or cancer prior to age 65; criteria does not apply if the applicant has reached 65 or for gender-specific cancers in the opposite gender." },
+    preferred:      { text: "No parental family history of death from coronary artery disease or cancer prior to age 60; does not apply at 60+ or for opposite-gender cancers." },
+    standard_plus:  { text: "Parental family history of no more than one death from coronary artery disease or cancer prior to age 60; does not apply at 60+ or for opposite-gender cancers." },
+    standard:       { text: "Family history is not a Standard-class criterion." }
+  },
+
+  /* Elite/Preferred exclude personal history of coronary artery disease,
+     hepatitis B/C, diabetes, melanoma or cancer (except skin cancer in situ). */
+  medicalStandardCap: ["cad", "diabetes", "other_cancer", "liver_disease", "heart_disease"],
+  autoDeclineIds: ["hiv", "dementia", "schizophrenia", "liver_disease", "kidney_disease", "transplant", "paralysis", "copd", "md"],
+  autoDeclineSevereIds: ["heart_disease", "stroke"],
+
+  drugDeclineYears: 3,
+  drugRecoveryTiers: [{ minYears: 5, klass: "standard" }],
+  substanceTiers: { declineYears: 3, tiers: [{ minYears: 5, klass: "standard" }, { minYears: 0, klass: "table" }] },
+
+  conditionModels: {
+    anxiety: { best: "standard" },
+    depression: { best: "standard" },
+    asthma: { best: "standard" },
+    sleep_apnea: { best: "standard" },
+    bipolar: { best: "table" },
+    other_cancer: { declineWithinYears: 5, afterCeiling: "table" }
+  },
+
+  /* Diabetes: uncontrolled (A1c 10+) or with complications (amputation,
+     retinopathy, kidney/vascular disease) or juvenile onset (<20) -> decline. */
+  diabetes: { type1Ceiling: "table", type2Ceiling: "standard", a1cDeclineMin: 10, juvenileOnsetDeclineAge: 20 },
+
+  /* Aviation/avocation: Elite/Preferred/Select all exclude ratable aviation,
+     hazardous avocation or occupation (commercial pilots of major US carriers
+     and holiday scuba diving are not ratable). A hazardous activity therefore
+     caps below Select — at the Verified Standard class. */
+  avocation: {
+    classCap: "standard",
+    currentHazardousText: "Hazardous occupation/avocation disclosed — Elite, Preferred and Select all exclude ratable aviation, hazardous avocation or occupation (major-US-carrier commercial pilots and holiday scuba diving excepted); the case is capped at Verified Standard pending underwriter review.",
+    cleanText: "No hazardous occupation or avocation disclosed."
+  },
+
+  medicalCeilings: [
+    { id: "anxiety", name: "Anxiety", ceilings: [{ klass: "standard", when: "mild (probable action: no rating)" }], worse: "Depression/mental disorder requiring hospitalization or disability in the last year — decline." },
+    { id: "depression", name: "Depression", ceilings: [{ klass: "standard", when: "no rating to moderate rating depending on severity" }], worse: "Mental disorder/PTSD requiring hospitalization or disability in the last year — decline." },
+    { id: "bipolar", name: "Bipolar disorder", ceilings: [{ klass: "table", table: 6, when: "individual consideration (psychosis/schizophrenia Table 6 to decline)" }], worse: "Psychosis — Table 6 to Decline." },
+    { id: "schizophrenia", name: "Schizophrenia / psychosis", ceilings: [{ klass: "table", table: 6, when: "stable — Table 6 to Decline" }], worse: "Psychosis — Table 6 to Decline." },
+    { id: "substance_treatment", name: "Alcohol/drug treatment history", ceilings: [{ klass: "standard", when: "alcoholism with total abstinence >2 years; drug abuse with total abstinence 5 years" }], worse: "Alcohol treatment within the last 2 years or drug use within the last 3 years (or daily marijuana) — decline." },
+    { id: "hypertension", name: "High blood pressure", ceilings: [{ klass: "preferred_plus", when: "well controlled within class limits (one drug treatment acceptable)" }], note: "High blood pressure (well controlled) — no rating." },
+    { id: "high_cholesterol", name: "High cholesterol", ceilings: [{ klass: "preferred_plus", when: "total and ratio within class limits (one drug treatment acceptable)" }], note: "Cholesterol treatment acceptable if ratio maintained 12 months." },
+    { id: "cad", name: "Coronary artery disease / angina", ceilings: [{ klass: "table", table: 6, when: "current stable angina — Table 6 to Decline" }], postpone: "Angioplasty, bypass or MI within the last 6 months; or in combination with diabetes, stroke, or continued tobacco use — decline screen.", worse: "Angioplasty/bypass/MI in the last 6 months, or in combination with diabetes/stroke/continued tobacco use — decline." },
+    { id: "heart_disease", name: "Heart disease (CHF, cardiomyopathy, valve, device)", ceilings: [{ klass: "table", table: 4, when: "cardiomyopathy resolved >3 years — Table 4 to Decline; heart attack depends on age/severity" }], postpone: "Heart surgery within 6 months, heart valve surgery within 1 year, or valve replacement within the last year — decline screen.", decline: "Heart surgery within 6 months or in combination with diabetes or stroke history; valve replacement within the last year — decline.", worse: "Congestive heart failure — Table 6 to Decline; defibrillator/ventricular tachycardia — decline." },
+    { id: "stroke", name: "Stroke / TIA", ceilings: [{ klass: "table", table: 4, when: "stroke after one year with full recovery — Table 4 at best; TIA with no residuals — no rating to moderate" }], postpone: "CVA within one year, or with history of diabetes or cardiac history — decline screen.", worse: "CVA within one year or with diabetes/cardiac history — decline." },
+    { id: "asthma", name: "Asthma", ceilings: [{ klass: "standard", when: "depends on age, attacks and medications — no rating to decline" }], worse: "Severe/uncontrolled asthma — decline." },
+    { id: "copd", name: "COPD / emphysema / chronic bronchitis", ceilings: [{ klass: "table", table: 2, when: "COPD — Table 2 to Decline; chronic bronchitis — no rating to decline" }], decline: "COPD/emphysema severe (on oxygen or disabling) or with current tobacco use — decline.", worse: "Emphysema — Table 4 to Decline." },
+    { id: "sleep_apnea", name: "Sleep apnea", ceilings: [{ klass: "standard", when: "consistent CPAP use — possible Standard" }] },
+    { id: "diabetes", name: "Diabetes", ceilings: [{ klass: "standard", when: "controlled, no complications, adult onset — no rating to decline depending on onset and control" }], postpone: "Uncontrolled (A1c 10+) or with complications (amputation, retinopathy, kidney or vascular disease) or with cardiac/stroke/morbid obesity — decline screen.", worse: "Uncontrolled A1c 10+, complications, or juvenile onset (diagnosed prior to age 20) — decline." },
+    { id: "kidney_disease", name: "Kidney disease", ceilings: [], decline: "Kidney dialysis, chronic renal failure, or polycystic kidney disease — decline." },
+    { id: "liver_disease", name: "Liver disease", ceilings: [{ klass: "table", table: 4, when: "hepatitis B/C treated and resolved — Table 4 to Decline" }], decline: "Cirrhosis of the liver — decline." },
+    { id: "hiv", name: "HIV / AIDS", ceilings: [], decline: "HIV positive/AIDS — decline." },
+    { id: "dementia", name: "Alzheimer's / dementia / cognitive impairment", ceilings: [], decline: "Alzheimer's disease, dementia or cognitive impairment — decline." },
+    { id: "seizures", name: "Seizures / epilepsy", ceilings: [{ klass: "standard", when: "petit mal with no attack in one year; grand mal with no attack in one year — no rating to moderate" }], postpone: "Epilepsy/seizures diagnosed within one year — decline screen.", worse: "Epilepsy/seizures diagnosed within one year — decline." },
+    { id: "skin_cancer", name: "Skin cancer (basal / squamous / melanoma)", ceilings: [{ klass: "standard", when: "basal cell removed — usually Standard; squamous cell removed — possible Standard; melanoma — possible Standard" }] },
+    { id: "other_cancer", name: "Other cancer history", ceilings: [{ klass: "table", when: "breast cancer after 3 years — possible flat extra to decline; internal organ cancer beyond the 3-5 year window — individual consideration" }], decline: "Current cancer treatment, or certain internal organ cancer diagnosed within the past 3-5 years — decline (call for quote with specifics).", worse: "Cancer treatment current, or internal organ cancer within 3-5 years — decline." },
+    { id: "osteoporosis", name: "Osteoporosis", ceilings: [{ klass: "standard", when: "not listed — no rating typical" }] },
+    { id: "mvp", name: "Mitral valve prolapse", ceilings: [{ klass: "standard", when: "no rating to decline depending on findings" }] },
+    { id: "multiple_sclerosis", name: "Multiple sclerosis", ceilings: [{ klass: "table", table: 2, when: "not progressive or disabling — Table 2 to Decline" }], worse: "MS if disabling or progressive — decline." },
+    { id: "parkinsons", name: "Parkinson's disease", ceilings: [{ klass: "table", table: 3, when: "Table 3 to Decline" }], worse: "Parkinson's if disabling — decline." },
+    { id: "transplant", name: "Organ transplant", ceilings: [], decline: "Organ transplant, awaiting or recipient — decline." },
+    { id: "paralysis", name: "Paralysis", ceilings: [{ klass: "table", table: 6, when: "paraplegic — Table 6 to Decline" }], worse: "Quadriplegic — highly rated to Decline." },
+    { id: "md", name: "Muscular dystrophy", ceilings: [], decline: "Muscular dystrophy — decline." }
+  ],
+
+  /* ---- Postpone triggers (National Life flavor) ---------------------- */
+  postponeTriggers: [
+    { id: "pending_test", text: "Pending test, referral, surgery, or evaluation with unknown results", reason: "Uninvestigated outcome can matter more than known history." },
+    { id: "recent_hospitalization", text: "Hospitalization or advised hospitalization within the past 4 months", reason: "Insufficient stability." },
+    { id: "recent_surgery", text: "Surgery performed or recommended within the past 4 months with unfinished/unknown results", reason: "Insufficient stability." },
+    { id: "active_symptom", text: "Uninvestigated active symptom under first-time evaluation", reason: "Uninvestigated symptom." },
+    { id: "cancer_waitout", text: "Cancer diagnosed/treated within the 3-5 year decline window", reason: "Cancer treatment current or internal organ cancer within 3-5 years — decline screen." },
+    { id: "gastric_bypass_recent", text: "Gastric bypass within the past six months", reason: "Uninsurable list: gastric bypass within six months." },
+    { id: "diabetes_complications", text: "Diabetes with complications (amputation, retinopathy, kidney or vascular disease) or with cardiac/stroke history or morbid obesity", reason: "Decline screen." },
+    { id: "a1c_high", text: "Most recent A1c at or above 10 within the last year", reason: "Decline screen (National Life threshold is A1c 10+)." },
+    { id: "heart_recent", text: "Heart attack, angioplasty, bypass, or heart/valve surgery within the last 6-12 months", reason: "Decline screen until stability." },
+    { id: "suicide_recent", text: "Suicide attempt within the last year (or more than one attempt within two years)", reason: "Decline screen." },
+    { id: "mental_hospitalization", text: "Mental disorder/PTSD requiring hospitalization or disability within the last year", reason: "Decline screen." },
+    { id: "pregnancy_complications", text: "Currently pregnant with gestational diabetes, toxemia, eclampsia, or pre-eclampsia", reason: "Reconsider at six weeks post partum." },
+    { id: "cva_recent", text: "Stroke within the last year, or with diabetes or cardiac history", reason: "Decline screen." },
+    { id: "epilepsy_recent", text: "Epilepsy/seizures diagnosed within the last year", reason: "Decline screen." }
+  ],
+
+  /* ---- Decline / specialist-review triggers ------------------------- */
+  declineTriggers: [
+    { id: "hiv", text: "HIV / AIDS", reason: "Uninsurable list." },
+    { id: "dementia", text: "Alzheimer's / dementia / cognitive impairment", reason: "Uninsurable list." },
+    { id: "alcohol_active", text: "Alcohol treatment within the last 2 years", reason: "Uninsurable list." },
+    { id: "drug_use_recent", text: "Drug use within the last 3 years or daily marijuana use", reason: "Uninsurable list." },
+    { id: "kidney_disease", text: "Kidney dialysis, chronic renal failure, or polycystic kidney disease", reason: "Uninsurable list." },
+    { id: "liver_disease", text: "Cirrhosis of the liver", reason: "Uninsurable list." },
+    { id: "transplant", text: "Organ transplant, awaiting or recipient", reason: "Uninsurable list." },
+    { id: "quadriplegia", text: "Quadriplegia", reason: "Uninsurable list." },
+    { id: "respiratory", text: "COPD/emphysema severe (on oxygen or disabling) or with current tobacco use", reason: "Uninsurable list." },
+    { id: "aneurysm", text: "Abdominal aortic aneurysm, present or surgically corrected within the past 6 months", reason: "Uninsurable list." },
+    { id: "heart_surgery_recent", text: "Angioplasty/bypass/MI within 6 months, heart surgery within 6 months, valve replacement within 1 year", reason: "Uninsurable list." },
+    { id: "cva_recent", text: "CVA (stroke) within one year or with diabetes/cardiac history", reason: "Uninsurable list." },
+    { id: "epilepsy_recent", text: "Epilepsy/seizures diagnosed within one year", reason: "Uninsurable list." },
+    { id: "suicide_recent", text: "Suicide attempt within the last year or more than one within two years", reason: "Uninsurable list." },
+    { id: "adl_dependence", text: "Assistance needed with activities of daily living", reason: "Specialist review / decline screen." },
+    { id: "facility_care", text: "Facility / hospice / home-health care or chronic wheelchair use", reason: "Strong specialist-review trigger." },
+    { id: "criminal_active", text: "Charged with a felony; misdemeanor with probation/parole not released for one full year", reason: "Uninsurable list." },
+    { id: "bankruptcy_active", text: "Chapter 7 bankruptcy not discharged", reason: "Uninsurable list." },
+    { id: "oxygen_use", text: "Oxygen use", reason: "Specialist review." },
+    { id: "driving_no_license", text: "Driver's license currently suspended or revoked", reason: "Uninsurable list." },
+    { id: "disabled", text: "Disabled for most non-musculoskeletal impairments (SSDI/DI for depression, PTSD, or other medical issues)", reason: "Uninsurable list." },
+    { id: "no_routine_care", text: "Age 60+ without routine health care and a physical within the last 24 months", reason: "Uninsurable list: otherwise declined." },
+    { id: "pregnancy_complications", text: "Current pregnancy with gestational diabetes, toxemia, eclampsia, or pre-eclampsia", reason: "Uninsurable list; reconsider at six weeks post partum." }
+  ],
+
+  /* ---- Evidence / workflow ----------------------------------------- */
+  evidence: {
+    apsAge: 200,
+    apsConditions: [
+      "Cancer", "Diabetes", "Heart (cardiac) disease", "Stroke / TIA", "COPD / emphysema",
+      "Kidney disease", "Liver disease", "Mental-health disorders", "Substance abuse/dependence",
+      "Multiple sclerosis", "Parkinson's disease", "Muscular dystrophy", "Rheumatoid arthritis", "Lupus",
+      "Organ transplant", "Paralysis", "HIV", "Sleep apnea", "Seizure disorders", "Autoimmune disease"
+    ],
+    amountRules: [
+      { ageMin: 0, ageMax: 17, amountMin: 1, items: ["Juvenile (0-19): application; coverage based on head-of-household parent coverage; siblings similarly insured; >$1M on a child needs underwriter consultation"] },
+      { ageMin: 18, ageMax: 65, amountMin: 1, amountMax: 250000, items: ["Application (no medical testing — Streamlined/EZ lane)"] },
+      { ageMin: 18, ageMax: 60, amountMin: 250001, amountMax: 1000000, items: ["EZ-Underwriting — application only (MIB, Milliman IntelliScript prescription database, LexisNexis Risk Classifier)"] },
+      { ageMin: 66, ageMax: 69, amountMin: 1, amountMax: 250000, items: ["Exam, blood profile, urine"] },
+      { ageMin: 56, ageMax: 69, amountMin: 250001, amountMax: 500000, items: ["Exam, blood profile, urine"] },
+      { ageMin: 61, ageMax: 69, amountMin: 500001, amountMax: 1000000, items: ["Exam, blood profile, urine"] },
+      { ageMin: 18, ageMax: 65, amountMin: 1000001, amountMax: 2000000, items: ["Exam, blood profile, urine"] },
+      { ageMin: 66, ageMax: 69, amountMin: 1000001, amountMax: 2000000, items: ["Exam, blood profile, urine", "APS"] },
+      { ageMin: 18, ageMax: 69, amountMin: 2000001, amountMax: 5000000, items: ["Exam, blood profile, urine", "APS", "Personal Financial Questionnaire (form 1392)", "Electronic Inspection Report"] },
+      { ageMin: 18, ageMax: 69, amountMin: 5000001, items: ["Exam, blood profile, urine, EKG", "APS", "Personal Financial Questionnaire (form 1392)", "Electronic Inspection Report", "Income verification (4506T/W2/1099)"] },
+      { ageMin: 70, ageMax: 200, amountMin: 1, items: ["Exam, blood profile, urine, EKG, Mature Assessment", "APS"] },
+      { ageMin: 70, ageMax: 200, amountMin: 5000001, items: ["Third Party Verified Financial Statement"] },
+      { ageMin: 18, ageMax: 69, amountMin: 10000000, items: ["Third Party Verified Financial Statement"] }
+    ],
+    acceleratedUw: { ageMin: 18, ageMax: 60, amountMin: 1, amountMax: 1000000, note: "EZ-Underwriting ages 18-60 through $1,000,000 (and 61-65 through $250,000): MIB, Milliman IntelliScript prescription database, LexisNexis Risk Classifier — the best class may be available without medical requirements." },
+    note: "Full medical underwriting (blood profile, urinalysis, paramedical exam, EKG, Mature Assessment at 70+) per the age/amount grid; APS on all applications $2,000,001+. Streamlined lane: face $250,000 or less and age 65 and under (MIB, prescription database, MVR — no medical testing). Financial requirements: PFQ + E-inspection at $2M+; income verification at $10M+; third-party verified financials at $10M (18-69) / $5M (70+). MIB, Milliman IntelliScript prescription database, MVR and electronic inspection are cross-referenced on all applications.",
+    temporaryCoverage: "Temporary coverage is not described in the guide; the estimate does not establish coverage."
+  },
+
+  /* ---- Financial justification ------------------------------------- */
+  financial: {
+    incomeMultipliers: [
+      { ageMin: 18, ageMax: 30, multiplier: 40 },
+      { ageMin: 31, ageMax: 40, multiplier: 35 },
+      { ageMin: 41, ageMax: 50, multiplier: 25 },
+      { ageMin: 51, ageMax: 60, multiplier: 15 },
+      { ageMin: 61, ageMax: 65, multiplier: 10 },
+      { ageMin: 66, ageMax: 69, multiplier: 5 }
+    ],
+    premiumToIncome: "Family insurance premium should not exceed 10% of annual income; above that, additional financial documentation may be requested.",
+    note: "Income replacement factors (earned income only): 40X (18-30), 35X (31-40), 25X (41-50), 15X (51-60), 10X (61-65), 5X (66-69). Income replacement is not applicable at ages 70+. Final expense: no stand-alone product; up to $100,000 may be considered as part of overall need. Juveniles (0-19): based on the head-of-household parent's coverage or what a $100/month permanent premium buys; siblings similarly insured; NY rules: 25% of parent coverage at ages 0-4, 50% at 5-14."
+  },
+
+  /* No credit program is published in the National Life guide. */
+  credit: null,
+
+  classInfo: {
+    preferred_plus: { name: "Elite Preferred Non-Tobacco", meaning: "No tobacco/nicotine 60 months; no family CHD/cancer death <65; BP 135/85 or better; chol <=260, ratio 4.5 (5.0 at 65+); no CAD/hepatitis B-C/diabetes/melanoma/cancer history; no alcohol/drug history; no ratable avocation.", color: "#0e7a5f" },
+    preferred: { name: "Preferred Non-Tobacco", meaning: "No tobacco/nicotine 36 months; no family CHD/cancer death <60; BP 140/90; chol <=280, ratio 5.5 (6.0 at 65+); no CAD/hepatitis/diabetes/melanoma/cancer history; no alcohol/drug treatment in 10 years.", color: "#1b9a7a" },
+    standard_plus: { name: "Select Non-Tobacco", meaning: "No tobacco/nicotine 12 months; <=1 family CHD/cancer death <60; BP 150/90; chol <=300, ratio 6.5 (7.0 at 65+); no currently ratable medical history.", color: "#3b82b0" },
+    standard: { name: "Verified Standard Non-Tobacco", meaning: "Standard risks, non-tobacco; the platform for substandard illustrations (ratings added on top).", color: "#4a6fa5" },
+    table: { name: "Express Standard (substandard)", meaning: "Nonsmoker with substandard rating to 200% -> Express Standard NT 1; 225-300% -> Express Standard NT 2 (quick-underwriting classes; Living Benefit riders not available on ES2).", color: "#b8860b" },
+    postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 3-5 years, gastric bypass 6 months, heart event 6-12 months, epilepsy 1 year, CVA 1 year) or pending workup.", color: "#8a5fb8" },
+    decline: { name: "Decline / specialist review", meaning: "On the uninsurable list (current cancer treatment, A1c 10+ or juvenile-onset diabetes, HIV, dementia, cirrhosis, dialysis, transplant, severe COPD, etc.) — carrier direction required.", color: "#b3364a" }
+  }
+};
+
 /* ======================================================================
  * Medication reference dictionary
  * ----------------------------------------------------------------------
