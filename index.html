@@ -52,8 +52,21 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="js/rules.js?v=16"></script>
-<script src="js/engine.js?v=16"></script>
-<script src="js/app.js?v=16"></script>
+<script>
+  /* Single cache-busting version for all app scripts. Bump HCE_VERSION once
+     per release — every script URL reads from it, so rules.js / engine.js /
+     app.js can never be served as a mismatched set. (Classic scripts execute
+     in order when async=false, preserving the rules -> engine -> app load
+     order the app depends on.) */
+  (function () {
+    var HCE_VERSION = "17";
+    ["js/rules.js", "js/engine.js", "js/app.js"].forEach(function (src) {
+      var s = document.createElement("script");
+      s.src = src + "?v=" + HCE_VERSION;
+      s.async = false;
+      document.body.appendChild(s);
+    });
+  })();
+</script>
 </body>
 </html>

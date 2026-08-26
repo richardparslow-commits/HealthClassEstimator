@@ -1328,6 +1328,10 @@ const App = (() => {
     t._h = setTimeout(() => t.classList.add("hidden"), 2200);
   }
 
-  document.addEventListener("DOMContentLoaded", boot);
+  // Scripts are injected dynamically (single version constant in index.html),
+  // so DOMContentLoaded may already have fired by the time app.js executes.
+  // Boot immediately in that case rather than missing the event.
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
   return { runEstimate };
 })();

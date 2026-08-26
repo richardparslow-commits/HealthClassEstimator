@@ -183,7 +183,9 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 139 scenario checks across all five carriers
+node /tmp/engine_test.js   # 286 assertions: 230 scenarios + cross-carrier gate-dedup probe
 ```
 
-Then open `index.html` and walk a sample case through to the estimate.
+Then open `index.html` and walk a sample case through to the estimate. After any edit to
+`js/*.js`, bump the single `HCE_VERSION` constant in `index.html` (an inline loader stamps it on all
+three script URLs) so the preview does not serve a stale cached script set.
