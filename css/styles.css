@@ -530,6 +530,55 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .footer-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .footer-links a:hover { color: var(--navy); }
 
+/* ---- Comparison row expand ------------------------------------------ */
+.compare-expand-cell { width: 34px; text-align: center; }
+.compare-expand {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform .12s ease, color .12s ease, border-color .12s ease;
+}
+.compare-expand:hover { color: var(--teal); border-color: var(--teal); }
+.compare-expand.expanded { transform: rotate(90deg); color: var(--teal); border-color: var(--teal); }
+.compare-detail td { background: #f7fafc; border-bottom: 1px solid var(--line); }
+.compare-detail-body { padding: 4px 2px; }
+.compare-detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.compare-detail-class { font-weight: 700; font-size: 14px; }
+.compare-detail-meta { font-size: 12px; color: var(--muted); }
+.compare-detail-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.compare-detail-cols > div > strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.compare-detail .evidence-list { margin: 0; padding-left: 16px; font-size: 12.5px; }
+.compare-detail .evidence-list li { margin-bottom: 3px; }
+@media (max-width: 720px) {
+  .compare-detail-cols { grid-template-columns: 1fr; gap: 10px; }
+}
+
 /* ---- Comparison header + contact CTA -------------------------------- */
 .compare-head {
   display: flex;

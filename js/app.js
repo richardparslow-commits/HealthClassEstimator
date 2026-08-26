@@ -973,7 +973,7 @@ const App = (() => {
     const tbl = el("table", { class: "domain-table compare-table" });
     const thead = el("thead", {});
     thead.appendChild(el("tr", {}, [
-      el("th", {}, "Carrier"), el("th", {}, "Estimated class"), el("th", {}, "Limiting factors / gates"), el("th", {}, "Evidence highlights"), el("th", {}, "Financial")
+      el("th", { "aria-hidden": "true" }, ""), el("th", {}, "Carrier"), el("th", {}, "Estimated class"), el("th", {}, "Limiting factors / gates"), el("th", {}, "Evidence highlights"), el("th", {}, "Financial")
     ]));
     tbl.appendChild(thead);
     const tbody = el("tbody", {});
@@ -981,12 +981,28 @@ const App = (() => {
       const rules = CARRIER_RULES[row.id];
       const cn = compareClassName(row.out, rules);
       const isCurrent = row.id === state.carrier;
-      // Clicking a row switches the results page to that carrier's full estimate.
+      // Clicking a row switches the results page to that carrier's full estimate;
+      // the chevron expands the row in place to show full gates + evidence
+      // without switching.
       const tr = el("tr", {
         class: isCurrent ? "compare-current" : "compare-row",
         title: isCurrent ? "Current carrier — full estimate shown below" : "Open this carrier's full estimate",
         onclick: () => switchCarrier(row.id)
       });
+      const expandBtn = el("button", {
+        class: "compare-expand", type: "button", "aria-label": "Expand " + rules.name + " details",
+        title: "Show full gates & evidence",
+        onclick: (e) => {
+          e.stopPropagation();
+          const existing = tbody.querySelector('tr.compare-detail[data-carrier="' + row.id + '"]');
+          if (existing) { existing.remove(); expandBtn.classList.remove("expanded"); return; }
+          const dtr = el("tr", { class: "compare-detail", "data-carrier": row.id });
+          dtr.appendChild(el("td", { colspan: 6, class: "compare-detail-cell" }, compareDetailContent(row)));
+          tr.insertAdjacentElement("afterend", dtr);
+          expandBtn.classList.add("expanded");
+        }
+      }, "▸");
+      tr.appendChild(el("td", { class: "compare-expand-cell" }, expandBtn));
       tr.appendChild(el("td", { style: "font-weight:600" }, [rules.name, el("div", { class: "compare-version" }, rules.guide.version)]));
       tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
       tr.appendChild(el("td", {}, compareLimiting(row)));
@@ -999,9 +1015,51 @@ const App = (() => {
 
     const note = el("div", { class: "note-box" });
     note.appendChild(el("strong", {}, "How to read this: "));
-    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. Click any row to switch the full estimate below to that carrier; the highlighted row is the one currently shown. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
+    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. Click any row to open that carrier's full estimate below; click the chevron on a row to expand its full gate list and evidence checklist in place. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
     wrap.appendChild(note);
     return wrap;
+  }
+
+  /* Expanded row content: that carrier's full postpone/decline gate list,
+     limiting factors, confidence, and complete evidence checklist — without
+     switching the detailed estimate below. */
+  function compareDetailContent(row) {
+    const { id, out } = row;
+    const rules = CARRIER_RULES[id];
+    const cn = compareClassName(out, rules);
+    const box = el("div", { class: "compare-detail-body" });
+
+    const head = el("div", { class: "compare-detail-head" });
+    head.appendChild(el("span", { class: "compare-detail-class", style: `color:${cn.color}` }, cn.name));
+    const headMeta = el("span", { class: "compare-detail-meta" });
+    headMeta.appendChild(document.createTextNode("Confidence: " + (out.confidence ? out.confidence.level : "—") + (out.range ? " · Range: " + rangeLabel(out.range) : "")));
+    head.appendChild(headMeta);
+    box.appendChild(head);
+
+    const cols = el("div", { class: "compare-detail-cols" });
+
+    const gatesCol = el("div", {});
+    gatesCol.appendChild(el("strong", {}, "Gates & limiting factors"));
+    const gUl = el("ul", { class: "evidence-list" });
+    let gCount = 0;
+    (out.gates.decline || []).forEach(g => { gCount++; gUl.appendChild(el("li", {}, [el("strong", {}, g.text || g.id), g.reason ? " — " + g.reason : ""])); });
+    (out.gates.postpone || []).forEach(g => { gCount++; gUl.appendChild(el("li", {}, [el("strong", {}, g.text || g.id), g.reason ? " — " + g.reason : ""])); });
+    (out.limitingFactors || []).forEach(l => { gCount++; gUl.appendChild(el("li", {}, DOMAIN_LABELS[l.domain] + ": " + (l.detail || l.klass))); });
+    if (!gCount) gUl.appendChild(el("li", {}, "No decline/postpone gates and no limiting factors — consistent profile."));
+    gatesCol.appendChild(gUl);
+    cols.appendChild(gatesCol);
+
+    const evCol = el("div", {});
+    evCol.appendChild(el("strong", {}, "Evidence checklist"));
+    const eUl = el("ul", { class: "evidence-list" });
+    const list = (out.evidence && out.evidence.list) || [];
+    if (list.length) list.forEach(i => eUl.appendChild(el("li", {}, i)));
+    else eUl.appendChild(el("li", {}, "Application only"));
+    evCol.appendChild(eUl);
+    cols.appendChild(evCol);
+
+    box.appendChild(cols);
+    return box;
   }
 
   function resultsView(out) {

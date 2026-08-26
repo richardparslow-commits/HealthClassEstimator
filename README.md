@@ -21,7 +21,9 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 single carrier: the results page **defaults to the all-carrier comparison** — the same profile run through every
 carrier ruleset side by side, showing the client's possible health class under each carrier (class, limiting
 factors/gates, evidence highlights, financial outcome), with the primary carrier highlighted. Clicking any row
-switches the full estimate below to that carrier. The **Compare / hide** button collapses the table to just the
+switches the full estimate below to that carrier; clicking a row's **chevron expands that carrier in place** to
+show its full postpone/decline gate list, limiting factors, confidence, and complete evidence checklist without
+switching the detailed estimate. The **Compare / hide** button collapses the table to just the
 primary carrier's full estimate. The comparison header carries a **Contact your broker advocate** CTA linking to
 https://lifeinsurancebrokeradvocate.com/contact. **Print comparison** renders a dedicated one-page sheet (compact profile header +
 the comparison table + guardrails) that prints on its own, distinct from the full results **Print / save PDF**
