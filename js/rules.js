@@ -12,6 +12,9 @@
  *    Foundation and SMART UL" (506305 US 04/26)
  *  - Transamerica: "A Field Guide to Underwriting — Trendsetter Super,
  *    Trendsetter LB, FFIUL II/IUL, FCIUL II/IUL" (03/25)
+ *  - Mutual of Omaha (United of Omaha Life Insurance Company):
+ *    "Underwriting Guidelines — Life Insurance (Brokerage), For Term and
+ *    Permanent Products" (417212_0120, as of January 2020)
  *  - Build-plan reference: "Start with a carrier-specific model.pdf"
  *
  * All outputs are preliminary, non-binding estimates for producer triage.
@@ -921,6 +924,284 @@ const CARRIER_RULES = {
       table: { name: "Table-rated (A-H)", meaning: "BMI or impairment outside Standard — Table A through H; premiums calculated from standard rates.", color: "#b8860b" },
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability, completed testing, or recovery (e.g., cancer treatment complete, heart attack 6 months, suicide attempt 2 years).", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "Impairment listed as decline in the field guide, or outside current eligibility — carrier direction required.", color: "#b3364a" }
+    }
+  },
+
+  /* ======================================================================
+   * MUTUAL OF OMAHA — United of Omaha Life Insurance Company
+   * "Underwriting Guidelines — Life Insurance Brokerage" (417212_0120,
+   * as of January 2020), term and permanent products.
+   * ==================================================================== */
+  mutual_of_omaha: {
+    id: "mutual_of_omaha",
+    name: "Mutual of Omaha",
+    company: "United of Omaha Life Insurance Company (a Mutual of Omaha company)",
+    guide: {
+      title: "Underwriting Guidelines — Life Insurance (Brokerage), For Term and Permanent Products",
+      version: "417212_0120 (January 2020)",
+      note: "United of Omaha uses age last birthday (advantage to the applicant). Unisex build charts. Fit underwriting credit program: up to 2 table credits (3 characteristics = 1 credit; 5 = 2 credits) for ages 18-75, $100K-$5M, non-tobacco, base rating Table 4 or less — best final class is Standard; excludes flat extras, current rateable substance abuse, CAD before age 50, stroke/rateable cancer, and Type 1 diabetes. Express simplified lanes (TLE/GULE/IULE, ages 18-70) are separate and decline many impairments that fully underwritten review may still rate."
+    },
+
+    /* ---- Nicotine ----------------------------------------------------- */
+    nicotine: {
+      classes: [
+        { klass: "preferred_plus", lookbackMonths: 36, label: "Preferred Plus Non-Tobacco (no nicotine 36 months)" },
+        { klass: "preferred", lookbackMonths: 24, label: "Preferred Non-Tobacco (no nicotine 24 months)" },
+        { klass: "standard_plus", lookbackMonths: 12, label: "Standard Plus Non-Tobacco (no nicotine 12 months)" },
+        { klass: "standard", lookbackMonths: 12, label: "Standard Non-Tobacco (no nicotine 12 months)" }
+      ],
+      tobaccoLookbackMonths: 12,
+      tobaccoDefinition: "Non-nicotine rates require no tobacco or nicotine use in any form (gum, patch, cigar, vaping, e-cigarettes, hookah) within one year prior to application. Best tobacco class is Preferred Tobacco.",
+      cigarException: {
+        note: "Occasional celebratory cigar — up to 24 cigars per year — may qualify for non-tobacco rates with a negative urinalysis test (Preferred Plus, Preferred & Standard Plus are all available with negative HOS).",
+        maxPerMonth: 2,
+        maxPerYear: 24
+      },
+      marijuana: "History of and current experimental, occasional, or intermittent marijuana use is allowed for Preferred and Standard Plus (ages 18+); CBD oil allowed if no debits for chronic pain. Marijuana impairment line: Preferred to Decline depending on frequency."
+    },
+
+    /* ---- Build: unisex height/weight chart, with published tables ---- */
+    /* Columns: Preferred Plus, Preferred, Standard Plus, Standard, then
+       Table 1 (+25) through Table 12 (+300) per the build chart (p. 22-23). */
+    build: {
+      chart: {
+        56:  { pp: 125, p: 144, sp: 153, stdCredit: 158, std: 158, t1: 170, t2: 184, t3: 190, t4: 197, t5: 204, t6: 212, t8: 221, t10: 230, t12: 240 },
+        57:  { pp: 131, p: 150, sp: 160, stdCredit: 165, std: 165, t1: 176, t2: 189, t3: 195, t4: 202, t5: 209, t6: 216, t8: 225, t10: 234, t12: 244 },
+        58:  { pp: 135, p: 155, sp: 165, stdCredit: 170, std: 170, t1: 182, t2: 194, t3: 201, t4: 208, t5: 214, t6: 222, t8: 231, t10: 240, t12: 249 },
+        59:  { pp: 141, p: 160, sp: 170, stdCredit: 176, std: 176, t1: 187, t2: 199, t3: 207, t4: 214, t5: 220, t6: 228, t8: 237, t10: 245, t12: 254 },
+        60:  { pp: 146, p: 166, sp: 177, stdCredit: 184, std: 184, t1: 193, t2: 205, t3: 213, t4: 220, t5: 226, t6: 235, t8: 244, t10: 253, t12: 262 },
+        61:  { pp: 152, p: 173, sp: 185, stdCredit: 191, std: 191, t1: 199, t2: 211, t3: 218, t4: 226, t5: 233, t6: 242, t8: 250, t10: 259, t12: 269 },
+        62:  { pp: 158, p: 179, sp: 190, stdCredit: 197, std: 197, t1: 205, t2: 215, t3: 223, t4: 232, t5: 239, t6: 248, t8: 257, t10: 266, t12: 277 },
+        63:  { pp: 164, p: 184, sp: 195, stdCredit: 203, std: 203, t1: 213, t2: 220, t3: 228, t4: 238, t5: 246, t6: 255, t8: 264, t10: 275, t12: 284 },
+        64:  { pp: 169, p: 189, sp: 200, stdCredit: 209, std: 209, t1: 221, t2: 225, t3: 235, t4: 245, t5: 252, t6: 261, t8: 270, t10: 281, t12: 292 },
+        65:  { pp: 174, p: 194, sp: 205, stdCredit: 215, std: 215, t1: 226, t2: 231, t3: 242, t4: 251, t5: 259, t6: 268, t8: 277, t10: 286, t12: 299 },
+        66:  { pp: 180, p: 200, sp: 210, stdCredit: 222, std: 222, t1: 232, t2: 239, t3: 248, t4: 258, t5: 268, t6: 276, t8: 285, t10: 293, t12: 308 },
+        67:  { pp: 185, p: 205, sp: 215, stdCredit: 228, std: 228, t1: 239, t2: 245, t3: 254, t4: 265, t5: 275, t6: 284, t8: 293, t10: 303, t12: 316 },
+        68:  { pp: 189, p: 209, sp: 220, stdCredit: 235, std: 235, t1: 246, t2: 251, t3: 262, t4: 274, t5: 283, t6: 291, t8: 300, t10: 312, t12: 324 },
+        69:  { pp: 195, p: 215, sp: 225, stdCredit: 242, std: 242, t1: 254, t2: 258, t3: 270, t4: 282, t5: 291, t6: 299, t8: 309, t10: 319, t12: 331 },
+        70:  { pp: 200, p: 221, sp: 232, stdCredit: 250, std: 250, t1: 262, t2: 266, t3: 278, t4: 289, t5: 300, t6: 307, t8: 316, t10: 327, t12: 340 },
+        71:  { pp: 206, p: 227, sp: 237, stdCredit: 258, std: 258, t1: 269, t2: 274, t3: 287, t4: 298, t5: 307, t6: 315, t8: 325, t10: 339, t12: 349 },
+        72:  { pp: 211, p: 232, sp: 244, stdCredit: 265, std: 265, t1: 275, t2: 281, t3: 292, t4: 305, t5: 315, t6: 322, t8: 333, t10: 348, t12: 356 },
+        73:  { pp: 217, p: 239, sp: 252, stdCredit: 271, std: 271, t1: 282, t2: 289, t3: 300, t4: 313, t5: 322, t6: 330, t8: 340, t10: 355, t12: 365 },
+        74:  { pp: 222, p: 244, sp: 257, stdCredit: 279, std: 279, t1: 289, t2: 296, t3: 308, t4: 321, t5: 331, t6: 339, t8: 349, t10: 366, t12: 374 },
+        75:  { pp: 228, p: 250, sp: 262, stdCredit: 285, std: 285, t1: 296, t2: 303, t3: 317, t4: 329, t5: 339, t6: 348, t8: 358, t10: 376, t12: 383 },
+        76:  { pp: 233, p: 255, sp: 268, stdCredit: 292, std: 292, t1: 301, t2: 311, t3: 325, t4: 338, t5: 348, t6: 357, t8: 367, t10: 385, t12: 394 },
+        77:  { pp: 239, p: 261, sp: 274, stdCredit: 298, std: 298, t1: 307, t2: 319, t3: 334, t4: 347, t5: 357, t6: 366, t8: 376, t10: 393, t12: 402 },
+        78:  { pp: 246, p: 268, sp: 280, stdCredit: 307, std: 307, t1: 313, t2: 328, t3: 345, t4: 358, t5: 366, t6: 375, t8: 385, t10: 405, t12: 413 },
+        79:  { pp: 252, p: 274, sp: 286, stdCredit: 313, std: 313, t1: 320, t2: 336, t3: 354, t4: 367, t5: 375, t6: 384, t8: 394, t10: 413, t12: 422 },
+        80:  { pp: 258, p: 280, sp: 294, stdCredit: 320, std: 320, t1: 327, t2: 345, t3: 363, t4: 376, t5: 385, t6: 395, t8: 405, t10: 422, t12: 431 },
+        81:  { pp: 264, p: 287, sp: 302, stdCredit: 326, std: 326, t1: 335, t2: 352, t3: 372, t4: 385, t5: 395, t6: 406, t8: 415, t10: 435, t12: 444 },
+        82:  { pp: 270, p: 294, sp: 310, stdCredit: 334, std: 334, t1: 343, t2: 359, t3: 382, t4: 395, t5: 407, t6: 418, t8: 427, t10: 444, t12: 462 }
+      },
+      tableBands: [
+        { key: "t1", table: 1 }, { key: "t2", table: 2 }, { key: "t3", table: 3 }, { key: "t4", table: 4 },
+        { key: "t5", table: 5 }, { key: "t6", table: 6 }, { key: "t8", table: 8 }, { key: "t10", table: 10 }, { key: "t12", table: 12 }
+      ],
+      rules: {
+        minHeightIn: 56,
+        maxHeightIn: 82,
+        chartMinWeight: 89,
+        halfInchRounding: "Half-inch measurements round up to the next inch.",
+        applyWeightLossAdjustment: false,
+        weightLossAdjustment: "Weight stability is reviewed; significant recent weight change (gain or loss) — manual underwriting review.",
+        lowBuildReview: "Weight below chart minimum or BMI below 18.5 -> manual underwriting review.",
+        belowChartMin: 18.5,
+        aboveStandard: "Weight above Table 12 maximum -> manual underwriting review (do not guess beyond the published table ladder).",
+        note: "Unisex build chart with published table ratings: above Standard, build supports Table 1 (+25 lb) through Table 12 (+300 lb) directly from the chart. Fit program table credits may improve the final table rating."
+      }
+    },
+
+    /* ---- Blood pressure (class criteria, p. 18-20) ------------------ */
+    bp: {
+      preferred_plus:   { sys: 140, dia: 85 },
+      preferred:        { sys: 145, dia: 90 },
+      standard_plus:    { sys: 150, dia: 90 },
+      standard:         null
+    },
+    bpTreatmentNote: "Treatment allowed with good control for Preferred Plus / Preferred / Standard Plus (guide thresholds are stated as < 140/85, < 145/90, < 150/90). Above 150/90 — substandard / cardiovascular review; the guide publishes no higher Standard threshold.",
+
+    /* ---- Cholesterol (class criteria, p. 18-20) ---------------------- */
+    cholesterol: {
+      totalMax: 300,
+      ratio: {
+        preferred_plus: 5.0,
+        preferred: 6.0,
+        standard_plus: 7.0,
+        standard: null
+      },
+      note: "Average of 3 cholesterols over the past 12 months when available. Total cholesterol cannot exceed 300 for preferred classes. Treatment for cholesterol does not exclude Preferred Plus / Preferred / Standard Plus. (Strength page lists Standard Plus ratio < 7.5; per-class criteria page 20 lists < 7.0 — the criteria page is used.)"
+    },
+
+    /* ---- Driving (class criteria) ------------------------------------ */
+    driving: {
+      preferred_plus:   { duiCleanYears: 5, violationsYears: 0, note: "No convictions for DWI, DUI or reckless driving within the last five years and otherwise not rateable." },
+      preferred:        { duiCleanYears: 5, violationsYears: 0, note: "No convictions for DWI, DUI or reckless driving within the last five years and otherwise not rateable." },
+      standard_plus:    { duiCleanYears: 5, violationsYears: 0, note: "No convictions for DWI, DUI or reckless driving within the last five years and otherwise not rateable." },
+      standard:         null
+    },
+
+    /* ---- Family history ---------------------------------------------- */
+    familyHistory: {
+      mapping: { none: "preferred_plus", parent: "preferred", parent_sibling: "standard_plus", multiple: "standard" },
+      disregardAge: 60,
+      preferred_plus: { text: "No death of a parent prior to age 60 due to cancer or heart disease. (Family history does not apply at age 60 or older, or for gender-specific cancers of the opposite sex; applies to deaths, not disease; deaths due to diabetes can qualify.)" },
+      preferred:      { text: "No death of a parent prior to age 60 due to cancer or heart disease; with good risk factors and a negative cardiac workup appropriate for age, one cardiac death is allowed." },
+      standard_plus:  { text: "One death of a parent prior to age 60 due to heart disease allowed." },
+      standard:       { text: "More than one parent death prior to age 60 from cancer or heart disease — below Standard Plus criteria." }
+    },
+
+    /* Alcohol & drug class criteria: allowed after 15 / 10 / 5 years for
+       Preferred Plus / Preferred / Standard Plus. Impairment table: alcoholism
+       treatment postponed 2 years then Standard-Table 8; cocaine/drug addiction
+       postponed 3 years then Standard-Table 8. */
+    substanceTiers: { declineYears: 2, tiers: [{ minYears: 15, klass: "preferred_plus" }, { minYears: 10, klass: "preferred" }, { minYears: 5, klass: "standard_plus" }, { minYears: 0, klass: "standard" }] },
+
+    /* Preferred classes require no history of CAD, diabetes, or cancer
+       (basal cell and superficial squamous cell skin cancer allowed). */
+    medicalStandardCap: ["diabetes", "cad", "heart_disease", "stroke", "other_cancer", "kidney_disease"],
+
+    /* Impairment-table conditions that are decline screens when current */
+    autoDeclineIds: ["dementia", "schizophrenia", "hiv"],
+    autoDeclineSevereIds: ["heart_disease", "kidney_disease", "liver_disease"],
+
+    /* Carrier-specific model overrides for engine-computed conditions.
+       best = the best-case (most favorable) class; the engine floors the
+       computed ceiling at this class. */
+    conditionModels: {
+      anxiety: { best: "standard" },       // impairment: mild/well-controlled = Standard
+      depression: { best: "standard" },    // impairment: controlled w/ medication = Standard-Table 3
+      asthma: { best: "preferred" },       // strengths: mild asthma may be Preferred
+      bipolar: { best: "table" },          // impairment: stable = Table 2-8
+      other_cancer: { waitYears: 5, afterCeiling: "table" }  // postponed 2-5 yrs, then individual consideration
+    },
+
+    /* Type 1 diabetes -> Table 2-8; Type 2 -> Standard-Table 8 (impairment table) */
+    diabetes: { type1Ceiling: "table", type2Ceiling: "standard" },
+
+    /* Hazardous occupation / avocation class criteria (p. 18-20):
+       Preferred Plus — no hazardous occupation/avocation/sport in last 5 years;
+       Preferred — none in last 2 years; Standard Plus — flat extras allowed. */
+    avocation: {
+      currentHazardousText: "Hazardous occupation/avocation disclosed — Preferred classes require no hazardous occupation, avocation, or sport (Preferred Plus: 5 years, Preferred: 2 years); Standard Plus allows flat extras. Aviation, diving, and climbing have published flat-extra schedules (e.g., private pilots with aviation exclusion may qualify for preferred classes; scuba <100 ft certified may qualify for all preferred classes).",
+      cleanText: "No hazardous occupation or avocation disclosed."
+    },
+
+    medicalCeilings: [
+      { id: "anxiety", name: "Anxiety", ceilings: [{ klass: "standard", when: "mild or well controlled" }], worse: "Others — Standard to Table 4." },
+      { id: "depression", name: "Depression", ceilings: [{ klass: "standard", when: "controlled with medication" }], worse: "Standard to Table 3; suicide attempt — single attempt over 1 year $5/M flat extra, over 5 years Standard, multiple attempts decline." },
+      { id: "bipolar", name: "Bipolar disorder", ceilings: [{ klass: "table", table: 2, when: "stable (best case Table 2)" }], worse: "Stable — Table 2 to 8." },
+      { id: "schizophrenia", name: "Schizophrenia", ceilings: [], decline: "Not listed in the published impairment table — carrier pre-screen / specialist review required." },
+      { id: "substance_treatment", name: "Alcohol/drug treatment history", ceilings: [{ klass: "preferred_plus", when: "alcohol & drug allowed after 15 years (Preferred Plus), 10 years (Preferred), 5 years (Standard Plus)" }], worse: "Alcoholism treatment, no current use, postponed 2 years then Standard-Table 8; cocaine / drug addiction postponed 3 years then Standard-Table 8.", decline: "Current excessive alcohol use — decline." },
+      { id: "hypertension", name: "High blood pressure", ceilings: [{ klass: "preferred_plus", when: "readings within class limits, treatment allowed with good control" }], note: "Treatment for hypertension does not exclude Preferred Plus / Preferred / Standard Plus. Controlled hypertension (impairment table) — Standard." },
+      { id: "high_cholesterol", name: "High cholesterol", ceilings: [{ klass: "preferred_plus", when: "ratio within class limits; treatment allowed; total cholesterol ≤ 300" }], note: "Treatment for cholesterol does not exclude the preferred classes. Controlled hyperlipidemia (impairment table) — Standard." },
+      { id: "cad", name: "Coronary artery disease / angina", ceilings: [{ klass: "table", table: 2, when: "stable angina with favorable cardiac evaluation (best case Table 2)" }], postpone: "Recent heart event or unstable presentation — postpone for stability.", worse: "Angina Table 2-8; unstable angina under age 40 — decline; myocardial infarction over age 40 — Table 4 to decline." },
+      { id: "heart_disease", name: "Heart disease (CHF, cardiomyopathy, valve, device)", ceilings: [{ klass: "table", table: 4, when: "myocardial infarction over age 40 or significant heart history (best case Table 4)" }], postpone: "Recent event within the stability window.", decline: "Cardiomyopathy, chronic congestive heart failure, or end-stage heart disease — decline.", worse: "CHF/cardiomyopathy — decline; heart attack (MI) over 40 — Table 4 to decline; pacemaker (no other heart disease, 3+ months, over 40) — Table 2-4." },
+      { id: "stroke", name: "Stroke / TIA", ceilings: [{ klass: "table", table: 4, when: "single event, no complications, stable 1+ years (best case Table 4 plus flat)" }], decline: "Multiple strokes or severe residual disability — decline.", worse: "Stroke — 1 year since event, Table 4 plus flat extra to decline; TIA — single event over 6 months Table 2-4, multiple events over 1 year Table 4-8." },
+      { id: "asthma", name: "Asthma", ceilings: [{ klass: "preferred", when: "mild (strengths: 'Mild Asthma clients may be eligible for Preferred')" }], worse: "Mild intermittent — Standard; persistent — Table 2 to decline depending on severity." },
+      { id: "copd", name: "COPD / emphysema / chronic bronchitis", ceilings: [{ klass: "standard", when: "mild chronic bronchitis" }], worse: "COPD — Standard to Table 8; chronic severe — Table 4 to decline; emphysema — Standard to Table 8." },
+      { id: "sleep_apnea", name: "Sleep apnea", ceilings: [{ klass: "preferred", when: "mild with verified c-PAP usage (strengths)" }], worse: "Successfully treated — Standard to Table 3." },
+      { id: "diabetes", name: "Diabetes", ceilings: [{ klass: "standard", when: "Type 2, onset after age 20 (impairment: Standard to Table 8)" }], worse: "Type 1 — Table 2 to 8; complications or A1c > 10 — decline/postpone screen." },
+      { id: "kidney_disease", name: "Kidney disease", ceilings: [{ klass: "standard", when: "stable chronic nephritis with good renal function (Standard to Table 4)" }], decline: "Renal failure, dialysis, or poor renal function — decline.", worse: "Polycystic kidney disease with normal function — Table 2-8; abnormal function — decline." },
+      { id: "liver_disease", name: "Liver disease", ceilings: [{ klass: "standard", when: "controlled chronic hepatitis (Standard to Decline)" }], decline: "Confirmed cirrhosis — decline.", worse: "Chronic hepatitis — Standard to Decline; esophageal varices — decline." },
+      { id: "hiv", name: "HIV / AIDS", ceilings: [], decline: "Not addressed in the published impairment table — carrier pre-screen / specialist review required." },
+      { id: "dementia", name: "Alzheimer's / dementia", ceilings: [], decline: "Alzheimer's disease / senile dementia — decline." },
+      { id: "seizures", name: "Seizures / epilepsy", ceilings: [{ klass: "table", table: 2, when: "epilepsy (best case Table 2)" }], worse: "Epilepsy / convulsions — Table 2 to 8." },
+      { id: "autism", name: "Autism", ceilings: [{ klass: "standard", when: "mild, independent functioning — individual consideration" }] },
+      { id: "skin_cancer", name: "Skin cancer (basal / squamous)", ceilings: [{ klass: "preferred_plus", when: "basal cell or superficial squamous cell skin cancer (allowed for preferred classes per class criteria)" }], worse: "Impairment line: basal cell carcinoma, maximum 4 excisions, complete resolution — Standard; deeper or recurrent presentations rate lower." },
+      { id: "other_cancer", name: "Other cancer history", ceilings: [{ klass: "table", when: "resolved 5+ years — individual consideration" }], postpone: "Most malignancies postponed 2-5 years — postpone until the wait-out period completes.", decline: "Active/undergoing treatment, recurrence, or multiple cancers — carrier direction.", worse: "Most malignancies — postponed 2-5 years, then individual consideration." },
+      { id: "osteoporosis", name: "Osteoporosis", ceilings: [{ klass: "standard", when: "impairment table lists osteoporosis as Standard" }] },
+      { id: "mvp", name: "Mitral valve prolapse", ceilings: [{ klass: "standard", when: "functional murmur, no significant insufficiency" }], worse: "Otherwise — Standard to Table 8." },
+      { id: "cimt", name: "Carotid imaging (CIMT)", ceilings: [{ klass: "standard", when: "individual consideration" }] },
+      { id: "transplant", name: "Organ transplant", ceilings: [{ klass: "table", table: 6, when: "single renal transplant, no complications after 1 year, over age 20 (best case Table 6)" }], worse: "Heart/lung/liver transplant or complications — carrier direction." },
+      { id: "paralysis", name: "Paralysis", ceilings: [{ klass: "table", table: 8, when: "paraplegia — individual consideration" }], decline: "Quadriplegia — decline." }
+    ],
+
+    /* ---- Postpone triggers (MOO flavor) ------------------------------ */
+    postponeTriggers: [
+      { id: "pending_test", text: "Pending test, referral, surgery, or evaluation with unknown results", reason: "Uninvestigated outcome can matter more than known history." },
+      { id: "recent_hospitalization", text: "Hospitalization or advised hospitalization within the past 4 months", reason: "Insufficient stability." },
+      { id: "recent_surgery", text: "Surgery performed or recommended within the past 4 months with unfinished/unknown results", reason: "Insufficient stability." },
+      { id: "active_symptom", text: "Uninvestigated active symptom under first-time evaluation", reason: "Uninvestigated symptom." },
+      { id: "cancer_waitout", text: "Cancer diagnosed/treated within the 2-5 year wait-out period", reason: "Most malignancies postponed 2-5 years." },
+      { id: "gastric_bypass_recent", text: "Gastric bypass within the past year", reason: "Postponed 1 year, then Table 2-4." },
+      { id: "diabetes_complications", text: "Significant diabetes complications (kidney, eye, nerve, vascular)", reason: "Decline/postpone screen." },
+      { id: "a1c_high", text: "Most recent A1c above 10", reason: "Poor control — decline/postpone screen." },
+      { id: "pregnancy_complications", text: "Currently pregnant with gestational diabetes or complications", reason: "Postpone (gestational diabetes while pregnant — postpone)." },
+      { id: "suicide_attempt_recent", text: "Suicide attempt within the past year", reason: "Single attempt over 1 year — $5/M flat extra; over 5 years — Standard." }
+    ],
+
+    /* ---- Decline / specialist-review triggers ------------------------ */
+    declineTriggers: [
+      { id: "hiv", text: "HIV / AIDS", reason: "Not addressed in the published impairment table — specialist review." },
+      { id: "dementia", text: "Alzheimer's disease / dementia", reason: "Impairment table — decline." },
+      { id: "alcohol_active", text: "Current excessive alcohol use", reason: "Impairment table — decline." },
+      { id: "drug_use_recent", text: "Drug abuse (non-marijuana, recent)", reason: "Postponed 3 years, then Standard-Table 8." },
+      { id: "cirrhosis", text: "Cirrhosis of the liver", reason: "Impairment table — decline." },
+      { id: "cardiomyopathy", text: "Cardiomyopathy / chronic CHF", reason: "Impairment table — decline." },
+      { id: "renal_failure", text: "Renal failure / dialysis / poor renal function", reason: "Impairment table — decline." },
+      { id: "quadriplegia", text: "Quadriplegia", reason: "Impairment table — decline." },
+      { id: "suicide_multiple", text: "Multiple suicide attempts", reason: "Impairment table — decline." },
+      { id: "adl_dependence", text: "Assistance needed with activities of daily living", reason: "Specialist review / decline screen." },
+      { id: "facility_care", text: "Facility / hospice / home-health care or chronic wheelchair use", reason: "Strong specialist-review trigger." },
+      { id: "criminal_active", text: "Current criminal activity or pending charges", reason: "Eligibility screen." },
+      { id: "bankruptcy_active", text: "Active bankruptcy proceedings", reason: "Financial eligibility screen." },
+      { id: "oxygen_use", text: "Oxygen use", reason: "Specialist review." }
+    ],
+
+    /* ---- Evidence / workflow ----------------------------------------- */
+    evidence: {
+      apsAge: 66,
+      apsConditions: [
+        "Cancer", "Diabetes", "Heart (cardiac) disease", "Stroke / TIA", "COPD / emphysema",
+        "Sleep apnea", "Seizure disorders", "Crohn's disease / ulcerative colitis", "Hepatitis B or C",
+        "Liver disease / cirrhosis", "Kidney disease / renal insufficiency", "Organ transplant",
+        "Mental-health disorders", "Substance abuse/dependence", "Suicide attempt", "Multiple sclerosis",
+        "Muscular dystrophy", "Parkinson's disease", "Paralysis", "Rheumatoid arthritis", "Lupus",
+        "Cognitive disorders", "Blood disorders"
+      ],
+      amountRules: [
+        { ageMin: 18, ageMax: 70, amountMin: 100000, items: ["Paramedical exam + blood/urine + Rx (pharmaceutical) check"] },
+        { ageMin: 18, ageMax: 45, amountMin: 100000, items: ["MVR (motor vehicle report)"] },
+        { ageMin: 46, ageMax: 70, amountMin: 1000001, items: ["MVR (motor vehicle report)"] },
+        { ageMin: 71, ageMax: 200, amountMin: 500000, items: ["MVR (motor vehicle report)"] },
+        { ageMin: 66, ageMax: 200, amountMin: 1, items: ["APS (attending physician statement)"] },
+        { ageMin: 71, ageMax: 200, amountMin: 100000, items: ["BNP (NT-Pro BNP, part of the blood profile)", "PHI (personal history interview)", "Senior Assessment"] },
+        { ageMin: 61, ageMax: 65, amountMin: 5000001, items: ["EKG"] },
+        { ageMin: 66, ageMax: 200, amountMin: 2000001, items: ["EKG"] },
+        { ageMin: 18, ageMax: 200, amountMin: 5000001, items: ["Inspection report (face amounts $5,000,001+)"] },
+        { ageMin: 18, ageMax: 200, amountMin: 100000, items: ["Signed HIV consent form (face amount $100,000+)"] },
+        { ageMin: 65, ageMax: 200, amountMin: 1000000, items: ["Statement of Policyowner Intent + Premium Funding & Acknowledgement form"] }
+      ],
+      acceleratedUw: { ageMin: 18, ageMax: 55, amountMin: 100000, amountMax: 1000000, note: "Accelerated Underwriting (Term Life Answers) ages 18-55, $100,000-$1,000,000; Express simplified lanes (TLE/GULE/IULE) available with separate eligibility." },
+      note: "Paramedical exam, blood/urine, Rx check and MVR per the age/amount grid (p. 16-17); APS from age 66; BNP, PHI and Senior Assessment from age 71; EKG at higher ages/amounts. APS may not be needed for treated hypertension or treated cholesterol when class is Preferred Plus through Standard, age 65 and under, face amount $2,000,000 or less. Requirements are good for up to one year through age 65 with a fully completed application.",
+      temporaryCoverage: "TIA (term/UL, to $1,000,000, all 6 eligibility questions no) or Conditional Receipt (Express, to $100,000; $40,000 Living Promise) — coverage exists only when the exact receipt conditions are met."
+    },
+
+    /* ---- Financial justification ------------------------------------- */
+    financial: {
+      incomeMultipliers: [
+        { ageMin: 18, ageMax: 40, multiplier: 25 },
+        { ageMin: 41, ageMax: 50, multiplier: 20 },
+        { ageMin: 51, ageMax: 55, multiplier: 15 },
+        { ageMin: 56, ageMax: 65, multiplier: 10 },
+        { ageMin: 66, ageMax: 200, multiplier: 7 }
+      ],
+      premiumToIncome: "No published premium-to-income ceiling in the brokerage guide; justification is via income replacement, estate conservation, and ownership rules.",
+      note: "Income replacement: 25X (ages 20-40), 20X (41-50), 15X (51-55), 10X (56-65), 7X (66+) — generally not considered over age 66 unless actively at work. Non-working spouse: generally up to $2,000,000 (equal to the breadwinner's in-force + applied-for). Estate conservation: up to 50% of projected estate value. Key person: 5-10X earned income. Creditor: up to 75% of a secured loan. Charitable giving: ~10X annual contribution. Tax returns and 3rd-party verified financials may be required above $5,000,000."
+    },
+
+    /* The Fit program reduces table ratings (up to 2 credits, best final
+       class Standard) — evaluated separately, never auto-applied here. */
+    credit: null,
+
+    classInfo: {
+      preferred_plus: { name: "Preferred Plus Non-Tobacco", meaning: "No nicotine 36 months; no parent death <60 (cancer/heart); BP <140/85; ratio <5.0; no CAD/diabetes/cancer history; no hazardous activities in 5 years.", color: "#0e7a5f" },
+      preferred: { name: "Preferred Non-Tobacco", meaning: "No nicotine 24 months; BP <145/90; ratio <6.0; one cardiac parent death allowed with favorable workup; no hazardous activities in 2 years.", color: "#1b9a7a" },
+      standard_plus: { name: "Standard Plus Non-Tobacco", meaning: "No nicotine 12 months; BP <150/90; ratio <7.0; one parent heart-disease death <60 allowed; flat extras allowed for avocations.", color: "#3b82b0" },
+      standard: { name: "Standard Non-Tobacco", meaning: "Average insurable risk; meets non-nicotine qualification (no nicotine 12 months).", color: "#4a6fa5" },
+      table: { name: "Table-rated (Table 1-12)", meaning: "Build above Standard (Table 1 +25 lb through Table 12 +300 lb) or an impairment with a published table range — premium from standard rates.", color: "#b8860b" },
+      postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 2-5 years, alcoholism treatment 2 years, drug/cocaine 3 years, gastric bypass 1 year, recent events).", color: "#8a5fb8" },
+      decline: { name: "Decline / specialist review", meaning: "Impairment listed as decline (CHF, cardiomyopathy, cirrhosis, dialysis, dementia, sickle cell, quadriplegia) or outside the published ranges — carrier direction required.", color: "#b3364a" }
     }
   }
 };

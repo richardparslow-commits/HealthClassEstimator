@@ -92,7 +92,7 @@ const Engine = (() => {
 
     let adjustedWeight = Number(d.weightLb);
     let weightNote = "";
-    if (has(d, "weightOneYearAgoLb") && d.weightIntentional) {
+    if (rules.build.rules.applyWeightLossAdjustment !== false && has(d, "weightOneYearAgoLb") && d.weightIntentional) {
       const change = Number(d.weightOneYearAgoLb) - adjustedWeight;
       if (change > 20) {
         adjustedWeight = adjustedWeight + change / 2;
@@ -111,6 +111,7 @@ const Engine = (() => {
     const chartMin = rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89;
     let klass = null;
     let bandName = "";
+    let tableRating = null;
     if (bmiLow || adjustedWeight < chartMin) {
       klass = "manual_review";
       bandName = "below chart minimum";
@@ -127,14 +128,28 @@ const Engine = (() => {
       klass = "standard"; bandName = "Standard (no build credit)";
       flags.push("no_build_credit");
     } else {
-      klass = "substandard_review";
-      bandName = "above Standard maximum";
-      flags.push("substandard_build", "manual_review");
+      // Carrier-published substandard table bands (e.g., Mutual of Omaha
+      // build chart: Table 1 (+25 lb) through Table 12 (+300 lb))
+      const tBands = rules.build.tableBands || [];
+      let tableHit = null;
+      for (const tb of tBands) {
+        if (band[tb.key] !== undefined && adjustedWeight <= band[tb.key]) { tableHit = tb; break; }
+      }
+      if (tableHit) {
+        klass = "table";
+        bandName = `Table ${tableHit.table}`;
+        tableRating = tableHit.table;
+      } else {
+        klass = "substandard_review";
+        bandName = "above the highest published table";
+        flags.push("substandard_build", "manual_review");
+      }
     }
 
     return {
       klass,
       bandName,
+      tableRating,
       adjustedWeight: Math.round(adjustedWeight),
       bmi: Math.round(bmi * 10) / 10,
       bmiLow,
@@ -300,8 +315,15 @@ const Engine = (() => {
     const age = d.age ? Number(d.age) : null;
     const tobacco = d.usedNicotine === false;
     // Over-70 non-tobacco: CAD family history disregarded (Banner rule)
-    if (rules.id === "banner" && age !== null && age > 70 && tobacco) {
+    const disregardBanner = rules.id === "banner" && age !== null && age > 70 && tobacco;
+    // Carrier-published age at which family history stops applying (e.g., MOO: age 60+)
+    const disregardAge = rules.familyHistory && rules.familyHistory.disregardAge;
+    const disregardCarrier = disregardAge && age !== null && age >= disregardAge;
+    if (disregardBanner) {
       return { klass: "preferred_plus", detail: "Family CAD history disregarded (applicant over 70, non-tobacco)." };
+    }
+    if (disregardCarrier) {
+      return { klass: "preferred_plus", detail: `Family history disregarded (applicant age ${age}, at or above the carrier's ${disregardAge}+ threshold).` };
     }
     const mapping = (rules.familyHistory && rules.familyHistory.mapping) || { none: "preferred_plus", parent: "preferred", parent_sibling: "standard_plus", multiple: "standard" };
     const klass = mapping[f] || "standard";
@@ -345,12 +367,18 @@ const Engine = (() => {
         if (meta.id === "diabetes") {
           const onset = has(c, "onsetAge") ? Number(c.onsetAge) : null;
           const a1c = has(c, "a1c") ? Number(c.a1c) : null;
+          const dm = rules.diabetes || null;
           if (a1c !== null && a1c > 10) {
             decline.push({ id: c.id, text: `Diabetes A1c ${a1c} > 10 — decline/postpone screen.` });
             ceiling = "decline";
           } else if (c.complications === "yes") {
             decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
             ceiling = "decline";
+          } else if (dm) {
+            // carrier-published type model (e.g., MOO: Type 1 -> Table 2-8, Type 2 -> Standard-Table 8)
+            const isType1 = c.type === "type1" || (onset !== null && onset < 20);
+            ceiling = isType1 ? (dm.type1Ceiling || "table") : (dm.type2Ceiling || "standard");
+            details.push(`Diabetes: ${isType1 ? "Type 1 (or onset before age 20)" : "Type 2"} — ${ceiling} best case per the impairment table.`);
           } else if (onset !== null && onset >= 50 && !d.usedNicotine && control === "good") {
             ceiling = "standard_plus";
           } else if (onset !== null && onset >= 50) {
@@ -382,8 +410,13 @@ const Engine = (() => {
         } else if (meta.id === "skin_cancer") {
           ceiling = "preferred_plus";
         } else if (meta.id === "other_cancer") {
+          const cm = rules.conditionModels && rules.conditionModels.other_cancer;
           if (c.recurrence) { postpone.push({ id: c.id, text: "Cancer recurrence — contact underwriting before submitting." }); ceiling = "postpone"; }
+          else if (cm && cm.waitYears && c.resolvedYears !== "" && c.resolvedYears !== null && c.resolvedYears !== undefined && Number(c.resolvedYears) < cm.waitYears) {
+            postpone.push({ id: c.id, text: `Cancer resolved only ${c.resolvedYears} years ago — carrier wait-out is ${cm.waitYears} years.` }); ceiling = "postpone";
+          }
           else if (c.treatedWithin12mo) { postpone.push({ id: c.id, text: "Cancer diagnosed/treated within 12 months — contact underwriting before submitting." }); ceiling = "postpone"; }
+          else if (cm && cm.afterCeiling) ceiling = cm.afterCeiling;
           else ceiling = "standard_plus";
         } else if (meta.id === "bipolar") {
           if (c.onsetWithin1yr) { postpone.push({ id: c.id, text: "Bipolar diagnosed within the last year." }); ceiling = "postpone"; }
@@ -426,6 +459,14 @@ const Engine = (() => {
           ceiling = "table"; // significant current condition without a published ceiling -> table/specialist review
           details.push(`${meta.name}: current condition — table-rated or specialist review.`);
         }
+      }
+
+      /* Carrier-specific best-class caps (conditionModels.best floors the
+         computed ceiling at the carrier's best-case class, e.g., MOO caps
+         anxiety/depression at Standard and bipolar at Table 2). */
+      const cm = rules.conditionModels && rules.conditionModels[meta.id];
+      if (cm && cm.best && ceiling && ceiling !== "postpone" && ceiling !== "decline" && CLASS_INDEX[ceiling] < CLASS_INDEX[cm.best]) {
+        ceiling = cm.best;
       }
 
       /* Carrier-specific cap: conditions that exclude the preferred classes (Transamerica:
@@ -636,17 +677,27 @@ const Engine = (() => {
     const list = [];
     const age = d.age ? Number(d.age) : null;
     const face = d.faceAmount ? Number(d.faceAmount) : null;
+    const hasAmtRules = (rules.evidence.amountRules || []).length > 0;
 
-    if (age !== null && age > 60) list.push("APS (always required over age 60)");
-    if (age !== null && age >= 71) list.push("Daily Activities Questionnaire");
-    if (face !== null) {
-      if (age !== null && age <= 60 && face >= 100000) list.push("APM + blood/urine (age/amount requirements)");
-      if (age !== null && age > 60 && face >= 100000) list.push("Blood/urine (age/amount requirements)");
-      if (age !== null && age > 50 && face >= 2000000) list.push("EKG");
-      if (age !== null && age >= 51 && age <= 60 && face > 1000000) list.push("ProBNP");
-      if (age !== null && age > 60 && face > 250000) list.push("ProBNP");
-      if (age !== null && age >= 50 && d.sex === "male") list.push("PSA");
-      if (age !== null && age > 50) list.push("CEA");
+    if (!hasAmtRules) {
+      if (age !== null && age > 60) list.push("APS (always required over age 60)");
+      if (age !== null && age >= 71) list.push("Daily Activities Questionnaire");
+      if (face !== null) {
+        if (age !== null && age <= 60 && face >= 100000) list.push("APM + blood/urine (age/amount requirements)");
+        if (age !== null && age > 60 && face >= 100000) list.push("Blood/urine (age/amount requirements)");
+        if (age !== null && age > 50 && face >= 2000000) list.push("EKG");
+        if (age !== null && age >= 51 && age <= 60 && face > 1000000) list.push("ProBNP");
+        if (age !== null && age > 60 && face > 250000) list.push("ProBNP");
+        if (age !== null && age >= 50 && d.sex === "male") list.push("PSA");
+        if (age !== null && age > 50) list.push("CEA");
+      }
+    } else {
+      // Carrier-published age/amount evidence grid (e.g., Mutual of Omaha p. 16-17)
+      for (const ar of rules.evidence.amountRules) {
+        if (age !== null && face !== null && age >= ar.ageMin && age <= ar.ageMax && face >= ar.amountMin && (ar.amountMax === undefined || face <= ar.amountMax)) {
+          ar.items.forEach(i => { if (!list.includes(i)) list.push(i); });
+        }
+      }
     }
 
     const apsList = (rules.evidence.apsConditions || []).filter(t =>
@@ -796,7 +847,7 @@ const Engine = (() => {
     domains.tobacco = nic;
     if (!nic.missing) {
       if (nic.klass === "tobacco") {
-        out.notes.push("Tobacco class applies — Banner offers Preferred Tobacco / Standard Tobacco; table ratings not available with preferred tobacco classes.");
+        out.notes.push(`Tobacco class applies — ${rules.name} offers Preferred Tobacco / Standard Tobacco; table ratings are not available with preferred tobacco classes.`);
       } else if (nic.klass) {
         domains.tobacco.klass = nic.klass; // best NT class by lookback
       }
@@ -827,6 +878,19 @@ const Engine = (() => {
 
     const sub = evalSubstance(d);
     domains.substance = sub;
+
+    /* Hazardous occupation / avocation (carrier-published class criteria,
+       e.g., MOO: PP no hazardous activity in 5 years, P in 2 years,
+       Standard Plus allows flat extras). */
+    if (rules.avocation) {
+      if (d.occupationHazardous === "yes") {
+        domains.avocation = { klass: "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
+      } else if (d.occupationHazardous === "no") {
+        domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
+      } else {
+        domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
+      }
+    }
 
     domains.functional = func;
 
@@ -927,9 +991,17 @@ const Engine = (() => {
 
     // evidence flags
     const ev = evidenceNeeded(rules, d, condIds);
-    if (ev.apsNeeded.length || (d.age && d.age > 60)) flags.push("needs_aps");
+    const apsAge = rules.evidence.apsAge || 60;
+    if (ev.apsNeeded.length || (d.age && d.age >= apsAge)) flags.push("needs_aps");
     if (d.age && d.faceAmount && (Number(d.faceAmount) >= 2000000 || (d.age > 60 && Number(d.faceAmount) >= 500000))) flags.push("needs_exam");
-    if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) flags.push("accelerated_uw_possible");
+    const auw = rules.evidence.acceleratedUw;
+    if (auw) {
+      if (d.age && d.faceAmount && d.age >= auw.ageMin && d.age <= auw.ageMax && Number(d.faceAmount) >= auw.amountMin && Number(d.faceAmount) <= auw.amountMax) {
+        flags.push("accelerated_uw_possible");
+      }
+    } else if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) {
+      flags.push("accelerated_uw_possible");
+    }
 
     out.flags = [...new Set(flags)];
     out.evidence = ev;
@@ -975,6 +1047,7 @@ const Engine = (() => {
       case "dementia": return condIds.includes("dementia");
       case "cirrhosis": return condIds.includes("liver_disease") && isYes(d.cirrhosis);
       case "defibrillator": return condIds.includes("heart_disease") && isYes(d.defibrillator);
+      case "cardiomyopathy": return condIds.includes("heart_disease") && isYes(d.cardiomyopathy);
       case "hiv": return condIds.includes("hiv");
       case "renal_failure": return condIds.includes("kidney_disease") && (isYes(d.dialysis) || isYes(d.kidneyFailure));
       case "quadriplegia": return condIds.includes("paralysis") && d.paralysisType === "quadriplegia";

@@ -28,7 +28,7 @@ const App = (() => {
       alcoholConcern: "no", drugAbuse: "no", drugAbuseYears: "",
       conditions: [],
       medicationsText: "",
-      cirrhosis: "no", defibrillator: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
+      cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
       strokeSevere: false, multipleStrokes: false, suicideMultiple: false, oxygenUse: false,
       a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false,
       famCardio: "none",
@@ -186,7 +186,7 @@ const App = (() => {
   function getConditionState(id) {
     let c = state.conditions.find(x => x.id === id);
     if (!c) {
-      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false };
+      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false, defibrillator: false, cardiomyopathy: false };
       state.conditions.push(c);
       saveState();
     }
@@ -282,6 +282,7 @@ const App = (() => {
     if (id === "heart_disease") {
       const r = el("div", { class: "field-row" });
       r.appendChild(field("Defibrillator (AICD)?", checkPillKey(c, "defibrillator", "Yes")));
+      r.appendChild(field("Cardiomyopathy / CHF?", checkPillKey(c, "cardiomyopathy", "Yes")));
       wrap.appendChild(r);
     }
     if (id === "paralysis") {
@@ -374,7 +375,7 @@ const App = (() => {
     c.appendChild(el("p", { class: "card-sub" }, "Carrier selection picks the underwriting ruleset used for the estimate."));
 
     const r1 = el("div", { class: "field-row" });
-    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters and Transamerica are additional carrier mappings."));
+    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, and Mutual of Omaha are additional carrier mappings."));
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
     r1.appendChild(field("Sex", radioPill("sex", [["male", "Male"], ["female", "Female"]])));
     c.appendChild(r1);
@@ -737,6 +738,7 @@ const App = (() => {
     }
     const hd = d.conditions.find(c => c.id === "heart_disease");
     if (hd && hd.defibrillator) d.defibrillator = true;
+    if (hd && hd.cardiomyopathy) d.cardiomyopathy = true;
     const kd = d.conditions.find(c => c.id === "kidney_disease");
     const ld = d.conditions.find(c => c.id === "liver_disease");
     if (kd) { if (d.dialysis) d.kidneyFailure = true; }
@@ -885,7 +887,7 @@ const App = (() => {
     thead.appendChild(el("tr", {}, [el("th", {}, "Risk domain"), el("th", {}, "Best supported class"), el("th", {}, "Basis")]));
     tbl.appendChild(thead);
     const tbody = el("tbody", {});
-    const domainOrder = ["tobacco", "build", "bp", "cholesterol", "driving", "family", "medical", "medications", "substance", "functional", "pending"];
+    const domainOrder = ["tobacco", "build", "bp", "cholesterol", "driving", "family", "medical", "medications", "substance", "avocation", "functional", "pending"];
     for (const key of domainOrder) {
       const v = out.domains[key];
       if (!v) continue;
@@ -958,6 +960,20 @@ const App = (() => {
       if (age !== null && age >= 70) evUl.appendChild(el("li", {}, "APS always required (age 70+)."));
       if (Number(state.faceAmount || 0) >= 5000000) evUl.appendChild(el("li", {}, "IRS Form 4506-C required at $5,000,000+; PFS on business coverage $5,000,000+."));
       evUl.appendChild(el("li", {}, "Highlighted age/amount cells may qualify for fluidless processing (no blood/urine) — verify against the current chart."));
+    } else if (out.carrier === "Mutual of Omaha") {
+      evUl.appendChild(el("li", {}, "United of Omaha uses age last birthday (advantage to the applicant)."));
+      evUl.appendChild(el("li", {}, "Paramedical exam + blood/urine + Rx check at $100,000+ (ages 18-70); MVR per the age/amount grid."));
+      if (age !== null && age >= 66) evUl.appendChild(el("li", {}, "APS required from age 66; BNP, PHI and Senior Assessment from age 71."));
+      if (age !== null && age >= 71) evUl.appendChild(el("li", {}, "BNP + PHI + Senior Assessment required (age 71+)."));
+      evUl.appendChild(el("li", {}, "EKG at higher ages/amounts (age 66+, $2,000,000+; age 61-65, $5,000,000+); Inspection Report at $5,000,000+."));
+      if (age !== null && age >= 18 && age <= 55 && Number(state.faceAmount || 0) >= 100000 && Number(state.faceAmount || 0) <= 1000000) {
+        evUl.appendChild(el("li", {}, "Accelerated Underwriting may apply (Term Life Answers, ages 18-55, $100,000-$1,000,000)."));
+      }
+      if (Number(state.faceAmount || 0) >= 100000) evUl.appendChild(el("li", {}, "Signed HIV consent form required at $100,000+."));
+      if (age !== null && age >= 65 && Number(state.faceAmount || 0) >= 1000000) {
+        evUl.appendChild(el("li", {}, "Statement of Policyowner Intent + Premium Funding & Acknowledgement form required (age 65+, $1,000,000+)."));
+      }
+      if (Number(state.faceAmount || 0) > 5000000) evUl.appendChild(el("li", {}, "Tax returns and 3rd-party verified financials may be required above $5,000,000."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));
@@ -1051,7 +1067,7 @@ const App = (() => {
   const DOMAIN_LABELS = {
     tobacco: "Tobacco / nicotine", build: "Build (height/weight)", bp: "Blood pressure",
     cholesterol: "Cholesterol / HDL", driving: "Driving", family: "Family history",
-    medical: "Medical history", medications: "Medications / prescriptions", substance: "Alcohol / substances", functional: "Functional status / ADLs",
+    medical: "Medical history", medications: "Medications / prescriptions", substance: "Alcohol / substances", avocation: "Occupation / avocation", functional: "Functional status / ADLs",
     pending: "Pending care"
   };
 

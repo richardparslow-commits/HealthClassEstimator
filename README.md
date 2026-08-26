@@ -23,7 +23,7 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, or Transamerica), age, sex, state, occupation, hazardous duties
+1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, or Mutual of Omaha), age, sex, state, occupation, hazardous duties
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
 3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception, marijuana
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
@@ -55,7 +55,9 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
 4. **Credits are shown, not applied.** Only carriers that publish a credit rule surface one: Banner's
    one-class credit (build / BP / family history / cholesterol) is flagged as a "possible credit review"
    requiring 3 of 7 credit criteria — never auto-applied. Foresters and Transamerica publish no such credit,
-   so none is shown for them.
+   so none is shown for them. Mutual of Omaha's **Fit program** (up to 2 *table* credits: 3 characteristics =
+   1 credit, 5 = 2 credits, best final class Standard) is different in kind — it improves table ratings, not
+   health classes — so it is surfaced as a guide note, never auto-applied.
 5. **Confidence and flags.** Confidence reflects evidence completeness. Flags include `needs_aps`,
    `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`,
    `financial_review`, and `undisclosed_meds`.
@@ -77,13 +79,16 @@ justification against income multipliers, and the mandatory guardrails.
 | **Banner Life** (primary) | Full master-outcome chart: Preferred Plus / Preferred / Standard Plus / Standard NT, tobacco classes, build chart, BP & lipid ceilings, driving & family-history rules, medical best-class ceilings, postpone/decline triggers, evidence requirements, income multipliers | *Field guide for life insurance underwriting*, Banner Life family of companies, March 2026 |
 | **Foresters** (secondary) | Preferred Plus / Preferred / Standard Plus / Standard NT, Tobacco Plus, age-band BP & cholesterol ceilings, build charts, family-history and driving rules, non-medical eligibility screens and impairment declines | *Underwriting Guide — Your Term, Advantage Plus II, Strong Foundation and SMART UL*, 506305 US (04/26) |
 | **Transamerica** (secondary) | Trendsetter Super / Trendsetter LB, FFIUL II/IUL, FCIUL II/IUL: Preferred Plus/Preferred Elite, Preferred, Standard Plus, Standard NT + tobacco equivalents; sex-neutral blended BMI chart (age bands, Table A–H, decline ≤16/>46); age-band BP & cholesterol/HDL ceilings; driving, family-history and substance tiers; impairment-table declines | *A Field Guide to Underwriting* (Trendsetter Super/LB, IULs), 03/25 |
+| **Mutual of Omaha** (secondary) | United of Omaha term & permanent: Preferred Plus / Preferred / Standard Plus / Standard NT + Preferred Tobacco; unisex height/weight build chart with published table bands (Table 1 +25 lb through Table 12 +300 lb); BP (<140/85, <145/90, <150/90) & cholesterol ratio (5.0/6.0/7.0, total ≤300) class criteria; family history disregarded at 60+; impairment-table ranges and declines; alcohol/drug 15/10/5-year class tiers; age/amount evidence grid; income multipliers 25X/20X/15X/10X/7X; Fit table-credit program noted, not auto-applied | *Underwriting Guidelines — Life Insurance (Brokerage), For Term and Permanent Products*, 417212_0120 (Jan 2020) |
 
 Rules live as **data** in `js/rules.js` (carrier, guide version, effective date, risk domain, thresholds,
 outcomes) so carrier updates can be made without touching engine code. The engine (`js/engine.js`) is
 carrier-agnostic; `js/app.js` is the wizard UI. The Foresters LTC material is intentionally **not** merged into
 the life engine — LTC is a separate product silo evaluating ADL/IADL and long-term-care utilization risk.
 Transamerica's build rule is a **blended BMI chart** (sex-neutral), so the engine scores build by BMI with
-age bands for that carrier rather than a height/weight lookup.
+age bands for that carrier rather than a height/weight lookup. Mutual of Omaha's build chart is a **unisex
+height/weight chart with published table ratings**, so the engine reads the table ladder directly (above
+Standard, build alone can support Table 1 through Table 12).
 
 ## Outcome logic
 
@@ -116,6 +121,9 @@ age bands for that carrier rather than a height/weight lookup.
 - `Foresters-503554-US-Foresters-Non-Medical-Underwriting-Guide.pdf`, `Foresters-Financial-Field-Underwriting-Guide.pdf`
 - `SBLIUnderwritingGuide.pdf` (effective July 2020 — tagged historical in the build plan; verify before production use)
 - `23-1056-Quility-Agent-Guide-Final-1.pdf`
+- `Mutual-of-Omaha-Field-Underwriting-Guide.pdf` — Mutual of Omaha / United of Omaha brokerage guide (Jan 2020)
+- `life_underwriting_carrier_research_checklist_and_schema.pdf` — carrier research checklist + normalized schema
+- `Conduct an exhaustive search for underwriting guidelines.pdf` — medication-limitation research notes
 - `LTC-Underwriting-Guide-June-2025.pdf` (kept in its own product silo)
 
 ## Project layout
@@ -123,7 +131,7 @@ age bands for that carrier rather than a height/weight lookup.
 ```
 index.html          App shell
 css/styles.css      Styling (screen + print)
-js/rules.js         Carrier rule data (Banner, Foresters, Transamerica), medication dictionary, sources, class metadata
+js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
 ```
@@ -133,7 +141,7 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 66 scenario checks across all three carriers
+node /tmp/engine_test.js   # 103 scenario checks across all four carriers
 ```
 
 Then open `index.html` and walk a sample case through to the estimate.
