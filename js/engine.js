@@ -1,0 +1,861 @@
+/* =========================================================================
+ * HealthClassEstimator — Rule engine
+ * -------------------------------------------------------------------------
+ * Flow (per the build spec):
+ *   1. Screen postpone / likely-decline triggers first (gates).
+ *   2. Calculate the best possible class from each rule module.
+ *   3. Take the worst applicable ceiling as the provisional class.
+ *   4. Apply explicit carrier credits only where the guide allows them
+ *      (flagged as "possible credit review", never auto-applied).
+ *   5. Produce flags: needs_aps, needs_exam, likely_table, possible_decline,
+ *      manual_review, missing_material_data.
+ *   6. Estimate confidence from evidence completeness.
+ *
+ * Outputs are preliminary and non-binding; final decision is carrier
+ * underwriting. This tool never says "approved" or "declined" as a fact.
+ * ========================================================================= */
+"use strict";
+
+const Engine = (() => {
+
+  /* ---------- helpers -------------------------------------------------- */
+
+  const has = (obj, key) => obj && Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== null && obj[key] !== undefined && obj[key] !== "";
+
+  // accept both boolean true and string "yes" for checkbox-derived flags
+  const isYes = (v) => v === true || v === "yes";
+
+  function classWorseThan(a, b) {
+    return CLASS_INDEX[a] > CLASS_INDEX[b];
+  }
+
+  function worstOf(a, b) {
+    return classWorseThan(a, b) ? a : b;
+  }
+
+  /* ---------- build evaluation ---------------------------------------- */
+
+  /**
+   * Evaluate build against the carrier's height/weight chart.
+   * Returns { klass, band, adjustedWeight, flags: [] , detail }
+   */
+  function evalBuild(rules, d) {
+    const flags = [];
+    const chart = rules.build.chart;
+    if (!has(d, "heightIn") || !has(d, "weightLb")) {
+      return { klass: null, missing: true, flags, detail: "Height or weight not provided." };
+    }
+    const rawHeight = Number(d.heightIn);
+    const heightIn = Math.ceil(rawHeight * 2) / 2; // keep half inches; chart lookup below rounds up
+    const lookupHeight = Math.ceil(heightIn);     // half-inch rounds up to next inch
+    if (lookupHeight < rules.build.rules.minHeightIn || lookupHeight > rules.build.rules.maxHeightIn) {
+      return { klass: "manual_review", flags: [...flags, "manual_review"], detail: `Height outside the carrier build chart (${rules.build.rules.minHeightIn}"-${rules.build.rules.maxHeightIn}"). Manual underwriting review required.` };
+    }
+    const band = chart[lookupHeight];
+    if (!band) {
+      return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "Height not found in build chart." };
+    }
+
+    let adjustedWeight = Number(d.weightLb);
+    let weightNote = "";
+    if (has(d, "weightOneYearAgoLb") && d.weightIntentional) {
+      const change = Number(d.weightOneYearAgoLb) - adjustedWeight;
+      if (change > 20) {
+        adjustedWeight = adjustedWeight + change / 2;
+        weightNote = `Intentional loss of ${change} lb in the past year: half of the loss (${(change / 2).toFixed(0)} lb) added back per the weight-loss adjustment rule. Adjusted weight: ${adjustedWeight.toFixed(0)} lb.`;
+      }
+    }
+    if (has(d, "weightChangeUnintentional") && d.weightChangeUnintentional) {
+      flags.push("manual_review");
+      weightNote += " Unintentional weight change flagged for medical/manual review; no automatic weight adjustment applied.";
+    }
+
+    // BMI screening flag
+    const bmi = adjustedWeight / (lookupHeight * lookupHeight) * 703;
+    const bmiLow = bmi < rules.build.rules.belowChartMin;
+
+    const chartMin = rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89;
+    let klass = null;
+    let bandName = "";
+    if (bmiLow || adjustedWeight < chartMin) {
+      klass = "manual_review";
+      bandName = "below chart minimum";
+      flags.push("manual_review");
+    } else if (adjustedWeight <= band.pp) {
+      klass = "preferred_plus"; bandName = "Preferred Plus";
+    } else if (adjustedWeight <= band.p) {
+      klass = "preferred"; bandName = "Preferred";
+    } else if (adjustedWeight <= band.sp) {
+      klass = "standard_plus"; bandName = "Standard Plus";
+    } else if (adjustedWeight <= band.stdCredit) {
+      klass = "standard"; bandName = "Standard (possible credit)";
+    } else if (adjustedWeight <= band.std) {
+      klass = "standard"; bandName = "Standard (no build credit)";
+      flags.push("no_build_credit");
+    } else {
+      klass = "substandard_review";
+      bandName = "above Standard maximum";
+      flags.push("substandard_build", "manual_review");
+    }
+
+    return {
+      klass,
+      bandName,
+      adjustedWeight: Math.round(adjustedWeight),
+      bmi: Math.round(bmi * 10) / 10,
+      bmiLow,
+      weightNote,
+      flags,
+      detail: `${bandName} band at ${lookupHeight}" (raw height ${rawHeight}", rounded up). ${weightNote}`
+    };
+  }
+
+  /* ---------- nicotine evaluation ------------------------------------- */
+
+  function monthsSince(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+  }
+
+  /**
+   * Returns { tobacco: boolean, klass: classIndexName|null, detail }
+   */
+  function evalNicotine(rules, d) {
+    if (!has(d, "usedNicotine")) {
+      return { tobacco: null, klass: null, missing: true, detail: "Nicotine use not disclosed." };
+    }
+    if (!d.usedNicotine) {
+      return { tobacco: false, klass: "preferred_plus", detail: "No nicotine use disclosed." };
+    }
+    const ms = monthsSince(d.nicotineLastUse);
+    const months = ms === null ? null : Math.floor(ms);
+    const isTobacco = d.usedNicotine && (months === null || months < rules.nicotine.tobaccoLookbackMonths);
+
+    // Cigar exception
+    if (d.nicotineProduct === "cigar" && has(d, "cigarPerMonth")) {
+      const perMonth = Number(d.cigarPerMonth);
+      if (perMonth <= rules.nicotine.cigarException.maxPerMonth && d.cotinineNegative && !d.cigarComorbid) {
+        return { tobacco: false, klass: "preferred_plus", cigarException: true, detail: "Occasional cigar exception applies (≤1/month, negative cotinine, no comorbid diabetes/asthma)." };
+      }
+    }
+
+    if (!isTobacco && months !== null) {
+      // Non-tobacco now; find the most favorable class whose lookback is satisfied
+      const withMonths = rules.nicotine.classes.map(c => ({
+        klass: c.klass,
+        lookbackMonths: c.lookbackMonths !== undefined ? c.lookbackMonths : (c.lookbackYears !== undefined ? c.lookbackYears * 12 : 12)
+      }));
+      const sorted = [...withMonths].sort((a, b) => b.lookbackMonths - a.lookbackMonths);
+      let best = "standard"; // default
+      for (const c of sorted) {
+        if (months >= c.lookbackMonths) { best = c.klass; break; }
+      }
+      return { tobacco: false, klass: best, detail: `Last nicotine use ${months} months ago. Best non-tobacco class by lookback: ${best}.` };
+    }
+    if (months === null) {
+      return { tobacco: true, klass: null, missing: true, detail: "Nicotine use disclosed but last-use date missing — treat as tobacco pending verification." };
+    }
+    return { tobacco: true, klass: "tobacco", detail: `Nicotine used within the last 12 months (${months} months ago) — tobacco class applies.` };
+  }
+
+  /* ---------- blood pressure ------------------------------------------ */
+
+  /* Carrier rules may express a threshold as a plain object or as age-band arrays (Foresters). */
+  function ageBand(bands, age) {
+    if (Array.isArray(bands)) {
+      if (age === null || age === undefined) return null;
+      return bands.find(b => age >= b.ageMin && age <= b.ageMax) || null;
+    }
+    return bands;
+  }
+
+  function evalBP(rules, d) {
+    if (!has(d, "bpSys") || !has(d, "bpDia")) {
+      return { klass: null, missing: true, detail: "Blood pressure not provided." };
+    }
+    const sys = Number(d.bpSys), dia = Number(d.bpDia);
+    const age = d.age ? Number(d.age) : null;
+    let klass = null;
+    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
+    for (const k of order) {
+      const t = ageBand(rules.bp[k], age);
+      if (t && sys <= t.sys && dia <= t.dia) { klass = k; break; }
+    }
+    if (!klass) {
+      const st = ageBand(rules.bp.standard, age);
+      const stdText = st ? `${st.sys}/${st.dia}` : "standard limits";
+      return { klass: "bp_outside", detail: `BP ${sys}/${dia} exceeds Standard maximum (${stdText}) — substandard/cardiovascular review.` };
+    }
+    return { klass, detail: `BP ${sys}/${dia} supports ${klass}.` };
+  }
+
+  /* ---------- cholesterol --------------------------------------------- */
+
+  function evalCholesterol(rules, d) {
+    if (!has(d, "cholTotal") && !has(d, "cholHdl")) {
+      return { klass: null, missing: true, detail: "Cholesterol not provided." };
+    }
+    const total = has(d, "cholTotal") ? Number(d.cholTotal) : null;
+    const hdl = has(d, "cholHdl") ? Number(d.cholHdl) : null;
+    const ratio = (total !== null && hdl) ? total / hdl : null;
+    const age = d.age ? Number(d.age) : null;
+    const totalMin = rules.cholesterol.totalMin !== undefined ? rules.cholesterol.totalMin : (rules.cholesterol.minUntreated || null);
+    const totalMaxGlobal = rules.cholesterol.totalMax !== undefined ? rules.cholesterol.totalMax : null;
+    let klass = null;
+    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
+    for (const k of order) {
+      let ok = true;
+      const band = ageBand(rules.cholesterol.total ? rules.cholesterol.total[k] : null, age);
+      const totalMax = totalMaxGlobal !== null ? totalMaxGlobal : (band ? band.max : null);
+      if (totalMin !== null && total !== null && (total < totalMin || (totalMax !== null && total > totalMax))) ok = false;
+      const ratioBand = ageBand(rules.cholesterol.ratio ? rules.cholesterol.ratio[k] : null, age);
+      const ratioMax = ratioBand ? ratioBand.max : (rules.cholesterol.ratio && rules.cholesterol.ratio[k] !== undefined && !Array.isArray(rules.cholesterol.ratio[k]) ? rules.cholesterol.ratio[k] : null);
+      if (ratio !== null && ratioMax !== null && ratio > ratioMax) ok = false;
+      if (ok) { klass = k; break; }
+    }
+    if (!klass) {
+      return { klass: "lipids_outside", detail: `Cholesterol ${total || "n/a"} / HDL ${hdl || "n/a"} (ratio ${ratio === null ? "n/a" : ratio.toFixed(1)}) exceeds Standard limits.` };
+    }
+    return { klass, detail: `Cholesterol ${total || "n/a"} / HDL ${hdl || "n/a"} (ratio ${ratio === null ? "n/a" : ratio.toFixed(1)}) supports ${klass}.` };
+  }
+
+  /* ---------- driving -------------------------------------------------- */
+
+  function evalDriving(rules, d) {
+    if (!has(d, "movingViolations3yr")) {
+      return { klass: null, missing: true, detail: "Driving history not provided." };
+    }
+    const mv = Number(d.movingViolations3yr);
+    const serious = d.seriousDriving ? d.seriousDrivingYears : null; // years since last DUI/reckless/suspension
+    let klass = null;
+    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
+    for (const k of order) {
+      const t = rules.driving[k];
+      if (!t) continue;
+      let ok = true;
+      if (t.maxViolations3yr !== undefined) {
+        // Banner shape
+        if (mv > t.maxViolations3yr) ok = false;
+        if (d.seriousDriving && (serious === null || serious < t.cleanYears)) ok = false;
+      } else {
+        // Foresters shape: duiCleanYears + maxViolations over violationsYears
+        if (d.seriousDriving && (serious === null || serious < t.duiCleanYears)) ok = false;
+        if (t.violationsYears >= 3 && mv > t.maxViolations) ok = false;
+      }
+      if (ok) { klass = k; break; }
+    }
+    if (!klass) {
+      return { klass: "driving_outside", detail: `Driving history (${mv} moving violations; serious violation within ${serious === null ? "unknown" : serious + " yr"}) exceeds Standard limits.` };
+    }
+    return { klass, detail: `Driving history supports ${klass}.` };
+  }
+
+  /* ---------- family history ------------------------------------------ */
+
+  function evalFamilyHistory(rules, d) {
+    if (!has(d, "famCardio")) {
+      return { klass: null, missing: true, detail: "Family history not provided." };
+    }
+    const f = d.famCardio; // "none" | "parent" | "parent_sibling" | "multiple"
+    const age = d.age ? Number(d.age) : null;
+    const tobacco = d.usedNicotine === false;
+    // Over-70 non-tobacco: CAD family history disregarded
+    if (age !== null && age > 70 && tobacco) {
+      return { klass: "preferred_plus", detail: "Family CAD history disregarded (applicant over 70, non-tobacco)." };
+    }
+    let klass = null;
+    if (f === "none") klass = "preferred_plus";
+    else if (f === "parent") klass = "preferred";
+    else if (f === "parent_sibling") klass = "standard_plus";
+    else klass = "standard"; // multiple parents
+    return { klass, detail: `Family history (${f}) supports ${klass}.` };
+  }
+
+  /* ---------- medical history ----------------------------------------- */
+
+  function evalMedical(rules, d) {
+    const conds = d.conditions || [];
+    if (!conds.length) {
+      return { klass: "preferred_plus", details: ["No medical conditions disclosed."] };
+    }
+    const details = [];
+    let worst = "preferred_plus";
+    let postpone = [];
+    let decline = [];
+
+    for (const c of conds) {
+      const meta = (rules.medicalCeilings || []).find(m => m.id === c.id);
+      if (!meta) continue;
+      const status = c.status || "current";
+      const severity = c.severity || "mild";
+      const control = c.control || "good";
+
+      if (meta.postpone) {
+        // postpone applies only when explicitly indicated (recent/unstable/timing flag)
+        if (isYes(c.postponeTrigger)) {
+          postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone}` });
+        }
+      }
+      if (meta.decline) {
+        if (isYes(c.declineTrigger)) {
+          decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
+        }
+      }
+
+      // Determine ceiling for this condition
+      let ceiling = null;
+      if (meta.ceilings && meta.ceilings.length) {
+        if (meta.id === "diabetes") {
+          const onset = has(c, "onsetAge") ? Number(c.onsetAge) : null;
+          const a1c = has(c, "a1c") ? Number(c.a1c) : null;
+          if (a1c !== null && a1c > 10) {
+            decline.push({ id: c.id, text: `Diabetes A1c ${a1c} > 10 — decline/postpone screen.` });
+            ceiling = "decline";
+          } else if (c.complications === "yes") {
+            decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
+            ceiling = "decline";
+          } else if (onset !== null && onset >= 50 && !d.usedNicotine && control === "good") {
+            ceiling = "standard_plus";
+          } else if (onset !== null && onset >= 50) {
+            ceiling = "standard_plus"; // still the ceiling, but flagged
+            details.push(`Diabetes: onset ${onset} — verify control; Standard Plus ceiling with good control.`);
+          } else {
+            ceiling = "standard";
+            details.push(`Diabetes: onset before 50 — below the Standard Plus ceiling; review individually.`);
+          }
+          if (c.insulin === "yes" && c.tobaccoCurrent) {
+            // tobacco + insulin diabetes is heavily rated
+            ceiling = worstOf(ceiling || "standard", "table");
+          }
+        } else if (meta.id === "anxiety" || meta.id === "depression") {
+          if (severity === "mild" && control === "good" && (c.medCount === 0 || (c.medCount === 1 && status === "current"))) {
+            ceiling = "preferred_plus";
+          } else if (severity === "mild" && control === "good" && c.medCount === 1) {
+            ceiling = "preferred";
+          } else {
+            ceiling = "standard";
+          }
+        } else if (meta.id === "asthma") {
+          if (severity === "mild" && c.medCount <= 1) ceiling = "preferred_plus";
+          else if (severity === "mild" && c.medCount <= 2) ceiling = "preferred";
+          else ceiling = "standard";
+        } else if (meta.id === "sleep_apnea") {
+          if ((severity === "mild" || severity === "moderate") && control === "good" && !c.residualSymptoms) ceiling = "preferred";
+          else ceiling = "standard";
+        } else if (meta.id === "skin_cancer") {
+          ceiling = "preferred_plus";
+        } else if (meta.id === "other_cancer") {
+          if (c.recurrence) { postpone.push({ id: c.id, text: "Cancer recurrence — contact underwriting before submitting." }); ceiling = "postpone"; }
+          else if (c.treatedWithin12mo) { postpone.push({ id: c.id, text: "Cancer diagnosed/treated within 12 months — contact underwriting before submitting." }); ceiling = "postpone"; }
+          else ceiling = "standard_plus";
+        } else if (meta.id === "bipolar") {
+          if (c.onsetWithin1yr) { postpone.push({ id: c.id, text: "Bipolar diagnosed within the last year." }); ceiling = "postpone"; }
+          else if (c.suicide10yr) { decline.push({ id: c.id, text: "Suicide attempt within 10 years." }); ceiling = "decline"; }
+          else if (severity === "mild" && control === "good" && c.stableYears >= 5) ceiling = "standard_plus";
+          else ceiling = "standard";
+        } else if (meta.id === "substance_treatment") {
+          const years = has(c, "yearsSober") ? Number(c.yearsSober) : null;
+          if (years !== null && years > 10 && !c.relapse) ceiling = "preferred";
+          else if (years !== null && years < 2) { decline.push({ id: c.id, text: "Substance treatment with less than 2 years sobriety." }); ceiling = "decline"; }
+          else ceiling = "standard";
+        } else if (meta.id === "dysplastic_nevi") {
+          ceiling = (c.count && c.count <= 3) ? "preferred" : "preferred_plus";
+        } else {
+          // generic: first ceiling
+          ceiling = meta.ceilings[0].klass;
+        }
+      } else {
+        // no ceiling defined (postpone/decline-only conditions like CAD, stroke, COPD)
+        ceiling = null;
+        if (meta.postpone && c.status === "current" && isYes(c.recentEvent)) {
+          postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone}` });
+        }
+        if (meta.decline && c.status === "current" && c.severity === "severe") {
+          decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
+        }
+        if (c.status === "resolved" && c.resolvedYears !== null && c.resolvedYears >= 1) {
+          // stable resolved history may still be acceptable; keep at standard ceiling
+          ceiling = "standard";
+          details.push(`${meta.name}: resolved ${c.resolvedYears} yr ago — stable history, individual review.`);
+        } else if (c.status === "current") {
+          ceiling = "table"; // significant current condition without a published ceiling -> table/specialist review
+          details.push(`${meta.name}: current condition — table-rated or specialist review.`);
+        }
+      }
+
+      if (ceiling && ceiling !== "postpone" && ceiling !== "decline") {
+        if (classWorseThan(ceiling, worst)) worst = ceiling;
+      }
+      const ceilingName = ceiling ? (ceiling === "decline" ? "decline screen" : ceiling === "postpone" ? "postpone" : ceiling) : "review";
+      details.push(`${meta.name}: ${severity} / ${control} control — best supported class ${ceilingName}.`);
+    }
+
+    // Comorbidity interaction check
+    const ids = new Set(conds.map(c => c.id));
+    const combos = [];
+    if (ids.has("diabetes") && (ids.has("cad") || ids.has("heart_disease") || ids.has("kidney_disease"))) {
+      combos.push("Diabetes + coronary/cardiovascular or kidney disease");
+    }
+    if (ids.has("kidney_disease") && ids.has("hypertension")) combos.push("Chronic kidney disease + hypertension");
+    if ((ids.has("anxiety") || ids.has("depression") || ids.has("bipolar")) && ids.has("substance_treatment")) {
+      combos.push("Mental-health condition + alcohol/substance abuse");
+    }
+
+    return { klass: worst, details, postpone, decline, combos };
+  }
+
+  /* ---------- substance / lifestyle ----------------------------------- */
+
+  function evalSubstance(d) {
+    if (!has(d, "alcoholConcern") && !has(d, "drugAbuse")) {
+      return { klass: null, missing: true, detail: "Substance history not provided." };
+    }
+    let klass = "preferred_plus";
+    const details = [];
+    if (d.drugAbuse === "yes") {
+      const years = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
+      if (years === null) {
+        return { klass: "decline", detail: "Drug abuse disclosed with no recovery duration — treat as decline screen pending details." };
+      }
+      if (years < 3) {
+        return { klass: "decline", detail: `Non-marijuana drug use within ${years} years — Banner decline/postpone screen.` };
+      }
+      // Banner class requirements: no abuse in past 7 years (Standard/Standard Plus), 10 years (Preferred)
+      if (years < 7) klass = worstOf(klass, "table");
+      else if (years < 10) klass = worstOf(klass, "standard_plus");
+      else klass = worstOf(klass, "preferred");
+      details.push(`Drug abuse history ${years} yr ago — recovery duration reviewed.`);
+    }
+    if (d.alcoholConcern === "active") {
+      return { klass: "decline", detail: "Current alcohol abuse or abstinence under 2 years — decline screen." };
+    }
+    if (d.alcoholConcern === "history") {
+      klass = worstOf(klass, "standard");
+      details.push("Alcohol abuse history — reviewed under recovery rules.");
+    }
+    return { klass, details, detail: details.join(" ") || "No substance concerns." };
+  }
+
+  /* ---------- functional status / ADLs -------------------------------- */
+
+  function evalFunctional(d) {
+    if (!has(d, "adlAssistance") && !has(d, "livingSetting")) {
+      return { klass: null, missing: true, detail: "Functional status not provided." };
+    }
+    if (d.livingSetting === "nursing" || d.livingSetting === "psychiatric" || d.livingSetting === "hospice" || d.homeHealth) {
+      return { klass: "decline", flag: "adl_dependence", detail: "Facility care, hospice, or home-health care — specialist review / likely decline screen." };
+    }
+    if (d.mobility === "wheelchair_chronic" || d.mobility === "bedbound") {
+      return { klass: "decline", flag: "adl_dependence", detail: "Chronic wheelchair dependence or bedbound — specialist review / likely decline screen." };
+    }
+    if (d.adlAssistance === "yes") {
+      return { klass: "decline", flag: "adl_dependence", detail: "Ongoing ADL assistance required — specialist review / likely decline screen." };
+    }
+    return { klass: "preferred_plus", detail: "Fully independent — no functional limitation disclosed." };
+  }
+
+  /* ---------- pending care -------------------------------------------- */
+
+  function evalPending(d) {
+    if (!has(d, "pendingTests") && !has(d, "recentHospitalization") && !has(d, "recentSurgery") && !has(d, "activeSymptom")) {
+      return { klass: null, missing: true, detail: "Pending-care status not provided." };
+    }
+    const gates = [];
+    if (d.pendingTests === "yes") gates.push("pending test/referral with unknown results");
+    if (d.recentHospitalization === "yes") gates.push("hospitalization within past 4 months");
+    if (d.recentSurgery === "yes") gates.push("surgery within past 4 months");
+    if (d.activeSymptom === "yes") gates.push("uninvestigated active symptom");
+    if (gates.length) {
+      return { klass: "postpone", detail: `Postpone screen: ${gates.join("; ")}.` };
+    }
+    return { klass: "preferred_plus", detail: "No pending care or uninvestigated findings." };
+  }
+
+  /* ---------- financial justification --------------------------------- */
+
+  function evalFinancial(rules, d) {
+    if (!has(d, "income") || !has(d, "faceAmount")) {
+      return { flag: "missing_financial", detail: "Income or face amount not provided — financial justification unverified." };
+    }
+    const income = Number(d.income);
+    const face = Number(d.faceAmount);
+    const age = d.age ? Number(d.age) : null;
+    if (age === null) return { flag: "missing_financial", detail: "Age not provided — financial multiplier unknown." };
+    const m = (rules.financial.incomeMultipliers || []).find(x => age >= x.ageMin && age <= x.ageMax);
+    if (!m) return { flag: "missing_financial", detail: "No financial multiplier for age." };
+    const max = typeof m.multiplier === "number" ? m.multiplier * income : null;
+    const ok = max === null ? null : face <= max;
+    return {
+      multiplier: m.multiplier,
+      maxJustified: max,
+      ok,
+      detail: `Income ${income} x ${m.multiplier} = ${max === null ? "individual consideration" : "$" + max.toLocaleString()} justified for age ${age}. Requested face ${face.toLocaleString()} ${ok === false ? "EXCEEDS" : "within"} this guideline.`
+    };
+  }
+
+  /* ---------- evidence requirements ----------------------------------- */
+
+  function evidenceNeeded(rules, d, conditionIds) {
+    const list = [];
+    const age = d.age ? Number(d.age) : null;
+    const face = d.faceAmount ? Number(d.faceAmount) : null;
+
+    if (age !== null && age > 60) list.push("APS (always required over age 60)");
+    if (age !== null && age >= 71) list.push("Daily Activities Questionnaire");
+    if (face !== null) {
+      if (age !== null && age <= 60 && face >= 100000) list.push("APM + blood/urine (age/amount requirements)");
+      if (age !== null && age > 60 && face >= 100000) list.push("Blood/urine (age/amount requirements)");
+      if (age !== null && age > 50 && face >= 2000000) list.push("EKG");
+      if (age !== null && age >= 51 && age <= 60 && face > 1000000) list.push("ProBNP");
+      if (age !== null && age > 60 && face > 250000) list.push("ProBNP");
+      if (age !== null && age >= 50 && d.sex === "male") list.push("PSA");
+      if (age !== null && age > 50) list.push("CEA");
+    }
+
+    const apsList = (rules.evidence.apsConditions || []).filter(t =>
+      conditionIds.some(id => id && (t.toLowerCase().includes(id.replace(/_/g, " ").toLowerCase()) || matchesAps(conditionIds, t)))
+    );
+    // condition-based APS mapping
+    const apsMap = {
+      cancer: "Cancer", diabetes: "Diabetes", cad: "Heart (cardiac) disease", heart_disease: "Heart (cardiac) disease",
+      stroke: "Stroke / TIA", copd: "COPD / emphysema", kidney_disease: "Kidney disease", liver_disease: "Liver disease",
+      dementia: "Cognitive disorders", substance_treatment: "Substance abuse/dependence", hiv: "Blood disorders",
+      seizures: "Cognitive disorders", transplant: "Paralysis"
+    };
+    const apsNeeded = [];
+    conditionIds.forEach(id => { if (apsMap[id] && !apsNeeded.includes(apsMap[id])) apsNeeded.push(apsMap[id]); });
+    apsNeeded.forEach(a => list.push(`APS: ${a}`));
+
+    return { list, apsNeeded, apsList };
+  }
+
+  function matchesAps(conditionIds, t) { return false; }
+
+  /* ---------- confidence ---------------------------------------------- */
+
+  function computeConfidence(d, flags) {
+    let score = 0, total = 0, missing = [];
+    const checks = [
+      ["heightIn", "height"], ["weightLb", "weight"], ["usedNicotine", "nicotine history"], ["bpSys", "blood pressure"],
+      ["movingViolations3yr", "driving history"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
+      ["pendingTests", "pending-care status"], ["age", "age"], ["faceAmount", "face amount"]
+    ];
+    for (const [k, label] of checks) {
+      total++;
+      if (has(d, k)) score++; else missing.push(label);
+    }
+    if (d.conditions && d.conditions.length) {
+      total++;
+      const allDetailed = d.conditions.every(c => c.control && c.severity);
+      if (allDetailed) score++;
+      else missing.push("condition control details");
+    }
+    if (flags.includes("missing_material_data")) missing.push("key data");
+    const pct = score / total;
+    if (pct >= 0.9) return { level: "High", missing };
+    if (pct >= 0.7) return { level: "Moderate", missing };
+    return { level: "Low", missing };
+  }
+
+  /* ---------- MAIN ENTRY ---------------------------------------------- */
+
+  /**
+   * Run the full engine.
+   * @param {string} carrierId  'banner' | 'foresters'
+   * @param {object} d          form data
+   */
+  function run(carrierId, d) {
+    const rules = CARRIER_RULES[carrierId];
+    if (!rules) return { error: "Unknown carrier" };
+    const out = {
+      carrier: rules.name,
+      guide: rules.guide,
+      inputs: d,
+      domains: {},
+      gates: { postpone: [], decline: [] },
+      provisionalClass: null,
+      finalClass: null,
+      range: null,
+      confidence: null,
+      flags: [],
+      evidence: null,
+      financial: null,
+      comorbidityFlags: [],
+      limitingFactors: [],
+      notes: []
+    };
+
+    /* ---- 1. Gate screen: postpone / decline ------------------------ */
+    // Decline gates (hardest first)
+    const declineHits = [];
+    if (d.alcoholConcern === "active") declineHits.push("alcohol_active");
+    if (d.drugAbuse === "yes") {
+      const yr = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
+      if (yr === null || yr < 3) declineHits.push("drug_use_recent");
+    }
+    if (isYes(d.criminalActive)) declineHits.push("criminal_active");
+    if (isYes(d.bankruptcyActive)) declineHits.push("bankruptcy_active");
+    const func = evalFunctional(d);
+    if (func.flag === "adl_dependence") declineHits.push("adl_dependence", "facility_care");
+
+    const conds = d.conditions || [];
+    const condIds = conds.map(c => c.id);
+    const med = evalMedical(rules, d);
+    for (const dc of med.decline || []) {
+      const idMatch = (rules.declineTriggers || []).find(t => dc.text.includes(t.text.split(" ")[0]) || t.id && dc.text.toLowerCase().includes(t.id.replace(/_/g, " ").slice(0, 8)));
+      out.gates.decline.push(dc);
+    }
+    for (const pp of med.postpone || []) out.gates.postpone.push(pp);
+
+    /* Foresters-specific medical screens (non-medical impairment guide) */
+    if (rules.id === "foresters" && rules.medical) {
+      for (const c of conds) {
+        const declineText = rules.medical.medicalDeclinesMap[c.id];
+        if (!declineText) continue;
+        if (c.id === "other_cancer" && Number(c.resolvedYears || 0) >= 10) continue; // completed >10 yrs ago, no recurrence: acceptable
+        out.gates.decline.push({ id: "foresters_" + c.id, text: declineText, reason: "Foresters non-medical impairment guide." });
+      }
+      const db = conds.find(c => c.id === "diabetes");
+      if (db) {
+        if (isYes(db.insulin) || db.complications === "yes") {
+          out.gates.decline.push({ id: "foresters_diabetes", text: rules.medical.diabetesNonMed.decline, reason: "Foresters impairment guide." });
+        }
+      }
+    }
+
+    for (const t of rules.declineTriggers || []) {
+      const hit = conditionDeclineHit(t.id, d, condIds, med);
+      if (hit) declineHits.push(t.id);
+    }
+
+    const declineSet = new Set(declineHits);
+    declineSet.forEach(id => {
+      const t = (rules.declineTriggers || []).find(x => x.id === id);
+      if (t && !out.gates.decline.some(g => g.id === t.id)) out.gates.decline.push({ id: t.id, text: t.text, reason: t.reason });
+    });
+
+    // Postpone gates
+    const postponeHits = [];
+    const pend = evalPending(d);
+    if (pend.klass === "postpone") postponeHits.push("pending_test");
+    if (isYes(d.a1cHigh)) postponeHits.push("a1c_high");
+    if (isYes(d.diabetesComplications)) postponeHits.push("diabetes_complications");
+    if (isYes(d.gastricBypassRecent)) postponeHits.push("gastric_bypass_recent");
+
+    if (out.gates.postpone.length || postponeHits.length) {
+      const postponeSet = new Set([...postponeHits, ...out.gates.postpone.map(g => g.id || "condition")]);
+      postponeSet.forEach(id => {
+        if (out.gates.postpone.some(g => g.id === id)) return;
+        const t = (rules.postponeTriggers || []).find(x => x.id === id);
+        if (t && !out.gates.postpone.some(g => g.id === t.id)) out.gates.postpone.push({ id: t.id, text: t.text, reason: t.reason });
+      });
+    }
+
+    /* ---- 2. Domain best classes ----------------------------------- */
+    const domains = {};
+
+    const nic = evalNicotine(rules, d);
+    domains.tobacco = nic;
+    if (!nic.missing) {
+      if (nic.klass === "tobacco") {
+        out.notes.push("Tobacco class applies — Banner offers Preferred Tobacco / Standard Tobacco; table ratings not available with preferred tobacco classes.");
+      } else if (nic.klass) {
+        domains.tobacco.klass = nic.klass; // best NT class by lookback
+      }
+    }
+
+    const build = evalBuild(rules, d);
+    domains.build = build;
+
+    const bp = evalBP(rules, d);
+    domains.bp = bp;
+
+    const chol = evalCholesterol(rules, d);
+    domains.cholesterol = chol;
+
+    const drv = evalDriving(rules, d);
+    domains.driving = drv;
+
+    const fam = evalFamilyHistory(rules, d);
+    domains.family = fam;
+
+    domains.medical = med;
+
+    const sub = evalSubstance(d);
+    domains.substance = sub;
+
+    domains.functional = func;
+
+    domains.pending = pend;
+
+    out.domains = domains;
+
+    /* ---- 3. Least favorable class wins ---------------------------- */
+    const usable = Object.entries(domains).filter(([k, v]) => v && v.klass && v.klass !== "tobacco" && v.klass !== "bp_outside" && v.klass !== "lipids_outside" && v.klass !== "driving_outside" && v.klass !== "substandard_review" && v.klass !== "manual_review");
+    let provisional = "preferred_plus";
+    const limiting = [];
+    for (const [k, v] of usable) {
+      const txt = v.detail || (v.details ? v.details.join(" ") : "");
+      if (classWorseThan(v.klass, provisional)) {
+        provisional = v.klass;
+        limiting.length = 0;
+        limiting.push({ domain: k, klass: v.klass, detail: txt });
+      } else if (v.klass === provisional) {
+        limiting.push({ domain: k, klass: v.klass, detail: txt });
+      }
+    }
+    // Domain-specific "outside" results that force a worse outcome
+    const outside = [];
+    if (domains.bp && domains.bp.klass === "bp_outside") outside.push({ domain: "bp", reason: "BP beyond Standard limits" });
+    if (domains.cholesterol && domains.cholesterol.klass === "lipids_outside") outside.push({ domain: "cholesterol", reason: "Lipids beyond Standard limits" });
+    if (domains.driving && domains.driving.klass === "driving_outside") outside.push({ domain: "driving", reason: "Driving history beyond Standard limits" });
+    if (domains.build && domains.build.klass === "substandard_review") outside.push({ domain: "build", reason: "Build above Standard maximum — substandard build chart required" });
+    if (domains.build && domains.build.klass === "manual_review") outside.push({ domain: "build", reason: "Build requires manual review (low build / BMI / unexplained change)" });
+
+    if (outside.length) provisional = "table";
+    out.provisionalClass = provisional;
+    out.limitingFactors = limiting;
+    out.outsideFactors = outside;
+
+    /* ---- Tobacco override ----------------------------------------- */
+    let final = provisional;
+    if (nic.tobacco) {
+      // Tobacco is a separate classification, not a lower medical class. A clean
+      // profile supports Preferred Tobacco; a table rating cannot pair with
+      // Preferred Tobacco (per Banner), so cap at Standard Tobacco when table-rated.
+      if (final === "table") final = "standard";
+      out.tobaccoClass = true;
+    }
+    if (nic.klass && nic.klass !== "tobacco" && !nic.tobacco) {
+      // nicotine lookback can cap NT class below other domains
+      final = worstOf(final, nic.klass);
+    }
+    if (domains.build && domains.build.klass === "manual_review") {
+      final = worstOf(final, "manual_review");
+    }
+
+    /* ---- 4. Gate outcomes override -------------------------------- */
+    let gateOutcome = null;
+    if (out.gates.decline.length) gateOutcome = "decline";
+    else if (out.gates.postpone.length || postponeHits.length) gateOutcome = "postpone";
+
+    if (gateOutcome) {
+      final = gateOutcome;
+    }
+    if (domains.build && domains.build.klass === "manual_review") {
+      final = "manual_review";
+    }
+
+    out.finalClass = final;
+
+    /* ---- 5. Credits (possible, not applied) ----------------------- */
+    const creditEligible = ["build", "bp", "family", "cholesterol"];
+    const adverseDomains = [];
+    for (const [k, v] of Object.entries(domains)) {
+      if (v && v.klass && v.klass !== "preferred_plus" && v.klass !== "tobacco" && creditEligible.includes(k)) {
+        adverseDomains.push(k);
+      }
+    }
+    let possibleCredit = null;
+    if (final === "preferred" && adverseDomains.length === 1) {
+      // e.g., BP in Preferred range while everything else is PP -> possible Preferred Plus via credit review
+      possibleCredit = { from: final, to: "preferred_plus", note: "Banner one-class credit may apply when the only adverse factor is build, blood pressure, family history, or cholesterol/HDL ratio. Requires 3 of 7 credit criteria — flagged for review, not auto-applied." };
+    }
+    if (final === "standard_plus" && adverseDomains.length === 1) {
+      possibleCredit = { from: final, to: "preferred", note: "Possible one-class credit — review required." };
+    }
+    if (final === "standard" && adverseDomains.length === 1) {
+      possibleCredit = { from: final, to: "standard_plus", note: "Possible one-class credit — review required." };
+    }
+    out.possibleCredit = possibleCredit;
+
+    /* ---- 6. Flags ------------------------------------------------- */
+    const flags = [];
+    if (final === "table" || outside.length) flags.push("likely_table");
+    if (gateOutcome === "decline" || out.gates.decline.length) flags.push("possible_decline");
+    if (gateOutcome === "postpone" || out.gates.postpone.length) flags.push("manual_review");
+    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing) {
+      flags.push("missing_material_data");
+    }
+    if (final === "manual_review") flags.push("manual_review");
+
+    // evidence flags
+    const ev = evidenceNeeded(rules, d, condIds);
+    if (ev.apsNeeded.length || (d.age && d.age > 60)) flags.push("needs_aps");
+    if (d.age && d.faceAmount && (Number(d.faceAmount) >= 2000000 || (d.age > 60 && Number(d.faceAmount) >= 500000))) flags.push("needs_exam");
+    if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) flags.push("accelerated_uw_possible");
+
+    out.flags = [...new Set(flags)];
+    out.evidence = ev;
+
+    /* ---- 7. Financial -------------------------------------------- */
+    out.financial = evalFinancial(rules, d);
+    if (out.financial && out.financial.ok === false) out.flags.push("financial_review");
+
+    /* ---- 8. Comorbidity flags ------------------------------------- */
+    out.comorbidityFlags = med.combos || [];
+
+    /* ---- 9. Confidence --------------------------------------------- */
+    out.confidence = computeConfidence(d, out.flags);
+
+    /* ---- Range ----------------------------------------------------- */
+    const classInfo = rules.classInfo || {};
+    out.classInfo = classInfo;
+
+    // Build final range: from best supported domain class to final
+    let bestDomain = "preferred_plus";
+    for (const [k, v] of Object.entries(domains)) {
+      if (v && v.klass && !["tobacco", "bp_outside", "lipids_outside", "driving_outside", "substandard_review", "manual_review"].includes(v.klass)) {
+        if (CLASS_INDEX[v.klass] < CLASS_INDEX[bestDomain]) bestDomain = v.klass;
+      }
+    }
+    if (nic.klass && nic.klass !== "tobacco" && CLASS_INDEX[nic.klass] < CLASS_INDEX[bestDomain]) bestDomain = nic.klass;
+    out.range = { low: bestDomain, high: final };
+
+    out.summaryLines = buildSummary(out, rules);
+    return out;
+  }
+
+  /* conditionDeclineHit: map form flags to decline trigger ids */
+  function conditionDeclineHit(id, d, condIds, med) {
+    switch (id) {
+      case "alcohol_active": return d.alcoholConcern === "active";
+      case "drug_use_recent": return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || Number(d.drugAbuseYears) < 3);
+      case "dementia": return condIds.includes("dementia");
+      case "cirrhosis": return condIds.includes("liver_disease") && isYes(d.cirrhosis);
+      case "defibrillator": return condIds.includes("heart_disease") && isYes(d.defibrillator);
+      case "hiv": return condIds.includes("hiv");
+      case "renal_failure": return condIds.includes("kidney_disease") && (isYes(d.dialysis) || isYes(d.kidneyFailure));
+      case "quadriplegia": return condIds.includes("paralysis") && d.paralysisType === "quadriplegia";
+      case "stroke_severe": return condIds.includes("stroke") && (isYes(d.strokeSevere) || isYes(d.multipleStrokes));
+      case "suicide_multiple": return isYes(d.suicideMultiple);
+      case "transplant": return condIds.includes("transplant");
+      case "bankruptcy_active": return isYes(d.bankruptcyActive);
+      case "criminal_active": return isYes(d.criminalActive);
+      case "adl_dependence": return d.adlAssistance === "yes" || d.mobility === "wheelchair_chronic" || d.mobility === "bedbound";
+      case "facility_care": return d.livingSetting === "nursing" || d.livingSetting === "psychiatric" || d.livingSetting === "hospice" || isYes(d.homeHealth);
+      case "wheelchair": return d.mobility === "wheelchair_chronic";
+      case "oxygen_use": return isYes(d.oxygenUse);
+      default: return false;
+    }
+  }
+
+  /* Build human-readable summary lines for the results page */
+  function buildSummary(out, rules) {
+    const lines = [];
+    const cls = out.classInfo[out.finalClass] || { name: out.finalClass.replace(/_/g, " ") };
+    lines.push(`Preliminary estimate: ${cls.name || out.finalClass}`);
+    if (out.tobaccoClass) lines.push("Nicotine history drives a separate tobacco class.");
+    if (out.possibleCredit) {
+      const from = (out.classInfo[out.possibleCredit.from] || { name: out.possibleCredit.from }).name;
+      const to = (out.classInfo[out.possibleCredit.to] || { name: out.possibleCredit.to }).name;
+      lines.push(`Possible one-class credit review: ${from} → ${to}. ${out.possibleCredit.note}`);
+    }
+    if (out.financial && out.financial.ok === false) lines.push(out.financial.detail);
+    return lines;
+  }
+
+  return { run, classWorseThan, worstOf, CLASS_INDEX };
+})();
