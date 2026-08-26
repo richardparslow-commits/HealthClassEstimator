@@ -31,9 +31,9 @@ const App = (() => {
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
       strokeSevere: false, multipleStrokes: false, suicideMultiple: false, oxygenUse: false,
       a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false,
-      famCardio: "none",
-      livingSetting: "home", mobility: "independent", adlAssistance: "no", homeHealth: false,
-      pendingTests: "no", recentHospitalization: "no", recentSurgery: "no", activeSymptom: "no"
+      famCardio: "",
+      livingSetting: "", mobility: "", adlAssistance: "", homeHealth: false,
+      pendingTests: "", recentHospitalization: "", recentSurgery: "", activeSymptom: ""
     };
   }
 
@@ -680,8 +680,17 @@ const App = (() => {
     btnNext.textContent = isLast ? "Run estimate →" : "Next →";
     btnBack.style.visibility = currentStep === 0 ? "hidden" : "visible";
     btnNext.onclick = () => {
-      if (isLast) runEstimate();
-      else { currentStep++; render(); window.scrollTo(0, 0); }
+      if (isLast) {
+        // Tobacco & nicotine is a required question: an unanswered answer must
+        // not silently estimate the best non-tobacco class.
+        if (state.usedNicotine === "") {
+          showToast("Please answer the Tobacco & nicotine question first.");
+          const ni = STEPS.findIndex(s => s.id === "nicotine");
+          if (ni >= 0) { currentStep = ni; render(); window.scrollTo(0, 0); }
+          return;
+        }
+        runEstimate();
+      } else { currentStep++; render(); window.scrollTo(0, 0); }
     };
     btnBack.onclick = () => { if (currentStep > 0) { currentStep--; render(); window.scrollTo(0, 0); } };
   }
@@ -706,7 +715,8 @@ const App = (() => {
      Shared by the single-carrier estimate and the cross-carrier comparison. */
   function buildInput() {
     const d = Object.assign({}, state);
-    d.usedNicotine = state.usedNicotine === "yes";
+    // usedNicotine stays as the raw "yes"/"no"/"" so the engine can tell
+    // an explicit answer from an unanswered question ("" -> missing, not non-tobacco).
     const hfRaw = state.heightFt, hiRaw = state.heightIn;
     d.heightIn = (hfRaw === "" || hiRaw === "") ? "" : (Number(hfRaw) * 12 + Number(hiRaw));
     d.weightLb = state.weightLb === "" ? "" : Number(state.weightLb);

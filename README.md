@@ -64,7 +64,11 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
    so none is shown for them. Mutual of Omaha's **Fit program** (up to 2 *table* credits: 3 characteristics =
    1 credit, 5 = 2 credits, best final class Standard) is different in kind — it improves table ratings, not
    health classes — so it is surfaced as a guide note, never auto-applied.
-5. **Confidence and flags.** Confidence reflects evidence completeness. Flags include `needs_aps`,
+5. **Confidence and flags.** Confidence reflects evidence completeness — and skipped questions are
+   treated as missing, never as the best answer. Tobacco & nicotine is a required question (the estimate
+   cannot run without it); family history, pending care, and functional status start unanswered and count
+   against confidence until explicitly answered, showing as "Not provided" in the domain table rather
+   than silently assuming "none"/"no". Flags include `needs_aps`,
    `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`,
    `financial_review`, and `undisclosed_meds`.
 6. **Medication cross-check.** Disclosed prescriptions are matched against a reference dictionary of

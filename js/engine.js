@@ -24,6 +24,8 @@ const Engine = (() => {
 
   // accept both boolean true and string "yes" for checkbox-derived flags
   const isYes = (v) => v === true || v === "yes";
+  // explicit negative — false (legacy test-harness booleans) or the string "no"
+  const isNo = (v) => v === false || v === "no";
 
   function classWorseThan(a, b) {
     return CLASS_INDEX[a] > CLASS_INDEX[b];
@@ -204,12 +206,12 @@ const Engine = (() => {
     if (!has(d, "usedNicotine")) {
       return { tobacco: null, klass: null, missing: true, detail: "Nicotine use not disclosed." };
     }
-    if (!d.usedNicotine) {
+    if (isNo(d.usedNicotine)) {
       return { tobacco: false, klass: "preferred_plus", detail: "No nicotine use disclosed." };
     }
     const ms = monthsSince(d.nicotineLastUse);
     const months = ms === null ? null : Math.floor(ms);
-    const isTobacco = d.usedNicotine && (months === null || months < rules.nicotine.tobaccoLookbackMonths);
+    const isTobacco = isYes(d.usedNicotine) && (months === null || months < rules.nicotine.tobaccoLookbackMonths);
 
     // Cigar exception
     if (d.nicotineProduct === "cigar" && has(d, "cigarPerMonth")) {
@@ -347,7 +349,7 @@ const Engine = (() => {
     }
     const f = d.famCardio; // "none" | "parent" | "parent_sibling" | "multiple"
     const age = d.age ? Number(d.age) : null;
-    const tobacco = d.usedNicotine === false;
+    const tobacco = isNo(d.usedNicotine);
     // Over-70 non-tobacco: CAD family history disregarded (Banner rule)
     const disregardBanner = rules.id === "banner" && age !== null && age > 70 && tobacco;
     // Carrier-published age at which family history stops applying (e.g., MOO: age 60+)
@@ -419,7 +421,7 @@ const Engine = (() => {
             const isType1 = c.type === "type1" || (onset !== null && onset < 20);
             ceiling = isType1 ? (dm.type1Ceiling || "table") : (dm.type2Ceiling || "standard");
             details.push(`Diabetes: ${isType1 ? "Type 1 (or onset before age 20)" : "Type 2"} — ${ceiling} best case per the impairment table.`);
-          } else if (onset !== null && onset >= 50 && !d.usedNicotine && control === "good") {
+          } else if (onset !== null && onset >= 50 && isNo(d.usedNicotine) && control === "good") {
             ceiling = "standard_plus";
           } else if (onset !== null && onset >= 50) {
             ceiling = "standard_plus"; // still the ceiling, but flagged
@@ -781,7 +783,9 @@ const Engine = (() => {
     const checks = [
       ["heightIn", "height"], ["weightLb", "weight"], ["usedNicotine", "nicotine history"], ["bpSys", "blood pressure"],
       ["movingViolations3yr", "driving history"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
-      ["pendingTests", "pending-care status"], ["age", "age"], ["faceAmount", "face amount"]
+      ["livingSetting", "living setting"], ["mobility", "mobility"], ["pendingTests", "pending-care status"],
+      ["recentHospitalization", "hospitalization status"], ["recentSurgery", "surgery status"], ["activeSymptom", "symptom status"],
+      ["age", "age"], ["faceAmount", "face amount"]
     ];
     for (const [k, label] of checks) {
       total++;
