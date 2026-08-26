@@ -4,6 +4,7 @@
   "private": true,
   "description": "Life-insurance pre-underwriting and case-triage estimator — dependency-free static web app",
   "scripts": {
-    "test": "node test/engine.test.js"
+    "test": "node test/engine.test.js",
+    "build": "node scripts/build-embedded.js"
   }
 }
