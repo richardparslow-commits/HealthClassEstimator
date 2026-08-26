@@ -955,8 +955,47 @@ const App = (() => {
     headTxt.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
     headTxt.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
     head.appendChild(headTxt);
-    head.appendChild(el("a", { class: "btn btn-cta", href: "https://lifeinsurancebrokeradvocate.com/contact", target: "_blank", rel: "noopener noreferrer" }, "Contact your broker advocate →"));
+    const headActions = el("div", { class: "compare-head-actions" });
+    const expandAllBtn = el("button", { class: "btn btn-ghost compare-all-btn", type: "button", "aria-label": "Expand or collapse every carrier row", title: "Expand every row's full gates & evidence, or collapse them all" }, "Expand all");
+    headActions.appendChild(expandAllBtn);
+    headActions.appendChild(el("a", { class: "btn btn-cta", href: "https://lifeinsurancebrokeradvocate.com/contact", target: "_blank", rel: "noopener noreferrer" }, "Contact your broker advocate →"));
+    head.appendChild(headActions);
     wrap.appendChild(head);
+
+    /* Shared expand logic: insert/remove the detail row for one carrier row,
+       and keep the expand-all button label in sync with the actual state. */
+    const rowRefs = [];
+    function toggleDetail(tr, expandBtn, row) {
+      const existing = tbody.querySelector('tr.compare-detail[data-carrier="' + row.id + '"]');
+      if (existing) { existing.remove(); expandBtn.classList.remove("expanded"); return; }
+      const dtr = el("tr", { class: "compare-detail", "data-carrier": row.id });
+      dtr.appendChild(el("td", { colspan: 6, class: "compare-detail-cell" }, compareDetailContent(row)));
+      tr.insertAdjacentElement("afterend", dtr);
+      expandBtn.classList.add("expanded");
+    }
+    function allExpanded() {
+      return rowRefs.length > 0 && rowRefs.every(r => r.expandBtn.classList.contains("expanded"));
+    }
+    function syncAllLabel() { expandAllBtn.textContent = allExpanded() ? "Collapse all" : "Expand all"; }
+    expandAllBtn.addEventListener("click", () => {
+      if (allExpanded()) {
+        rowRefs.forEach(r => {
+          const d = tbody.querySelector('tr.compare-detail[data-carrier="' + r.row.id + '"]');
+          if (d) d.remove();
+          r.expandBtn.classList.remove("expanded");
+        });
+      } else {
+        rowRefs.forEach(r => {
+          if (!r.expandBtn.classList.contains("expanded")) {
+            const dtr = el("tr", { class: "compare-detail", "data-carrier": r.row.id });
+            dtr.appendChild(el("td", { colspan: 6, class: "compare-detail-cell" }, compareDetailContent(r.row)));
+            r.tr.insertAdjacentElement("afterend", dtr);
+            r.expandBtn.classList.add("expanded");
+          }
+        });
+      }
+      syncAllLabel();
+    });
 
     /* Prominent primary-carrier panel — same treatment as the applicant step.
        Switching here re-runs the estimate and re-renders the table with the
@@ -994,15 +1033,12 @@ const App = (() => {
         title: "Show full gates & evidence",
         onclick: (e) => {
           e.stopPropagation();
-          const existing = tbody.querySelector('tr.compare-detail[data-carrier="' + row.id + '"]');
-          if (existing) { existing.remove(); expandBtn.classList.remove("expanded"); return; }
-          const dtr = el("tr", { class: "compare-detail", "data-carrier": row.id });
-          dtr.appendChild(el("td", { colspan: 6, class: "compare-detail-cell" }, compareDetailContent(row)));
-          tr.insertAdjacentElement("afterend", dtr);
-          expandBtn.classList.add("expanded");
+          toggleDetail(tr, expandBtn, row);
+          syncAllLabel();
         }
       }, "▸");
       tr.appendChild(el("td", { class: "compare-expand-cell" }, expandBtn));
+      rowRefs.push({ tr, expandBtn, row });
       tr.appendChild(el("td", { style: "font-weight:600" }, [rules.name, el("div", { class: "compare-version" }, rules.guide.version)]));
       tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
       tr.appendChild(el("td", {}, compareLimiting(row)));

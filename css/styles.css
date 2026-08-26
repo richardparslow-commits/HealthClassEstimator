@@ -588,6 +588,13 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   flex-wrap: wrap;
 }
 .compare-head h2 { margin-bottom: 6px; }
+.compare-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.compare-all-btn { white-space: nowrap; }
 .btn-cta {
   display: inline-block;
   background: linear-gradient(135deg, #b8860b, #d9a520);

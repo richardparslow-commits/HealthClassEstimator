@@ -23,8 +23,10 @@ carrier ruleset side by side, showing the client's possible health class under e
 factors/gates, evidence highlights, financial outcome), with the primary carrier highlighted. Clicking any row
 switches the full estimate below to that carrier; clicking a row's **chevron expands that carrier in place** to
 show its full postpone/decline gate list, limiting factors, confidence, and complete evidence checklist without
-switching the detailed estimate. The **Compare / hide** button collapses the table to just the
-primary carrier's full estimate. The comparison header carries a **Contact your broker advocate** CTA linking to
+switching the detailed estimate. An **Expand all / Collapse all** toggle in the comparison header opens every
+carrier's full detail at once (and stays in sync as rows are toggled individually). The **Compare / hide**
+button collapses the table to just the primary carrier's full estimate. The comparison header carries a
+**Contact your broker advocate** CTA linking to
 https://lifeinsurancebrokeradvocate.com/contact. **Print comparison** renders a dedicated one-page sheet (compact profile header +
 the comparison table + guardrails) that prints on its own, distinct from the full results **Print / save PDF**
 layout.
