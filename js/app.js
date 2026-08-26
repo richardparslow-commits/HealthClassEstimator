@@ -372,10 +372,17 @@ const App = (() => {
   function renderProfile() {
     const c = el("div", { class: "card" });
     c.appendChild(el("h2", {}, "Applicant profile"));
-    c.appendChild(el("p", { class: "card-sub" }, "Carrier selection picks the underwriting ruleset used for the estimate."));
+    c.appendChild(el("p", { class: "card-sub" }, "Start with the carrier — it determines the underwriting ruleset for every estimate below."));
+
+    /* Carrier panel: the one choice that drives the entire estimate. */
+    const carrierPanel = el("div", { class: "carrier-panel" });
+    carrierPanel.appendChild(el("p", { class: "carrier-label" }, "1 · Underwriting carrier"));
+    carrierPanel.appendChild(selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"], ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"], ["national_life", "National Life Group (NL / LSW)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }));
+    const cr = CARRIER_RULES[state.carrier];
+    carrierPanel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — build charts, BP/cholesterol thresholds, nicotine lookbacks, decline/postpone screens, and evidence requirements all come from this ruleset."));
+    c.appendChild(carrierPanel);
 
     const r1 = el("div", { class: "field-row" });
-    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"], ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"], ["national_life", "National Life Group (NL / LSW)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, and National Life Group are additional carrier mappings."));
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
     r1.appendChild(field("Sex", radioPill("sex", [["male", "Male"], ["female", "Female"]])));
     c.appendChild(r1);
