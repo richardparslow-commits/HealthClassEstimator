@@ -935,6 +935,50 @@ for (const carrier of CARRIER_IDS) {
   }
 }
 
+// ---- Transamerica per-band requirement-grid probe -------------------------
+// Transamerica publishes per-product age-and-face-amount requirement charts
+// (p. 7-9) with codes Vitals, BCP, HOS, MVR, CS, PFS, ECG, IR. The engine
+// must render those codes instead of the generic grid, unioned across the
+// three product charts (no product is selected). A regression here would
+// silently fall back to the Banner-flavored generic grid.
+const gridProbes = [
+  // [age, face, required codes, forbidden codes]
+  [30, 40000, ["MVR"], ["Vitals", "BCP", "HOS", "CS", "PFS", "ECG", "IR"]],
+  [30, 300000, ["MVR"], ["Vitals", "BCP", "HOS", "CS", "PFS", "ECG", "IR"]],
+  [58, 300000, ["Vitals", "BCP", "HOS", "MVR"], ["CS", "PFS", "ECG", "IR"]],
+  [73, 300000, ["Vitals", "BCP", "HOS", "CS", "MVR"], ["PFS", "ECG", "IR"]],
+  [83, 300000, ["Vitals", "BCP", "HOS", "CS", "MVR"], ["PFS", "ECG", "IR"]],
+  [45, 4000000, ["Vitals", "BCP", "HOS", "PFS", "MVR", "IR"], ["CS", "ECG"]],
+  [50, 15000000, ["Vitals", "BCP", "HOS", "ECG", "PFS", "MVR", "IR"], ["CS"]],
+  [65, 1500000, ["Vitals", "BCP", "HOS", "PFS", "MVR"], ["CS", "ECG", "IR"]]
+];
+for (const [age, face, expect, forbid] of gridProbes) {
+  const d = JSON.parse(JSON.stringify(base));
+  d.carrier = "transamerica";
+  d.age = age;
+  d.faceAmount = face;
+  const out = Engine.run("transamerica", d);
+  const items = ((out.evidence && out.evidence.list) || []).map(i => i.toLowerCase());
+  const missing = expect.filter(e => !items.some(i => i.startsWith(e.toLowerCase())));
+  const bad = forbid.filter(f => items.some(i => i.startsWith(f.toLowerCase())));
+  if (!missing.length && !bad.length) {
+    pass++;
+    console.log("PASS | grid probe age " + age + " face $" + face.toLocaleString() + " -> " + expect.join("+"));
+  } else {
+    fail++;
+    console.log("FAIL | grid probe age " + age + " face $" + face.toLocaleString() + " missing: " + missing.join(",") + " forbidden: " + bad.join(",") + " got: " + JSON.stringify(out.evidence && out.evidence.list));
+  }
+}
+{
+  // Structural guard: Transamerica owns the grid mechanism and nothing else
+  // may silently combine it with the generic grid.
+  const ta = context.__CARRIERS.transamerica.evidence;
+  const gridsOk = Array.isArray(ta.requirementGrids) && ta.requirementGrids.length >= 3 &&
+    ta.genericGrid === false && ta.requirementGrids.every(g => Array.isArray(g.ages) && Array.isArray(g.rows) && g.rows.every(r => Array.isArray(r.cells) && r.cells.length === g.ages.length));
+  if (gridsOk) { pass++; console.log("PASS | grid probe structure -> 3 product grids, genericGrid off"); }
+  else { fail++; console.log("FAIL | grid probe structure: requirementGrids malformed or genericGrid not false"); }
+}
+
 for (const s of scenarios) {
   const out = Engine.run(s.d.carrier, s.d);
   const got = { klass: out.finalClass, tobacco: !!out.tobaccoClass };

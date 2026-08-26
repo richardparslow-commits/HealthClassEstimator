@@ -775,6 +775,33 @@ const Engine = (() => {
           ar.items.forEach(i => { if (!list.includes(i)) list.push(i); });
         }
       }
+    } else if (Array.isArray(rules.evidence.requirementGrids) && rules.evidence.requirementGrids.length) {
+      // Carrier-published per-band requirement grids (Transamerica's
+      // age-and-face-amount charts, p. 7-9). Each grid maps (age band, face
+      // band) to requirement codes. With no product selected, the union
+      // across the carrier's product grids applies: a code that any product
+      // requires at the applicant's age/amount is listed.
+      const GRID_CODE_ITEMS = {
+        V: "Vitals / paramed physical findings",
+        BCP: "BCP (blood chemistry profile)",
+        HOS: "HOS (home office urine specimen)",
+        MVR: "MVR (motor vehicle report)",
+        CS: "CS (Minnesota Cognitive Acuity Screen)",
+        PFS: "PFS (personal financial statement)",
+        ECG: "ECG (resting electrocardiogram)",
+        IR: "IR (inspection report)"
+      };
+      for (const grid of rules.evidence.requirementGrids) {
+        if (age === null || face === null) continue;
+        const row = grid.rows.find(r => face >= r.min && face <= r.max);
+        if (!row) continue;
+        const ci = grid.ages.findIndex(a => age >= a[0] && age <= a[1]);
+        if (ci < 0 || ci >= row.cells.length) continue;
+        (row.cells[ci] || []).forEach(code => {
+          const label = GRID_CODE_ITEMS[code];
+          if (label && !list.includes(label)) list.push(label);
+        });
+      }
     } else if (rules.evidence.genericGrid !== false) {
       // Default age/amount grid (Banner-flavored); carriers that publish no
       // exam grid (e.g., F&G Quantum, underwritten from electronic databases)

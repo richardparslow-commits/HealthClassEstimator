@@ -116,6 +116,10 @@ height/weight chart** where the Express Standard 1/2 columns are substandard rat
 so the engine's build table ladder now carries per-band labels; its family history is disregarded at age 65+, and
 diabetes diagnosed before age 20 is a published decline (the engine gained a carrier `juvenileOnsetDeclineAge`
 hook). National Life also illustrates the guide's three underwriting lanes (full medical, Streamlined, EZ).
+Transamerica publishes per-product **age-and-face-amount requirement charts** (Trendsetter Super/LB, Financial
+Choice IUL, Financial Foundation IUL/II) coded Vitals, BCP, HOS, MVR, CS, PFS, ECG, IR by band; the engine
+renders the union across the three product charts for the applicant's age/face in the evidence checklist (no
+product is selected, so the exact set depends on the product — the union is the conservative published answer).
 
 ## Outcome logic
 

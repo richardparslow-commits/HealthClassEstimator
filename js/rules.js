@@ -947,12 +947,66 @@ const CARRIER_RULES = {
 
     /* ---- Evidence / workflow ----------------------------------------- */
     evidence: {
+      genericGrid: false,
+      /* Age-and-face-amount requirement charts (p. 7-9): one grid per
+         product. Cells list requirement codes; an empty cell means none
+         routinely required. With no product selected, the evidence list
+         shows the union across the three product grids for the applicant's
+         age and face amount — the exact set depends on the product. */
+      requirementGrids: [
+      {
+        products: "Trendsetter Super / Trendsetter LB",
+        ages: [[18,40],[41,45],[46,55],[56,60],[61,70],[71,75],[76,80]],
+        rows: [
+          { min: 25000, max: 50000, cells: [[],[],[],[],[],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"]] },
+          { min: 50001, max: 99999, cells: [[],[],[],[],["V","BCP","HOS"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"]] },
+          { min: 100000, max: 249999, cells: [["MVR"],[],[],["V","BCP","HOS"],["V","BCP","HOS"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 250000, max: 500000, cells: [["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 500001, max: 1000000, cells: [["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"]] },
+          { min: 1000001, max: 2000000, cells: [["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 2000001, max: 3500000, cells: [["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 3500001, max: 5000000, cells: [["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 5000001, max: 10000000, cells: [["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 10000001, max: 999999999, cells: [["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+        ]
+      },
+      {
+        products: "Financial Choice IUL",
+        ages: [[0,17],[18,40],[41,45],[46,55],[56,60],[61,70],[71,75],[76,80],[81,85]],
+        rows: [
+          { min: 250000, max: 500000, cells: [[],["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 500001, max: 1000000, cells: [[],["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 1000001, max: 2000000, cells: [[],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","PFS","CS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 2000001, max: 3500000, cells: [[],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 3500001, max: 5000000, cells: [[],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+          { min: 5000001, max: 10000000, cells: [[],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+          { min: 10000001, max: 999999999, cells: [[],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+        ]
+      },
+      {
+        products: "Financial Foundation IUL / II",
+        ages: [[0,17],[18,40],[41,45],[46,55],[56,60],[61,70],[71,75],[76,80],[81,85]],
+        rows: [
+          { min: 25000, max: 50000, cells: [[],["MVR"],[],[],[],["V","BCP","HOS"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"]] },
+          { min: 50001, max: 75000, cells: [[],["MVR"],[],[],[],["V","BCP","HOS"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"]] },
+          { min: 75001, max: 99999, cells: [[],["MVR"],[],[],["V","BCP","HOS"],["V","BCP","HOS"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"]] },
+          { min: 100000, max: 249999, cells: [[],["MVR"],[],[],["V","BCP","HOS"],["V","BCP","HOS"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 250000, max: 500000, cells: [[],["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 500001, max: 1000000, cells: [[],["MVR"],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"],["V","BCP","HOS","CS","MVR"]] },
+          { min: 1000001, max: 2000000, cells: [[],["MVR"],["MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 2000001, max: 3500000, cells: [[],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","CS","PFS","MVR"],["V","BCP","HOS","ECG","CS","PFS","MVR"]] },
+          { min: 3500001, max: 5000000, cells: [[],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+          { min: 5000001, max: 10000000, cells: [[],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","PFS","MVR","IR"],["V","BCP","HOS","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+          { min: 10000001, max: 999999999, cells: [[],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"],["V","BCP","HOS","ECG","CS","PFS","MVR","IR"]] },
+        ]
+      },
+      ],
       apsConditions: [
         "Cancer", "Diabetes", "Heart (cardiac) disease", "Cerebrovascular disease", "COPD",
         "Kidney disease", "Liver disease", "Mental-health disorders", "Substance abuse/dependence",
         "Multiple sclerosis", "Parkinson's disease", "Muscular dystrophy", "Rheumatoid arthritis", "Lupus"
       ],
-      note: "Transamerica orders all requirements. Digital underwriting (iGO e-App) can produce a decision within minutes; applicants receiving a digital decision are not reconsidered for a better class.",
+      note: "Transamerica orders all requirements. Age-and-face-amount charts (p. 7-9) for Trendsetter Super/LB, Financial Choice IUL, and Financial Foundation IUL/II list Vitals, BCP, HOS, MVR, CS, PFS, ECG, and IR by band; with no product selected, the evidence checklist shows the union across the three charts for the applicant's age and face amount — the exact set depends on the product (e.g., the Financial Choice IUL grid differs from Trendsetter's). Trendsetter LB band one ($25,000-$99,999) is not available for ages 18-22. Digital underwriting (iGO e-App) can produce a decision within minutes; applicants receiving a digital decision are not reconsidered for a better class.",
       cognitiveScreen: "Minnesota Cognitive Acuity Screen (CS) required at age 70+ for face amounts $100,000 and higher; face-to-face CS for LTC rider applicants 70+.",
       fluidless: "Highlighted age/amount cells may qualify for fluidless processing (no blood/urine) — verify against the current age-and-face-amount chart.",
       temporaryCoverage: "Follow Transamerica receipt rules; the estimate does not establish temporary coverage.",
