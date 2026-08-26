@@ -22,11 +22,12 @@ function monthsAgo(n) {
 const base = {
   carrier: "banner", age: 35, sex: "male", state: "TX",
   faceAmount: 500000, income: 120000, existingCoverage: 0,
+  policyPurpose: "income", replacement: "no", financing: "no",
   usedNicotine: false, nicotineLastUse: "",
   heightIn: 70, weightLb: 165,
   bpSys: 120, bpDia: 78, cholTotal: 190, cholHdl: 60,
   movingViolations3yr: 0, seriousDriving: false,
-  alcoholConcern: "no", drugAbuse: "no",
+  alcoholConcern: "no", drugAbuse: "no", marijuana: "none",
   conditions: [],
   medicationsText: "none",
   famCardio: "none",
@@ -758,7 +759,16 @@ add("Family history unanswered -> missing, no cap", d => { d.famCardio = ""; }, 
 add("Pending care unanswered -> missing, no postpone", d => { d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["pending"] });
 add("Functional status unanswered -> missing, no cap", d => { d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["functional"] });
 add("Driving unanswered -> missing, no cap", d => { d.movingViolations3yr = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["driving"] });
-add("Substance unanswered -> missing, no cap", d => { d.alcoholConcern = ""; d.drugAbuse = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["substance"] });
+add("Substance unanswered -> missing, no cap", d => { d.alcoholConcern = ""; d.drugAbuse = ""; d.marijuana = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["substance"] });
+add("Marijuana daily -> decline (F&G Quantum)", d => { d.carrier = "fg_quantum"; d.marijuana = "daily"; }, { klass: "decline", tobacco: false });
+add("Marijuana daily -> decline (National Life)", d => { d.carrier = "national_life"; d.marijuana = "daily"; }, { klass: "decline", tobacco: false });
+add("Marijuana daily -> no decline for Banner (no published daily rule)", d => { d.marijuana = "daily"; }, { klass: "preferred_plus", tobacco: false });
+add("Marijuana medicinal -> rated on underlying condition, no class change", d => { d.marijuana = "medicinal"; }, { klass: "preferred_plus", tobacco: false });
+add("Quantum total line (existing + face) over $1M -> another product", d => { d.carrier = "fg_quantum"; d.existingCoverage = 600000; d.faceAmount = 500000; }, { klass: "preferred_plus", tobacco: false, wantFlag: "financial_review" });
+add("Quantum replacement disclosed -> not allowed, financial review", d => { d.carrier = "fg_quantum"; d.replacement = "yes"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "financial_review" });
+add("Banner financed premium -> accelerated UW excluded", d => { d.financing = "yes"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible", wantEvidence: ["accelerated underwriting not available"] });
+add("Banner replacement -> accelerated UW excluded", d => { d.replacement = "yes"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible" });
+add("Policy purpose business -> BIQ evidence listed", d => { d.policyPurpose = "business"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Business insurance questionnaire"] });
 add("Hazardous occupation unanswered -> missing, no cap", d => { d.occupationHazardous = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["avocation"] });
 add("Driving + substance skipped -> Moderate confidence", d => { d.movingViolations3yr = ""; d.alcoholConcern = ""; d.drugAbuse = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Moderate" });
 add("All key radios skipped -> Low confidence", d => { d.usedNicotine = ""; d.famCardio = ""; d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Low" });
@@ -934,6 +944,7 @@ for (const s of scenarios) {
     if (w.aps !== undefined && ok) ok = (m.apsTriggers || []).length === w.aps;
   }
   if (ok && s.expect.wantFlag) ok = (out.flags || []).includes(s.expect.wantFlag);
+  if (ok && s.expect.wantNoFlag) ok = !(out.flags || []).includes(s.expect.wantNoFlag);
   if (ok && s.expect.wantEvidence) {
     const list = (out.evidence && out.evidence.list) || [];
     for (const item of s.expect.wantEvidence) {

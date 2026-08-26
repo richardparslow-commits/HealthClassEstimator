@@ -30,12 +30,12 @@ that prints on its own, distinct from the full results **Print / save PDF** layo
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
 1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties
-2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
-3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception, marijuana
+2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source (evaluated: income multipliers, carrier total-line caps, replacement rules, purpose-driven evidence)
+3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
-5. **Vitals & labs** — blood pressure, total/HDL cholesterol, A1c
+5. **Vitals & labs** — blood pressure (readings only — carriers evaluate with or without treatment), total/HDL cholesterol, A1c
 6. **Driving & criminal** — moving violations, DUI/reckless/suspension, criminal status, bankruptcy
-7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration
+7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration, marijuana (rated separately from tobacco; daily-use declines per F&G/National Life)
 8. **Medical history** — condition picker with per-condition detail (status, severity, control, medications,
    onset, complications, stability, postpone/decline concerns)
 9. **Medications & prescriptions** — current prescription list, cross-checked against disclosed conditions
@@ -177,7 +177,7 @@ css/styles.css      Styling (screen + print)
 js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
-test/engine.test.js Engine test harness — 435 assertions (230 scenarios + gate-dedup probe + results-page contract checks)
+test/engine.test.js Engine test harness — 489 assertions (230 scenarios + gate-dedup probe + results-page contract checks + evidence/APS probe)
 package.json        npm test wiring (no dependencies, no install needed)
 ```
 
@@ -186,7 +186,7 @@ package.json        npm test wiring (no dependencies, no install needed)
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-npm test   # 435 assertions: 230 scenarios + cross-carrier gate-dedup probe + results-page contract checks
+npm test   # 489 assertions: 230 scenarios + cross-carrier gate-dedup probe + results-page contract checks + evidence/APS probe
 ```
 
 No dependencies — `npm test` is just `node test/engine.test.js`, so a fresh checkout needs no

@@ -446,6 +446,7 @@ const CARRIER_RULES = {
         { ageMin: 65, ageMax: 70, multiplier: 5 },
         { ageMin: 71, ageMax: 200, multiplier: 3 }
       ],
+      auExcludesReplacement: true,
       note: "Income factors may be modified case-by-case. Age 71+ employed applicants considered individually with small multipliers. Total in-force + applied-for coverage with all carriers must be financially justified."
     },
 
@@ -1251,7 +1252,8 @@ const CARRIER_RULES = {
         maxPerMonth: 1,
         maxPerYear: 12
       },
-      marijuana: "Marijuana use less than 4 times per week and no more than 4 grams per week is acceptable; daily marijuana use is a decline. Occupations involving the production, processing, or sale of marijuana are a decline."
+      marijuana: "Marijuana use less than 4 times per week and no more than 4 grams per week is acceptable; daily marijuana use is a decline. Occupations involving the production, processing, or sale of marijuana are a decline.",
+      marijuanaDailyDecline: true
     },
 
     /* ---- Build: sex-specific chart with Preferred / Standard columns ---
@@ -1468,6 +1470,8 @@ const CARRIER_RULES = {
         { ageMin: 60, ageMax: 60, multiplier: 10 }
       ],
       maxFace: 1000000,
+      totalLineCap: 1000000,
+      noReplacements: true,
       premiumToIncome: "Acceptable ratio of premium to income (net worth based): up to 25% below $5M net worth; up to 40% from $5M to $10M; up to 65% above $10M.",
       note: "Income replacement factors: 30X (20-39), 25X (40-44), 20X (45-49), 15X (50-54), 12X (55-59), 10X (60). Non-working spouse: maximum $300,000 per primary insured, not to exceed the wage earner's in-force coverage. Total in-force and applied-for coverage over $1,000,000 requires application and underwriting on another product. Juveniles: up to 50% of the parent's coverage, maximum $1,000,000 per primary insured."
     },
@@ -1515,7 +1519,8 @@ const CARRIER_RULES = {
         maxPerMonth: 1,
         maxPerYear: 12
       },
-      marijuana: "Marijuana use less than 4 times per week and no more than 4 grams per week is acceptable; daily marijuana use is a decline. Occupations involving the production, processing, or sale of marijuana are a decline."
+      marijuana: "Marijuana use less than 4 times per week and no more than 4 grams per week is acceptable; daily marijuana use is a decline. Occupations involving the production, processing, or sale of marijuana are a decline.",
+      marijuanaDailyDecline: true
     },
 
     /* ---- Build: sex-specific chart with Preferred / Standard columns ---
@@ -1753,7 +1758,8 @@ CARRIER_RULES.national_life = {
       maxPerMonth: 1,
       maxPerYear: 12
     },
-    marijuana: "Daily marijuana use is a decline; drug use within the last three years is a decline. Occasional use reviewed case by case."
+    marijuana: "Daily marijuana use is a decline; drug use within the last three years is a decline. Occasional use reviewed case by case.",
+    marijuanaDailyDecline: true
   },
 
   /* ---- Build: six-column unisex height/weight chart ------------------

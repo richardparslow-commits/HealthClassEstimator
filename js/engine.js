@@ -556,7 +556,7 @@ const Engine = (() => {
   /* ---------- substance / lifestyle ----------------------------------- */
 
   function evalSubstance(rules, d) {
-    if (!has(d, "alcoholConcern") && !has(d, "drugAbuse")) {
+    if (!has(d, "alcoholConcern") && !has(d, "drugAbuse") && !has(d, "marijuana")) {
       return { klass: null, missing: true, detail: "Substance history not provided." };
     }
     let klass = "preferred_plus";
@@ -589,6 +589,23 @@ const Engine = (() => {
     if (d.alcoholConcern === "history") {
       klass = worstOf(klass, "standard");
       details.push("Alcohol abuse history — reviewed under recovery rules.");
+    }
+    /* Marijuana is rated separately from tobacco and never forces a tobacco
+       class. Carriers that publish a daily-use decline (F&G Quantum/Pathsetter,
+       National Life) treat daily use as a decline screen; medicinal use is rated
+       on the underlying condition; infrequent recreational use may still
+       qualify for preferred classes. */
+    if (d.marijuana === "daily") {
+      if (rules && rules.nicotine && rules.nicotine.marijuanaDailyDecline) {
+        return { klass: "decline", detail: `Daily marijuana use — ${rules.name} publishes a daily-use decline screen.` };
+      }
+      details.push("Daily marijuana use — carrier frequency limits apply (F&G/National Life decline daily use).");
+    } else if (d.marijuana === "medicinal") {
+      details.push("Medicinal marijuana — rated on the underlying condition, not the substance itself.");
+    } else if (d.marijuana === "infrequent") {
+      details.push("Infrequent recreational marijuana — non-tobacco rates; preferred classes may be available.");
+    } else if (d.marijuana === "frequent") {
+      details.push("Frequent marijuana use — carrier frequency limits reviewed (e.g., F&G: under 4x/week acceptable; daily use declines).");
     }
     return { klass, details, detail: details.join(" ") || "No substance concerns." };
   }
@@ -717,11 +734,29 @@ const Engine = (() => {
     if (!m) return { flag: "missing_financial", detail: "No financial multiplier for age." };
     const max = typeof m.multiplier === "number" ? m.multiplier * income : null;
     const ok = max === null ? null : face <= max;
+    const fin = rules.financial || {};
+    const extra = [];
+    /* Total in-force + applied-for line caps (carrier-published eligibility
+       limits, e.g., F&G Quantum: over $1,000,000 total requires another
+       product). */
+    const totalLineExceeded = !!(fin.totalLineCap && has(d, "existingCoverage") && (face + Number(d.existingCoverage || 0)) > fin.totalLineCap);
+    if (totalLineExceeded) {
+      const total = face + Number(d.existingCoverage || 0);
+      extra.push(`Total coverage in force + applied ${total.toLocaleString()} exceeds the carrier's ${fin.totalLineCap.toLocaleString()} maximum — another product is required.`);
+    }
+    /* Replacement product rules (e.g., F&G Quantum: no internal or external
+       replacements allowed — a replacement case cannot be written on it). */
+    const replacementNotAllowed = !!(fin.noReplacements && d.replacement === "yes");
+    if (replacementNotAllowed) {
+      extra.push(`${rules.name} does not accept internal or external replacements — a replacement case cannot be written on this product.`);
+    }
     return {
       multiplier: m.multiplier,
       maxJustified: max,
       ok,
-      detail: `Income ${income} x ${m.multiplier} = ${max === null ? "individual consideration" : "$" + max.toLocaleString()} justified for age ${age}. Requested face ${face.toLocaleString()} ${ok === false ? "EXCEEDS" : "within"} this guideline.`
+      totalLineExceeded,
+      replacementNotAllowed,
+      detail: `Income ${income} x ${m.multiplier} = ${max === null ? "individual consideration" : "$" + max.toLocaleString()} justified for age ${age}. Requested face ${face.toLocaleString()} ${ok === false ? "EXCEEDS" : "within"} this guideline.${extra.length ? " " + extra.join(" ") : ""}`
     };
   }
 
@@ -771,6 +806,21 @@ const Engine = (() => {
     conditionIds.forEach(id => { if (apsMap[id] && !apsNeeded.includes(apsMap[id])) apsNeeded.push(apsMap[id]); });
     apsNeeded.forEach(a => list.push(`APS: ${a}`));
 
+    // Coverage-purpose financial evidence (Banner financial underwriting
+    // guidance, p. 22-23 — the purpose determines what justifies the face
+    // amount; similar purpose documents are standard across carriers).
+    const purposeEvidence = {
+      income: "Income verification (tax returns / W-2 / paystubs) may be required.",
+      estate: "Estate analysis — asset and liability verification may be required (estate conservation / liquidity).",
+      business: "Business insurance questionnaire (BIQ) and a cover letter explaining the purpose and how the face amount was determined.",
+      mortgage: "Loan documentation supporting the debt / mortgage amount.",
+      family: "Coverage justification — verify how the face amount was determined (income-replacement factors).",
+      charity: "Contribution record confirming an established history of giving to the charity."
+    };
+    if (d.policyPurpose && purposeEvidence[d.policyPurpose]) list.push(purposeEvidence[d.policyPurpose]);
+    if (d.replacement === "yes") list.push("Replacement disclosed — carrier replacement rules and disclosure requirements apply.");
+    if (d.financing === "yes") list.push("Third-party or financed premium disclosed — premium-financing financial review applies.");
+
     return { list, apsNeeded, apsList };
   }
 
@@ -785,7 +835,8 @@ const Engine = (() => {
       ["movingViolations3yr", "driving history"], ["alcoholConcern", "substance history"], ["drugAbuse", "drug use history"], ["occupationHazardous", "hazardous occupation status"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
       ["livingSetting", "living setting"], ["mobility", "mobility"], ["pendingTests", "pending-care status"],
       ["recentHospitalization", "hospitalization status"], ["recentSurgery", "surgery status"], ["activeSymptom", "symptom status"],
-      ["age", "age"], ["faceAmount", "face amount"]
+      ["age", "age"], ["faceAmount", "face amount"], ["existingCoverage", "existing coverage"], ["policyPurpose", "policy purpose"],
+      ["replacement", "replacement status"], ["financing", "premium financing status"], ["marijuana", "marijuana use"]
     ];
     for (const [k, label] of checks) {
       total++;
@@ -1092,12 +1143,23 @@ const Engine = (() => {
     if (ev.apsNeeded.length || (d.age && d.age >= apsAge)) flags.push("needs_aps");
     if (d.age && d.faceAmount && (Number(d.faceAmount) >= 2000000 || (d.age > 60 && Number(d.faceAmount) >= 500000))) flags.push("needs_exam");
     const auw = rules.evidence.acceleratedUw;
+    let auPossible = false;
     if (auw) {
-      if (d.age && d.faceAmount && d.age >= auw.ageMin && d.age <= auw.ageMax && Number(d.faceAmount) >= auw.amountMin && Number(d.faceAmount) <= auw.amountMax) {
+      auPossible = !!(d.age && d.faceAmount && d.age >= auw.ageMin && d.age <= auw.ageMax && Number(d.faceAmount) >= auw.amountMin && Number(d.faceAmount) <= auw.amountMax);
+    } else if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) {
+      auPossible = true;
+    }
+    if (auPossible) {
+      // Banner publishes explicit accelerated-UW exclusions: no premium
+      // financing and no policy lapse or replacement considered within the
+      // last 6 months (no internal lapse/replacement within 2 years). Other
+      // carriers' AU lanes are unchanged until their guides publish similar
+      // conditions.
+      if (rules.financial && rules.financial.auExcludesReplacement && (d.replacement === "yes" || d.financing === "yes")) {
+        ev.list.push("Premium financing or a recent replacement disclosed — accelerated underwriting not available; standard underwriting applies.");
+      } else {
         flags.push("accelerated_uw_possible");
       }
-    } else if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) {
-      flags.push("accelerated_uw_possible");
     }
 
     out.flags = [...new Set(flags)];
@@ -1110,7 +1172,9 @@ const Engine = (() => {
 
     /* ---- 7. Financial -------------------------------------------- */
     out.financial = evalFinancial(rules, d);
-    if (out.financial && out.financial.ok === false) out.flags.push("financial_review");
+    if (out.financial && (out.financial.ok === false || out.financial.totalLineExceeded || out.financial.replacementNotAllowed)) {
+      out.flags.push("financial_review");
+    }
     if (rules.financial && rules.financial.maxFace && d.faceAmount && Number(d.faceAmount) > rules.financial.maxFace) {
       out.flags.push("financial_review");
       out.financial = out.financial || {};

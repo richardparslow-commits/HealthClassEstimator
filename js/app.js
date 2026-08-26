@@ -18,11 +18,11 @@ const App = (() => {
     return {
       carrier: "banner",
       age: "", sex: "", state: "", occupation: "", occupationHazardous: "",
-      faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "no", financing: "no",
+      faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "", financing: "",
       usedNicotine: "", nicotineProduct: "cigarette", nicotineLastUse: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
-      marijuana: "none",
+      marijuana: "",
       heightFt: "", heightIn: "", weightLb: "", weightOneYearAgoLb: "", weightIntentional: false, weightChangeUnintentional: false,
-      bpSys: "", bpDia: "", bpTreated: "no", cholTotal: "", cholHdl: "", a1c: "",
+      bpSys: "", bpDia: "", cholTotal: "", cholHdl: "", a1c: "",
       movingViolations3yr: "", seriousDriving: false, seriousDrivingYears: "",
       criminalActive: false, bankruptcyActive: false,
       alcoholConcern: "", drugAbuse: "", drugAbuseYears: "",
@@ -417,7 +417,7 @@ const App = (() => {
     const c = el("div", { class: "card" });
     const rules = CARRIER_RULES[state.carrier];
     c.appendChild(el("h2", {}, "Tobacco & nicotine use"));
-    c.appendChild(el("p", { class: "card-sub" }, rules.nicotine.marijuana ? "Banner: " + rules.nicotine.marijuana : (rules.nicotine.tobaccoDefinition || "Lookbacks vary by class.")));
+    c.appendChild(el("p", { class: "card-sub" }, rules.nicotine.tobaccoDefinition || "Lookbacks vary by class."));
 
     c.appendChild(field("Used tobacco or nicotine in the past 10 years?", radioPill("usedNicotine", [["yes", "Yes"], ["no", "No"]])));
     _radioHandlers.usedNicotine = () => render();
@@ -428,10 +428,6 @@ const App = (() => {
     r1.appendChild(field("Date last used", dateInput("nicotineLastUse")));
     r1.appendChild(field("Frequency", selectInput("nicotineFrequency", [["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["occasional", "Occasional"]])));
     det.appendChild(r1);
-
-    const r2 = el("div", { class: "field-row" });
-    r2.appendChild(field("Marijuana / cannabis use", selectInput("marijuana", [["none", "None"], ["infrequent", "Infrequent recreational"], ["frequent", "Frequent / more than weekly"], ["medicinal", "Medicinal"]])));
-    det.appendChild(r2);
 
     const cigarBox = el("div", { class: (state.nicotineProduct === "cigar" ? "" : "hidden") });
     const r3 = el("div", { class: "field-row" });
@@ -484,7 +480,6 @@ const App = (() => {
     const r1 = el("div", { class: "field-row" });
     r1.appendChild(field("Blood pressure — systolic", numInput("bpSys", { min: 0, max: 300 })));
     r1.appendChild(field("Blood pressure — diastolic", numInput("bpDia", { min: 0, max: 200 })));
-    r1.appendChild(field("BP treated with medication?", radioPill("bpTreated", [["no", "No"], ["yes", "Yes"]])));
     c.appendChild(r1);
 
     const r2 = el("div", { class: "field-row" });
@@ -493,8 +488,7 @@ const App = (() => {
     r2.appendChild(field("Most recent A1c (if diabetic)", numInput("a1c", { min: 0, step: 0.1, max: 20 })));
     c.appendChild(r2);
 
-    _radioHandlers.bpTreated = () => {};
-    c.appendChild(el("div", { class: "note-box" }, "Blood-pressure and cholesterol ceilings vary by class and, for some carriers, by age band — the results page applies the selected carrier's exact thresholds."));
+    c.appendChild(el("div", { class: "note-box" }, "Blood-pressure and cholesterol ceilings vary by class and, for some carriers, by age band — the results page applies the selected carrier's exact thresholds. Carriers evaluate the 2-year average reading with or without treatment."));
     return c;
   }
 
@@ -524,7 +518,7 @@ const App = (() => {
   function renderSubstance() {
     const c = el("div", { class: "card" });
     c.appendChild(el("h2", {}, "Alcohol & substance use"));
-    c.appendChild(el("p", { class: "card-sub" }, "Banner screens alcohol and drug abuse with lookbacks; marijuana is rated separately and does not force a tobacco class."));
+    c.appendChild(el("p", { class: "card-sub" }, "Marijuana is rated separately from tobacco — it never forces a tobacco class; carriers apply their own frequency and medicinal-use rules."));
 
     const r1 = el("div", { class: "field-row" });
     r1.appendChild(field("Alcohol concerns", radioPill("alcoholConcern", [["no", "None"], ["history", "History — resolved"], ["active", "Current use / abuse"]])));
@@ -536,10 +530,12 @@ const App = (() => {
     c.appendChild(r1);
 
     const r2 = el("div", { class: "field-row" });
+    r2.appendChild(field("Marijuana / cannabis use", selectInput("marijuana", [["none", "None"], ["infrequent", "Infrequent recreational"], ["frequent", "Frequent / more than weekly"], ["daily", "Daily use"], ["medicinal", "Medicinal"]])));
     r2.appendChild(field("Multiple suicide attempts?", checkPill("suicideMultiple", "Yes")));
     c.appendChild(r2);
 
-    c.appendChild(el("div", { class: "note-box" }, "Decline screen: current alcohol abuse or abstinence < 2 years; non-marijuana drug use within 3 years or multiple relapses. Single suicide attempt within 2 years → postpone."));
+    const mjNote = (CARRIER_RULES[state.carrier].nicotine && CARRIER_RULES[state.carrier].nicotine.marijuana) ? CARRIER_RULES[state.carrier].nicotine.marijuana + " " : "";
+    c.appendChild(el("div", { class: "note-box" }, mjNote + "Decline screen: current alcohol abuse or abstinence < 2 years; non-marijuana drug use within 3 years or multiple relapses. Single suicide attempt within 2 years → postpone."));
     return c;
   }
 
