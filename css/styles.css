@@ -409,4 +409,40 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   body { background: #fff; }
   .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
   .result-hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Dedicated one-page comparison sheet (body.print-compare mode). The
+     normal results/step content is hidden so only the sheet prints. */
+  body.print-compare #step-content, body.print-compare #results-content,
+  body.print-compare .app-main > *:not(#print-sheet) { display: none !important; }
+  body.print-compare #print-sheet { display: block !important; }
+  #print-sheet .klass-chip, #print-sheet tr.print-current { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Hidden on screen; shown only via print (body.print-compare). */
+#print-sheet {
+  display: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1a2430;
+  max-width: 8.4in;
+  margin: 0 auto;
+}
+.print-sheet-head { border-bottom: 2px solid #163a56; padding-bottom: 8px; margin-bottom: 10px; }
+.print-sheet-brand { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #163a56; }
+.print-sheet-title { font-size: 19px; font-weight: 700; margin-top: 2px; }
+.print-sheet-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 10.5px; color: #55606e; margin-top: 3px; }
+.print-sheet-profile {
+  font-size: 12px; background: #f0f4f8; border: 1px solid #d7dfe7;
+  padding: 7px 10px; border-radius: 4px; margin-bottom: 10px;
+}
+.print-sheet-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.print-sheet-table th {
+  text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+  color: #55606e; padding: 5px 7px; border-bottom: 1.5px solid #163a56;
+}
+.print-sheet-table td { padding: 6px 7px; border-bottom: 1px solid #d9e0e7; vertical-align: top; }
+.print-sheet-table tr { break-inside: avoid; }
+.print-sheet-table tr.print-current { background: #eef7f3; }
+.print-sheet-table .print-carrier { font-weight: 700; white-space: nowrap; }
+.print-sheet-table .print-version { font-size: 9px; color: #66707c; font-weight: 400; }
+.print-sheet-foot { margin-top: 12px; border-top: 1px solid #c3ccd4; padding-top: 7px; font-size: 9.5px; color: #55606e; }
+.print-sheet-sources { margin-top: 4px; font-size: 8.5px; color: #7b8490; }

@@ -1130,6 +1130,7 @@ const App = (() => {
     /* ---- Actions ---- */
     const actions = el("div", { id: "results-actions", style: "display:flex;gap:10px;flex-wrap:wrap" });
     actions.appendChild(el("button", { class: "btn btn-compare", id: "btn-compare", onclick: () => toggleComparison() }, "Compare across carriers"));
+    actions.appendChild(el("button", { class: "btn btn-print", id: "btn-print-compare", onclick: () => printComparison() }, "Print comparison"));
     actions.appendChild(el("button", { class: "btn btn-print", onclick: () => window.print() }, "Print / save PDF"));
     actions.appendChild(el("button", { class: "btn btn-ghost", onclick: () => { $("#results-content").classList.add("hidden"); $("#step-content").classList.remove("hidden"); render(); } }, "Edit answers"));
     actions.appendChild(el("button", { class: "btn btn-danger-ghost", onclick: () => { if (confirm("Start a new case? Current answers will be cleared.")) resetState(); } }, "New case"));
@@ -1163,6 +1164,85 @@ const App = (() => {
       const anchor = $("#results-actions");
       resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
     }
+  }
+
+  /* ---------- printable comparison sheet ------------------------------ */
+
+  /* One-page print layout, distinct from the full results print. A hidden
+     #print-sheet is populated with a compact profile header and the
+     comparison table; printing adds body.print-compare so the print CSS
+     shows only this sheet. */
+  function printComparison() {
+    const rows = runComparison();
+    const sheet = buildPrintSheet(rows);
+    document.body.classList.add("print-compare");
+    window.addEventListener("afterprint", () => document.body.classList.remove("print-compare"), { once: true });
+    // Trigger print after the sheet is in the DOM; fall back to removing the
+    // class if the print dialog never fires afterprint (e.g., cancelled).
+    window.print();
+    setTimeout(() => document.body.classList.remove("print-compare"), 1500);
+  }
+
+  function profileLine() {
+    const bits = [];
+    if (state.age !== "") bits.push(state.age + " yr");
+    if (state.sex) bits.push(state.sex);
+    if (state.state) bits.push(state.state);
+    if (state.heightFt !== "" && state.heightIn !== "") bits.push(`${state.heightFt}'${state.heightIn}"`);
+    if (state.weightLb !== "") bits.push(state.weightLb + " lb");
+    if (state.bpSys !== "" && state.bpDia !== "") bits.push("BP " + state.bpSys + "/" + state.bpDia);
+    if (state.cholTotal !== "") bits.push("chol " + state.cholTotal + (state.cholHdl !== "" ? "/" + state.cholHdl : ""));
+    if (state.usedNicotine === "yes") bits.push("nicotine"); else if (state.usedNicotine === "no") bits.push("non-tobacco");
+    if (state.faceAmount !== "") bits.push("face $" + Number(state.faceAmount).toLocaleString());
+    if (state.income !== "") bits.push("income $" + Number(state.income).toLocaleString());
+    const conds = (state.conditions || []).map(c => c.id.replace(/_/g, " "));
+    if (conds.length) bits.push(conds.length + " condition(s): " + conds.join(", "));
+    return bits.join("  ·  ") || "Applicant profile not entered";
+  }
+
+  function buildPrintSheet(rows) {
+    let sheet = document.getElementById("print-sheet");
+    if (!sheet) {
+      sheet = el("div", { id: "print-sheet" });
+      document.body.appendChild(sheet);
+    }
+    sheet.innerHTML = "";
+
+    const title = el("div", { class: "print-sheet-head" });
+    title.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
+    title.appendChild(el("div", { class: "print-sheet-title" }, "Carrier comparison — same applicant profile"));
+    title.appendChild(el("div", { class: "print-sheet-meta" }, [el("span", {}, "Estimated " + new Date().toLocaleDateString()), el("span", {}, "Preliminary, non-binding — based only on disclosed information")]));
+    sheet.appendChild(title);
+
+    const profile = el("div", { class: "print-sheet-profile" }, profileLine());
+    sheet.appendChild(profile);
+
+    const tbl = el("table", { class: "print-sheet-table" });
+    const thead = el("thead", {});
+    thead.appendChild(el("tr", {}, [
+      el("th", {}, "Carrier"), el("th", {}, "Estimated class"), el("th", {}, "Limiting factors / gates"), el("th", {}, "Evidence highlights"), el("th", {}, "Financial")
+    ]));
+    tbl.appendChild(thead);
+    const tbody = el("tbody", {});
+    rows.forEach(row => {
+      const rules = CARRIER_RULES[row.id];
+      const cn = compareClassName(row.out, rules);
+      const tr = el("tr", { class: row.id === state.carrier ? "print-current" : "" });
+      tr.appendChild(el("td", { class: "print-carrier" }, [rules.name, el("div", { class: "print-version" }, rules.guide.version)]));
+      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
+      tr.appendChild(el("td", {}, compareLimiting(row)));
+      tr.appendChild(el("td", {}, compareEvidence(row.out)));
+      tr.appendChild(el("td", {}, compareFinancial(row.out)));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    sheet.appendChild(tbl);
+
+    const foot = el("div", { class: "print-sheet-foot" });
+    foot.appendChild(el("div", {}, "The carrier may obtain medical records, prescription history, laboratory/paramedical results, consumer reports, and information from other insurers or MIB — those sources can change every estimate above. Classes are carrier-specific labels on a shared ladder; the final decision is the carrier's."));
+    foot.appendChild(el("div", { class: "print-sheet-sources" }, "Sources: " + rows.map(r => CARRIER_RULES[r.id].name + " — " + CARRIER_RULES[r.id].guide.title + " (" + CARRIER_RULES[r.id].guide.version + ")").join("; ")));
+    sheet.appendChild(foot);
+    return sheet;
   }
 
   function questionnaireNames(conditions) {

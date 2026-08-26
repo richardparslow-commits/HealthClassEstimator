@@ -21,7 +21,9 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 **Compare across carriers** runs the same applicant profile through every carrier ruleset side by side — each
 carrier's estimated class, limiting factors/gates, evidence highlights, and financial outcome — with the
 currently selected carrier highlighted; clicking any row switches the full estimate below to that carrier
-(the comparison stays open, re-highlighted, so you can click through carriers). Toggle to collapse.
+(the comparison stays open, re-highlighted, so you can click through carriers). Toggle to collapse. **Print
+comparison** renders a dedicated one-page sheet (compact profile header + the comparison table + guardrails)
+that prints on its own, distinct from the full results **Print / save PDF** layout.
 
 ## The interview
 
