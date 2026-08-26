@@ -498,6 +498,81 @@ const Engine = (() => {
     return { klass, details, detail: details.join(" ") || "No substance concerns." };
   }
 
+  /* ---------- medications --------------------------------------------- */
+
+  /* Normalize a medication entry for dictionary matching: lowercase,
+     strip doses/packaging, drop punctuation. */
+  function normalizeMed(t) {
+    return String(t).toLowerCase()
+      .replace(/\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|units?|tablets?|capsules?|tabs?|caps?|patch|injection|pen|vial|spray|puffs?)/g, " ")
+      .replace(/[^a-z ]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /* Match a normalized token against a MEDICATION_MAP entry using whole-word
+     equality on normalized forms — substring matching over-matched common
+     words (e.g. "none" ⊂ "eplerenone"). Aliases are full generic/brand names. */
+  function medMatches(norm, entry) {
+    if (!norm) return false;
+    const normWords = norm.split(" ").filter(w => w.length >= 4);
+    if (!normWords.length) return false;
+    return entry.aliases.some(a => {
+      const aw = normalizeMed(a);
+      return !!aw && aw.length >= 4 && normWords.includes(aw);
+    });
+  }
+
+  /**
+   * Cross-check disclosed medications against the disclosed conditions and
+   * the carrier's APS trigger list. Never a diagnosis: an undisclosed med
+   * raises an advisory flag to confirm with the applicant.
+   */
+  function evalMedications(rules, d) {
+    const raw = d.medicationsText;
+    if (!raw || !String(raw).trim()) {
+      return { klass: null, missing: true, meds: [], disclosed: [], undisclosed: [], apsTriggers: [], detail: "Medications not provided." };
+    }
+    const tokens = String(raw).split(/[,;\n]+/).map(t => t.trim()).filter(Boolean);
+    const matched = [];
+    for (const t of tokens) {
+      const norm = normalizeMed(t);
+      if (!norm) continue;
+      const entry = MEDICATION_MAP.find(e => medMatches(norm, e));
+      if (entry && !matched.some(m => m.conditionId === entry.condition && m.med === t)) {
+        matched.push({ med: t, conditionId: entry.condition, conditionName: entry.name, apsLabel: entry.apsLabel });
+      }
+    }
+    const condIds = (d.conditions || []).map(c => c.id);
+    const disclosed = [], undisclosed = [];
+    const seenD = new Set(), seenU = new Set();
+    for (const m of matched) {
+      if (condIds.includes(m.conditionId)) {
+        if (!seenD.has(m.conditionId)) { disclosed.push(m); seenD.add(m.conditionId); }
+      } else {
+        if (!seenU.has(m.conditionId)) { undisclosed.push(m); seenU.add(m.conditionId); }
+      }
+    }
+    // Carrier APS triggers suggested by the prescription record (disclosed or not)
+    const apsConditions = (rules.evidence && rules.evidence.apsConditions) || [];
+    const strip = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const apsTriggers = [];
+    for (const m of matched) {
+      const hit = apsConditions.find(a => {
+        const aa = strip(a), ll = strip(m.apsLabel);
+        return aa && ll && (aa.includes(ll) || ll.includes(aa));
+      });
+      if (hit && !apsTriggers.some(x => x.apsText === hit)) {
+        apsTriggers.push({ conditionId: m.conditionId, conditionName: m.conditionName, apsText: hit, med: m.med });
+      }
+    }
+    const parts = [];
+    if (matched.length) parts.push(`${matched.length} medication(s) cross-checked.`);
+    if (disclosed.length) parts.push(`${disclosed.length} consistent with disclosed conditions.`);
+    if (undisclosed.length) parts.push(`${undisclosed.length} suggest a condition not disclosed — confirm with applicant.`);
+    return { klass: null, missing: false, meds: matched, disclosed, undisclosed, apsTriggers, detail: parts.join(" ") || "Entered medications matched no reference entries." };
+  }
+
   /* ---------- functional status / ADLs -------------------------------- */
 
   function evalFunctional(d) {
@@ -612,6 +687,7 @@ const Engine = (() => {
       if (allDetailed) score++;
       else missing.push("condition control details");
     }
+    if (flags.includes("undisclosed_meds")) missing.push("medication-condition mismatch");
     if (flags.includes("missing_material_data")) missing.push("key data");
     const pct = score / total;
     if (pct >= 0.9) return { level: "High", missing };
@@ -746,6 +822,9 @@ const Engine = (() => {
 
     domains.medical = med;
 
+    const meds = evalMedications(rules, d);
+    domains.medications = meds;
+
     const sub = evalSubstance(d);
     domains.substance = sub;
 
@@ -754,6 +833,7 @@ const Engine = (() => {
     domains.pending = pend;
 
     out.domains = domains;
+    out.medications = meds;
 
     /* ---- 3. Least favorable class wins ---------------------------- */
     const usable = Object.entries(domains).filter(([k, v]) => v && v.klass && v.klass !== "tobacco" && v.klass !== "bp_outside" && v.klass !== "lipids_outside" && v.klass !== "driving_outside" && v.klass !== "substandard_review" && v.klass !== "manual_review");
@@ -839,9 +919,10 @@ const Engine = (() => {
     if (final === "table" || outside.length) flags.push("likely_table");
     if (gateOutcome === "decline" || out.gates.decline.length) flags.push("possible_decline");
     if (gateOutcome === "postpone" || out.gates.postpone.length) flags.push("manual_review");
-    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing) {
+    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing || meds.missing) {
       flags.push("missing_material_data");
     }
+    if (meds.undisclosed && meds.undisclosed.length) flags.push("undisclosed_meds");
     if (final === "manual_review") flags.push("manual_review");
 
     // evidence flags
@@ -852,6 +933,11 @@ const Engine = (() => {
 
     out.flags = [...new Set(flags)];
     out.evidence = ev;
+
+    // medication-driven APS triggers from the prescription record
+    if (ev && ev.list && meds.apsTriggers && meds.apsTriggers.length) {
+      meds.apsTriggers.forEach(t => ev.list.push(`APS: ${t.apsText} (medication ${t.med} suggests ${t.conditionName})`));
+    }
 
     /* ---- 7. Financial -------------------------------------------- */
     out.financial = evalFinancial(rules, d);
@@ -915,6 +1001,9 @@ const Engine = (() => {
       const from = (out.classInfo[out.possibleCredit.from] || { name: out.possibleCredit.from }).name;
       const to = (out.classInfo[out.possibleCredit.to] || { name: out.possibleCredit.to }).name;
       lines.push(`Possible one-class credit review: ${from} → ${to}. ${out.possibleCredit.note}`);
+    }
+    if (out.medications && out.medications.undisclosed && out.medications.undisclosed.length) {
+      out.medications.undisclosed.forEach(u => lines.push(`Medication cross-check: ${u.med} suggests ${u.conditionName} — not disclosed. Confirm with the applicant and update medical history before submission.`));
     }
     if (out.financial && out.financial.ok === false) lines.push(out.financial.detail);
     return lines;

@@ -21,7 +21,7 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 
 ## The interview
 
-The wizard mirrors what a real carrier application asks, organized into 11 steps:
+The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
 1. **Applicant** — carrier (Banner Life, Foresters, or Transamerica), age, sex, state, occupation, hazardous duties
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
@@ -32,9 +32,11 @@ The wizard mirrors what a real carrier application asks, organized into 11 steps
 7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration
 8. **Medical history** — condition picker with per-condition detail (status, severity, control, medications,
    onset, complications, stability, postpone/decline concerns)
-9. **Family history** — early cardiovascular death in parents/siblings
-10. **Function & ADLs** — living setting, mobility, ADL assistance, home-health/hospice
-11. **Pending care** — pending tests/referrals, recent hospitalization/surgery, uninvestigated symptoms
+9. **Medications & prescriptions** — current prescription list, cross-checked against disclosed conditions
+   and each carrier's APS triggers
+10. **Family history** — early cardiovascular death in parents/siblings
+11. **Function & ADLs** — living setting, mobility, ADL assistance, home-health/hospice
+12. **Pending care** — pending tests/referrals, recent hospitalization/surgery, uninvestigated symptoms
 
 ## How the estimate works
 
@@ -55,9 +57,13 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
    requiring 3 of 7 credit criteria — never auto-applied. Foresters and Transamerica publish no such credit,
    so none is shown for them.
 5. **Confidence and flags.** Confidence reflects evidence completeness. Flags include `needs_aps`,
-   `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`, and
-   `financial_review`.
-6. **Comorbidity interaction check.** Combinations such as diabetes + CAD/kidney disease, CKD + hypertension,
+   `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`,
+   `financial_review`, and `undisclosed_meds`.
+6. **Medication cross-check.** Disclosed prescriptions are matched against a reference dictionary of
+   generic/brand names and each carrier's APS-trigger conditions. A medication suggesting a condition the
+   applicant did not disclose raises `undisclosed_meds` and an APS line — advisory, never a diagnosis; the
+   carrier's prescription-history check will surface the same fact at underwriting.
+7. **Comorbidity interaction check.** Combinations such as diabetes + CAD/kidney disease, CKD + hypertension,
    or mental health + alcohol abuse are flagged as materially different from an isolated diagnosis.
 
 The results page shows the preliminary class, a likely range, the limiting factors, the full domain breakdown,
@@ -117,7 +123,7 @@ age bands for that carrier rather than a height/weight lookup.
 ```
 index.html          App shell
 css/styles.css      Styling (screen + print)
-js/rules.js         Carrier rule data (Banner, Foresters, Transamerica), sources, class metadata
+js/rules.js         Carrier rule data (Banner, Foresters, Transamerica), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
 ```
@@ -127,7 +133,7 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 59 scenario checks across all three carriers
+node /tmp/engine_test.js   # 66 scenario checks across all three carriers
 ```
 
 Then open `index.html` and walk a sample case through to the estimate.

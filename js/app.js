@@ -27,6 +27,7 @@ const App = (() => {
       criminalActive: false, bankruptcyActive: false,
       alcoholConcern: "no", drugAbuse: "no", drugAbuseYears: "",
       conditions: [],
+      medicationsText: "",
       cirrhosis: "no", defibrillator: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
       strokeSevere: false, multipleStrokes: false, suicideMultiple: false, oxygenUse: false,
       a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false,
@@ -361,6 +362,7 @@ const App = (() => {
     { id: "driving", label: "Driving & criminal", render: renderDriving },
     { id: "substance", label: "Alcohol & substances", render: renderSubstance },
     { id: "medical", label: "Medical history", render: renderMedical },
+    { id: "medications", label: "Medications", render: renderMedications },
     { id: "family", label: "Family history", render: renderFamily },
     { id: "functional", label: "Function & ADLs", render: renderFunctional },
     { id: "pending", label: "Pending care", render: renderPending }
@@ -593,6 +595,19 @@ const App = (() => {
     r.appendChild(field("Gastric bypass within 6 months?", checkPill("gastricBypassRecent", "Yes")));
     r.appendChild(field("Oxygen use?", checkPill("oxygenUse", "Yes")));
     c.appendChild(r);
+    return c;
+  }
+
+  function renderMedications() {
+    const c = el("div", { class: "card" });
+    c.appendChild(el("h2", {}, "Medications & prescriptions"));
+    c.appendChild(el("p", { class: "card-sub" }, "List current prescription medications (generic or brand names, comma-separated). The app cross-checks them against disclosed conditions and the carrier's APS triggers — carriers see your applicant's prescription history, so undisclosed conditions surface at underwriting regardless."));
+
+    const ta = el("textarea", { rows: 4, placeholder: "e.g. metformin, lisinopril, atorvastatin — or 'none'" });
+    if (state.medicationsText) ta.value = state.medicationsText;
+    ta.addEventListener("input", () => { state.medicationsText = ta.value; saveState(); });
+    c.appendChild(field("Current prescription medications", ta));
+    c.appendChild(el("div", { class: "note-box" }, "If the applicant takes no medications, enter 'none'. Entering a medication that suggests a condition not disclosed raises a mismatch flag — confirm with the applicant and update the medical history before submission. Over-the-counter items (aspirin, vitamins) are generally not material. The reference dictionary covers common generics and brands for the conditions in the history catalog."));
     return c;
   }
 
@@ -832,6 +847,36 @@ const App = (() => {
     sum.appendChild(el("div", { class: "field" }, [el("label", {}, "Flags"), flags]));
     wrap.appendChild(sum);
 
+    /* ---- Medication cross-check ---- */
+    const medCard = el("div", { class: "card" });
+    medCard.appendChild(el("h2", {}, "Medication cross-check"));
+    if (out.medications && out.medications.missing) {
+      medCard.appendChild(el("p", {}, "No medications entered — add them in the Medications step to cross-check against disclosed conditions and carrier APS triggers."));
+    } else if (out.medications && !out.medications.meds.length) {
+      medCard.appendChild(el("p", {}, "No entered medications matched the reference dictionary — verify spellings or brand names."));
+    } else if (out.medications) {
+      if (out.medications.disclosed && out.medications.disclosed.length) {
+        const ul = el("ul", { class: "evidence-list" });
+        out.medications.disclosed.forEach(m => ul.appendChild(el("li", {}, [el("strong", {}, m.med + " → " + m.conditionName + ": "), "consistent with disclosed condition."])));
+        medCard.appendChild(ul);
+      }
+      if (out.medications.undisclosed && out.medications.undisclosed.length) {
+        const warn = el("div", { class: "gate-box gate-decline" });
+        warn.appendChild(el("h3", {}, "Possible undisclosed condition — confirm with applicant"));
+        const ul = el("ul", {});
+        out.medications.undisclosed.forEach(m => ul.appendChild(el("li", {}, [el("strong", {}, m.med), " suggests ", m.conditionName, " — not disclosed in medical history. The carrier's prescription-history check will surface this; confirm before submission."])));
+        warn.appendChild(ul);
+        medCard.appendChild(warn);
+      }
+      if (out.medications.apsTriggers && out.medications.apsTriggers.length) {
+        medCard.appendChild(el("p", { class: "card-sub" }, "APS likely from the prescription record:"));
+        const ul = el("ul", { class: "evidence-list" });
+        out.medications.apsTriggers.forEach(t => ul.appendChild(el("li", {}, `APS: ${t.apsText} (${t.med})`)));
+        medCard.appendChild(ul);
+      }
+    }
+    wrap.appendChild(medCard);
+
     /* ---- Domain breakdown ---- */
     const dom = el("div", { class: "card" });
     dom.appendChild(el("h2", {}, "Domain breakdown — least favorable factor wins"));
@@ -840,7 +885,7 @@ const App = (() => {
     thead.appendChild(el("tr", {}, [el("th", {}, "Risk domain"), el("th", {}, "Best supported class"), el("th", {}, "Basis")]));
     tbl.appendChild(thead);
     const tbody = el("tbody", {});
-    const domainOrder = ["tobacco", "build", "bp", "cholesterol", "driving", "family", "medical", "substance", "functional", "pending"];
+    const domainOrder = ["tobacco", "build", "bp", "cholesterol", "driving", "family", "medical", "medications", "substance", "functional", "pending"];
     for (const key of domainOrder) {
       const v = out.domains[key];
       if (!v) continue;
@@ -857,6 +902,7 @@ const App = (() => {
       else if (v.klass === "postpone") { klassName = "Postpone"; chipCls = "gate"; }
       else if (v.klass === "decline") { klassName = "Decline screen"; chipCls = "gate"; }
       else if (v.klass === null && v.missing) { klassName = "Not provided"; chipCls = "missing"; }
+      else if (v.klass === null) { klassName = "Cross-check"; chipCls = "missing"; }
       else { klassName = classLabel(v.klass); chipCls = "klass"; }
       row.appendChild(el("td", {}, el("span", { class: "klass-chip " + chipCls, style: chipCls === "klass" ? `background:${(rules.classInfo[v.klass] || {}).color || "#5b6b7b"}` : "" }, klassName)));
       row.appendChild(el("td", {}, v.detail || v.details ? [].concat(v.details || [], v.detail || []).join(" ") : ""));
@@ -941,7 +987,7 @@ const App = (() => {
     gUl.appendChild(el("li", {}, "Never suggest withholding information or 'answering around' a condition. Applications state that answers influence acceptance and that material misrepresentation or nondisclosure can jeopardize coverage."));
     gUl.appendChild(el("li", {}, "Temporary or conditional coverage exists only if the exact carrier receipt conditions are met — not because this estimate is favorable."));
     gUl.appendChild(el("li", {}, "This is not a medical diagnostic tool. It does not issue insurance, bind coverage, or replace a carrier underwriter's decision."));
-    gUl.appendChild(el("li", {}, "Final decision is the carrier's: Banner and Foresters each evaluate the whole risk and may request additional evidence."));
+    gUl.appendChild(el("li", {}, "Final decision is the carrier's: " + out.carrier + " evaluates the whole risk and may request additional evidence."));
     guard.appendChild(gUl);
     guard.appendChild(el("div", { class: "note-box" }, [el("strong", {}, "Sources: "), out.carrier + " — " + out.guide.title + " (" + out.guide.version + "). Estimated " + new Date().toLocaleDateString() + "."]));
     wrap.appendChild(guard);
@@ -993,18 +1039,19 @@ const App = (() => {
     manual_review: "Manual review",
     missing_material_data: "Missing key data",
     accelerated_uw_possible: "Accelerated UW may apply",
-    financial_review: "Financial justification needed"
+    financial_review: "Financial justification needed",
+    undisclosed_meds: "Medication-condition mismatch — confirm"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
     possible_decline: "flag-danger", manual_review: "flag-warn", missing_material_data: "flag-warn",
-    accelerated_uw_possible: "flag-ok", financial_review: "flag-warn"
+    accelerated_uw_possible: "flag-ok", financial_review: "flag-warn", undisclosed_meds: "flag-warn"
   };
 
   const DOMAIN_LABELS = {
     tobacco: "Tobacco / nicotine", build: "Build (height/weight)", bp: "Blood pressure",
     cholesterol: "Cholesterol / HDL", driving: "Driving", family: "Family history",
-    medical: "Medical history", substance: "Alcohol / substances", functional: "Functional status / ADLs",
+    medical: "Medical history", medications: "Medications / prescriptions", substance: "Alcohol / substances", functional: "Functional status / ADLs",
     pending: "Pending care"
   };
 
