@@ -8,9 +8,10 @@ const rules = fs.readFileSync(path.join(ROOT, "js/rules.js"), "utf8");
 const engine = fs.readFileSync(path.join(ROOT, "js/engine.js"), "utf8");
 
 const context = vm.createContext({ console, Date, JSON, Object, Math, Set, Number, String, Array });
-vm.runInContext(rules + "\n" + engine + "\nglobalThis.__ENGINE = Engine;\nglobalThis.__CARRIERS = CARRIER_RULES;", context, { filename: "combined.js" });
+vm.runInContext(rules + "\n" + engine + "\nglobalThis.__ENGINE = Engine;\nglobalThis.__CARRIERS = CARRIER_RULES;\nglobalThis.__CLASS_ORDER = CLASS_ORDER;", context, { filename: "combined.js" });
 const Engine = context.__ENGINE;
 const CARRIER_IDS = Object.keys(context.__CARRIERS);
+const CLASS_ORDER = context.__CLASS_ORDER;
 
 function monthsAgo(n) {
   const d = new Date();
@@ -779,6 +780,80 @@ for (const carrier of CARRIER_IDS) {
       console.log("      postpone:", JSON.stringify(out.gates.postpone));
     }
   }
+}
+
+// ---- results-page contract probe -----------------------------------------
+// The results page renders every emitted class through rules.classInfo (hero
+// chip, domain chips, range). Assert the engine only emits classes the carrier
+// documents, that declared classInfo entries are well-formed with known class
+// keys, and that gate entries are renderable. A carrier that omits a classInfo
+// entry fails here instead of rendering an unlabeled gray chip.
+const KNOWN_EXTRA_CLASSES = ["tobacco_plus"]; // classInfo-only labels, never engine classes
+const CONTRACT_SENTINELS = new Set(["tobacco", "bp_outside", "lipids_outside", "driving_outside", "substandard_review", "manual_review", "postpone", "decline"]);
+const contractProbes = [
+  ["clean", d => {}],
+  ["BP 138/88", d => { d.bpSys = 138; d.bpDia = 88; }],
+  ["BP 162/98", d => { d.bpSys = 162; d.bpDia = 98; }],
+  ["Build heavy 70in/245lb", d => { d.heightIn = 70; d.weightLb = 245; }],
+  ["Nicotine 3 mo ago", d => { d.usedNicotine = "yes"; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }],
+  ["Quit nicotine 30 mo", d => { d.usedNicotine = "yes"; d.nicotineLastUse = monthsAgo(30); d.nicotineProduct = "vape"; }],
+  ["Parent CV death", d => { d.famCardio = "parent"; }],
+  ["Hazardous occupation", d => { d.occupationHazardous = "yes"; }],
+  ["Depression current", d => { d.conditions = [{ id: "depression", status: "current", severity: "moderate", control: "good" }]; }],
+  ["Diabetes type 2", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good" }]; }],
+  ["Cancer resolved 2 yr", d => { d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 2, severity: "moderate", control: "good" }]; }],
+  ["Pending test", d => { d.pendingTests = "yes"; }],
+  ["HIV severe", d => { d.conditions = [{ id: "hiv", status: "current", severity: "severe", control: "poor" }]; }],
+  ["Invalid build", d => { d.heightIn = 96; }]
+];
+const classInfoCovered = (rules, k) => {
+  const ci = rules.classInfo && rules.classInfo[k];
+  return ci && typeof ci.name === "string" && ci.name.length > 0 && typeof ci.color === "string" && ci.color.length > 0;
+};
+for (const carrier of CARRIER_IDS) {
+  const crules = context.__CARRIERS[carrier];
+  // Declared classInfo entries: known class keys, well-formed name + color.
+  for (const [key, entry] of Object.entries(crules.classInfo || {})) {
+    const known = CLASS_ORDER.includes(key) || KNOWN_EXTRA_CLASSES.includes(key);
+    const wellFormed = entry && typeof entry.name === "string" && entry.name.length > 0 && typeof entry.color === "string" && entry.color.length > 0;
+    if (known && wellFormed) { pass++; console.log("PASS | contract classInfo " + carrier + ":" + key); }
+    else {
+      fail++;
+      console.log("FAIL | contract classInfo " + carrier + ":" + key + (known ? " malformed (need non-empty name + color)" : " unknown class key"));
+    }
+  }
+  for (const [pname, mutate] of contractProbes) {
+    const d = JSON.parse(JSON.stringify(base));
+    d.carrier = carrier;
+    mutate(d);
+    const out = Engine.run(carrier, d);
+    const problems = [];
+    const fc = out.finalClass;
+    if (!CLASS_ORDER.includes(fc) && fc !== "manual_review") problems.push("finalClass " + fc + " is not a known class");
+    else if (fc !== "manual_review" && !classInfoCovered(crules, fc)) problems.push("finalClass " + fc + " has no classInfo name/color");
+    for (const [rk, rv] of [["range.low", out.range && out.range.low], ["range.high", out.range && out.range.high]]) {
+      if (rv && rv !== "manual_review" && !classInfoCovered(crules, rv)) problems.push(rk + " " + rv + " has no classInfo");
+    }
+    for (const [dk, dv] of Object.entries(out.domains || {})) {
+      if (dv && dv.klass && !CONTRACT_SENTINELS.has(dv.klass) && !classInfoCovered(crules, dv.klass)) problems.push("domain " + dk + " klass " + dv.klass + " has no classInfo");
+    }
+    for (const kind of ["decline", "postpone"]) {
+      for (const g of out.gates[kind]) {
+        if (!g || (!g.text && !g.id)) problems.push("gate " + kind + " entry has neither text nor id");
+      }
+    }
+    if (!problems.length) { pass++; console.log("PASS | contract probe " + pname + " [" + carrier + "]"); }
+    else {
+      fail++;
+      console.log("FAIL | contract probe " + pname + " [" + carrier + "]: " + problems.join("; "));
+    }
+  }
+}
+// Soft report: classes declared in classInfo that the engine source can never
+// emit (documentation-only entries — a possible feature gap, not a failure).
+for (const carrier of CARRIER_IDS) {
+  const never = Object.keys(context.__CARRIERS[carrier].classInfo || {}).filter(k => !engine.includes(k));
+  if (never.length) console.log("WARN | contract " + carrier + " classInfo documents classes the engine never emits: " + never.join(", "));
 }
 
 for (const s of scenarios) {

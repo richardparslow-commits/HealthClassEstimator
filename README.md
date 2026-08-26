@@ -176,7 +176,7 @@ css/styles.css      Styling (screen + print)
 js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
-test/engine.test.js Engine test harness — 286 assertions (230 scenarios + cross-carrier gate-dedup probe)
+test/engine.test.js Engine test harness — 435 assertions (230 scenarios + gate-dedup probe + results-page contract checks)
 package.json        npm test wiring (no dependencies, no install needed)
 ```
 
@@ -185,7 +185,7 @@ package.json        npm test wiring (no dependencies, no install needed)
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-npm test   # 286 assertions: 230 scenarios + cross-carrier gate-dedup probe
+npm test   # 435 assertions: 230 scenarios + cross-carrier gate-dedup probe + results-page contract checks
 ```
 
 No dependencies — `npm test` is just `node test/engine.test.js`, so a fresh checkout needs no
