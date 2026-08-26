@@ -23,7 +23,7 @@ Answers are saved automatically to the browser's localStorage; **Save draft** pe
 
 The wizard mirrors what a real carrier application asks, organized into 11 steps:
 
-1. **Applicant** — carrier (Banner Life or Foresters), age, sex, state, occupation, hazardous duties
+1. **Applicant** — carrier (Banner Life, Foresters, or Transamerica), age, sex, state, occupation, hazardous duties
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source
 3. **Tobacco & nicotine** — product, last-use date, frequency, cigar exception, marijuana
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
@@ -50,8 +50,10 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
    status are each scored independently. BMI is a *screening flag only* — the carrier chart is the binding rule.
 3. **Least favorable factor wins.** The worst supported domain sets the provisional class. A preferred build
    never overrides a Standard medical ceiling.
-4. **Credits are shown, not applied.** Banner's one-class credit (build / BP / family history / cholesterol)
-   is surfaced as a "possible credit review" requiring 3 of 7 credit criteria — never auto-applied.
+4. **Credits are shown, not applied.** Only carriers that publish a credit rule surface one: Banner's
+   one-class credit (build / BP / family history / cholesterol) is flagged as a "possible credit review"
+   requiring 3 of 7 credit criteria — never auto-applied. Foresters and Transamerica publish no such credit,
+   so none is shown for them.
 5. **Confidence and flags.** Confidence reflects evidence completeness. Flags include `needs_aps`,
    `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`, and
    `financial_review`.
@@ -68,11 +70,14 @@ justification against income multipliers, and the mandatory guardrails.
 |---|---|---|
 | **Banner Life** (primary) | Full master-outcome chart: Preferred Plus / Preferred / Standard Plus / Standard NT, tobacco classes, build chart, BP & lipid ceilings, driving & family-history rules, medical best-class ceilings, postpone/decline triggers, evidence requirements, income multipliers | *Field guide for life insurance underwriting*, Banner Life family of companies, March 2026 |
 | **Foresters** (secondary) | Preferred Plus / Preferred / Standard Plus / Standard NT, Tobacco Plus, age-band BP & cholesterol ceilings, build charts, family-history and driving rules, non-medical eligibility screens and impairment declines | *Underwriting Guide — Your Term, Advantage Plus II, Strong Foundation and SMART UL*, 506305 US (04/26) |
+| **Transamerica** (secondary) | Trendsetter Super / Trendsetter LB, FFIUL II/IUL, FCIUL II/IUL: Preferred Plus/Preferred Elite, Preferred, Standard Plus, Standard NT + tobacco equivalents; sex-neutral blended BMI chart (age bands, Table A–H, decline ≤16/>46); age-band BP & cholesterol/HDL ceilings; driving, family-history and substance tiers; impairment-table declines | *A Field Guide to Underwriting* (Trendsetter Super/LB, IULs), 03/25 |
 
 Rules live as **data** in `js/rules.js` (carrier, guide version, effective date, risk domain, thresholds,
 outcomes) so carrier updates can be made without touching engine code. The engine (`js/engine.js`) is
 carrier-agnostic; `js/app.js` is the wizard UI. The Foresters LTC material is intentionally **not** merged into
 the life engine — LTC is a separate product silo evaluating ADL/IADL and long-term-care utilization risk.
+Transamerica's build rule is a **blended BMI chart** (sex-neutral), so the engine scores build by BMI with
+age bands for that carrier rather than a height/weight lookup.
 
 ## Outcome logic
 
@@ -112,7 +117,7 @@ the life engine — LTC is a separate product silo evaluating ADL/IADL and long-
 ```
 index.html          App shell
 css/styles.css      Styling (screen + print)
-js/rules.js         Carrier rule data (Banner + Foresters), sources, class metadata
+js/rules.js         Carrier rule data (Banner, Foresters, Transamerica), sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
 ```
@@ -122,7 +127,7 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 36 scenario checks across both carriers
+node /tmp/engine_test.js   # 59 scenario checks across all three carriers
 ```
 
 Then open `index.html` and walk a sample case through to the estimate.

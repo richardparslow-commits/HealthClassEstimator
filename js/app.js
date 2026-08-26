@@ -372,7 +372,7 @@ const App = (() => {
     c.appendChild(el("p", { class: "card-sub" }, "Carrier selection picks the underwriting ruleset used for the estimate."));
 
     const r1 = el("div", { class: "field-row" });
-    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters is a secondary mapping."));
+    r1.appendChild(field("Carrier", selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }), "Banner Life is the fully specified master-outcome ruleset; Foresters and Transamerica are additional carrier mappings."));
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
     r1.appendChild(field("Sex", radioPill("sex", [["male", "Male"], ["female", "Female"]])));
     c.appendChild(r1);
@@ -414,7 +414,7 @@ const App = (() => {
     const c = el("div", { class: "card" });
     const rules = CARRIER_RULES[state.carrier];
     c.appendChild(el("h2", {}, "Tobacco & nicotine use"));
-    c.appendChild(el("p", { class: "card-sub" }, rules.nicotine.marijuana ? "Banner: " + rules.nicotine.marijuana : "Lookbacks vary by class."));
+    c.appendChild(el("p", { class: "card-sub" }, rules.nicotine.marijuana ? "Banner: " + rules.nicotine.marijuana : (rules.nicotine.tobaccoDefinition || "Lookbacks vary by class.")));
 
     c.appendChild(field("Used tobacco or nicotine in the past 10 years?", radioPill("usedNicotine", [["yes", "Yes"], ["no", "No"]])));
     _radioHandlers.usedNicotine = () => render();
@@ -439,7 +439,11 @@ const App = (() => {
     det.appendChild(cigarBox);
     c.appendChild(det);
 
-    c.appendChild(el("div", { class: "note-box" }, "Banner nicotine lookbacks: Preferred Plus 36 months · Preferred 24 months · Standard Plus / Standard 12 months. Tobacco class applies for any use within 12 months. " + rules.nicotine.cigarException.note));
+    const lookbacks = rules.nicotine.classes.map(x => {
+      const months = x.lookbackMonths !== undefined ? x.lookbackMonths : (x.lookbackYears !== undefined ? x.lookbackYears * 12 : 12);
+      return (x.label.split(" (")[0]) + ": " + (months >= 12 ? (months / 12) + " yr" : months + " mo");
+    }).join(" · ");
+    c.appendChild(el("div", { class: "note-box" }, "Nicotine lookbacks — " + lookbacks + ". " + (rules.nicotine.tobaccoDefinition ? rules.nicotine.tobaccoDefinition + " " : "") + (rules.nicotine.cigarException ? rules.nicotine.cigarException.note : "")));
     return c;
   }
 
@@ -462,7 +466,10 @@ const App = (() => {
     r2.appendChild(field("Unexplained / illness-related change?", checkPill("weightChangeUnintentional", "Yes")));
     c.appendChild(r2);
 
-    c.appendChild(el("div", { class: "note-box" }, "Rule: if intentional loss exceeded 20 lb in the prior 12 months, add back half the pounds lost before using the chart. Weight below chart minimum or BMI under 18.5 → manual review. Weight above Standard maximum → substandard build chart (no auto table)."));
+    const buildNote = CARRIER_RULES[state.carrier].build.type === "bmi"
+      ? CARRIER_RULES[state.carrier].build.rules.note
+      : "Rule: if intentional loss exceeded 20 lb in the prior 12 months, add back half the pounds lost before using the chart. Weight below chart minimum or BMI under 18.5 → manual review. Weight above Standard maximum → substandard build chart (no auto table).";
+    c.appendChild(el("div", { class: "note-box" }, buildNote));
     return c;
   }
 
@@ -484,7 +491,7 @@ const App = (() => {
     c.appendChild(r2);
 
     _radioHandlers.bpTreated = () => {};
-    c.appendChild(el("div", { class: "note-box" }, "Banner BP ceilings (2-yr average): Preferred Plus ≤135/85 · Preferred ≤140/90 · Standard Plus ≤145/90 · Standard ≤156/94. Cholesterol 120–300; ratio ceilings 4.5 / 5.5 / 6.5 / 8.0."));
+    c.appendChild(el("div", { class: "note-box" }, "Blood-pressure and cholesterol ceilings vary by class and, for some carriers, by age band — the results page applies the selected carrier's exact thresholds."));
     return c;
   }
 
@@ -507,7 +514,7 @@ const App = (() => {
     r2.appendChild(field("Active bankruptcy (Ch. 7 not discharged / Ch. 13 < 2 yrs)?", checkPill("bankruptcyActive", "Yes")));
     c.appendChild(r2);
 
-    c.appendChild(el("div", { class: "note-box" }, "Banner: Preferred ≤2 violations/3 yr, clean 5 yr · Standard Plus ≤3/3 yr, clean 3 yr · Standard ≤4/3 yr, clean 2 yr. Criminal or active bankruptcy is a decline screen."));
+    c.appendChild(el("div", { class: "note-box" }, "Driving limits vary by carrier and class — DUI/reckless/suspension lookbacks of 2-5 years and violation limits are applied per the selected carrier. Criminal exposure or active bankruptcy is a decline screen."));
     return c;
   }
 
@@ -597,7 +604,7 @@ const App = (() => {
     c.appendChild(field("Cardiovascular death in family before age 60",
       radioPill("famCardio", [["none", "None"], ["parent", "One parent"], ["parent_sibling", "Parent or sibling"], ["multiple", "More than one parent"]])));
 
-    c.appendChild(el("div", { class: "note-box" }, "Banner: Preferred Plus — none in parent or sibling; Preferred — none in either parent; Standard Plus / Standard — no more than one parent. CAD family history is disregarded over age 70 for non-tobacco applicants."));
+    c.appendChild(el("div", { class: "note-box" }, "Early cardiovascular death in parents/siblings before age 60 is the primary class factor; some carriers also include listed cancers. See the selected carrier's criteria on the results page."));
     _radioHandlers.famCardio = () => {};
     return c;
   }
@@ -888,12 +895,23 @@ const App = (() => {
       if (age !== null && age >= 61 && age <= 70 && Number(state.faceAmount || 0) <= 500000) {
         evUl.appendChild(el("li", {}, "Accelerated underwriting may apply (ages 61-70, up to $500,000) — APS required."));
       }
-    } else {
+    } else if (out.carrier === "Foresters") {
       if (age !== null && age >= 18 && age <= 60 && Number(state.faceAmount || 0) <= 2000000) {
         evUl.appendChild(el("li", {}, "Foresters accelerated underwriting may apply (ages 18-60, up to $2,000,000)."));
       }
       if (age !== null && age >= 75) evUl.appendChild(el("li", {}, "Activities of Daily Living Questionnaire required (age 75+)."));
       evUl.appendChild(el("li", {}, "Non-medical issue limits: check amount against product limits (" + rules.evidence.ageAmountNote.split(".")[0] + ")."));
+    } else if (out.carrier === "Transamerica") {
+      evUl.appendChild(el("li", {}, "Transamerica orders all requirements through approved vendors; digital underwriting (iGO e-App) may produce a decision within minutes."));
+      if (age !== null && age >= 70 && Number(state.faceAmount || 0) >= 100000) {
+        evUl.appendChild(el("li", {}, "Minnesota Cognitive Acuity Screen required (age 70+, face amount $100,000+)."));
+      }
+      if (age !== null && age >= 61 && age <= 69 && Number(state.faceAmount || 0) > 1000000) {
+        evUl.appendChild(el("li", {}, "APS: within the last 5 years for preferred classes with an established primary care physician."));
+      }
+      if (age !== null && age >= 70) evUl.appendChild(el("li", {}, "APS always required (age 70+)."));
+      if (Number(state.faceAmount || 0) >= 5000000) evUl.appendChild(el("li", {}, "IRS Form 4506-C required at $5,000,000+; PFS on business coverage $5,000,000+."));
+      evUl.appendChild(el("li", {}, "Highlighted age/amount cells may qualify for fluidless processing (no blood/urine) — verify against the current chart."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));

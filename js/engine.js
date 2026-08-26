@@ -41,6 +41,40 @@ const Engine = (() => {
    */
   function evalBuild(rules, d) {
     const flags = [];
+
+    /* ---- BMI-based build (Transamerica blended BMI chart) ------------ */
+    if (rules.build.type === "bmi") {
+      if (!has(d, "heightIn") || !has(d, "weightLb")) {
+        return { klass: null, missing: true, flags, detail: "Height or weight not provided." };
+      }
+      const heightIn = Number(d.heightIn);
+      const weight = Number(d.weightLb);
+      if (heightIn <= 0 || weight <= 0) {
+        return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "Invalid height or weight." };
+      }
+      const bmi = weight / (heightIn * heightIn) * 703;
+      const age = d.age ? Number(d.age) : null;
+      const groups = rules.build.bmiBands || [];
+      const group = groups.find(g => (g.ageMin === undefined || age >= g.ageMin) && (g.ageMax === undefined || age <= g.ageMax)) || groups[0];
+      if (!group) return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "No BMI chart for this age." };
+      let match = null;
+      for (const b of group.bands) {
+        if (bmi >= b.min && bmi <= b.max) { match = b; break; }
+      }
+      if (!match) match = group.bands[group.bands.length - 1];
+      const rounded = Math.round(bmi * 100) / 100;
+      const tableNote = match.table ? ` (Table ${match.table})` : "";
+      return {
+        klass: match.klass,
+        tableLetter: match.table || null,
+        bmi: rounded,
+        bandName: match.label,
+        flags: match.klass === "decline" ? [...flags, "bmi_decline"] : flags,
+        detail: `BMI ${rounded} (${heightIn}\" / ${weight} lb, ${group.label}) → ${match.label}${tableNote}. ${rules.build.rules.note}`
+      };
+    }
+
+    /* ---- Height/weight chart build (Banner, Foresters) -------------- */
     const chart = rules.build.chart;
     if (!has(d, "heightIn") || !has(d, "weightLb")) {
       return { klass: null, missing: true, flags, detail: "Height or weight not provided." };
@@ -207,11 +241,15 @@ const Engine = (() => {
     const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
     for (const k of order) {
       let ok = true;
-      const band = ageBand(rules.cholesterol.total ? rules.cholesterol.total[k] : null, age);
-      const totalMax = totalMaxGlobal !== null ? totalMaxGlobal : (band ? band.max : null);
-      if (totalMin !== null && total !== null && (total < totalMin || (totalMax !== null && total > totalMax))) ok = false;
+      const totalBand = ageBand(rules.cholesterol.total ? rules.cholesterol.total[k] : null, age);
+      // totalBand may be a plain number (Banner/Transamerica) or {max} (Foresters band)
+      const totalMax = totalMaxGlobal !== null ? totalMaxGlobal : (typeof totalBand === "number" ? totalBand : (totalBand ? totalBand.max : null));
+      if (total !== null) {
+        if (totalMin !== null && total < totalMin) ok = false;
+        if (totalMax !== null && total > totalMax) ok = false;
+      }
       const ratioBand = ageBand(rules.cholesterol.ratio ? rules.cholesterol.ratio[k] : null, age);
-      const ratioMax = ratioBand ? ratioBand.max : (rules.cholesterol.ratio && rules.cholesterol.ratio[k] !== undefined && !Array.isArray(rules.cholesterol.ratio[k]) ? rules.cholesterol.ratio[k] : null);
+      const ratioMax = ratioBand ? (typeof ratioBand === "number" ? ratioBand : ratioBand.max) : (rules.cholesterol.ratio && rules.cholesterol.ratio[k] !== undefined && !Array.isArray(rules.cholesterol.ratio[k]) && typeof rules.cholesterol.ratio[k] === "number" ? rules.cholesterol.ratio[k] : null);
       if (ratio !== null && ratioMax !== null && ratio > ratioMax) ok = false;
       if (ok) { klass = k; break; }
     }
@@ -261,15 +299,12 @@ const Engine = (() => {
     const f = d.famCardio; // "none" | "parent" | "parent_sibling" | "multiple"
     const age = d.age ? Number(d.age) : null;
     const tobacco = d.usedNicotine === false;
-    // Over-70 non-tobacco: CAD family history disregarded
-    if (age !== null && age > 70 && tobacco) {
+    // Over-70 non-tobacco: CAD family history disregarded (Banner rule)
+    if (rules.id === "banner" && age !== null && age > 70 && tobacco) {
       return { klass: "preferred_plus", detail: "Family CAD history disregarded (applicant over 70, non-tobacco)." };
     }
-    let klass = null;
-    if (f === "none") klass = "preferred_plus";
-    else if (f === "parent") klass = "preferred";
-    else if (f === "parent_sibling") klass = "standard_plus";
-    else klass = "standard"; // multiple parents
+    const mapping = (rules.familyHistory && rules.familyHistory.mapping) || { none: "preferred_plus", parent: "preferred", parent_sibling: "standard_plus", multiple: "standard" };
+    const klass = mapping[f] || "standard";
     return { klass, detail: `Family history (${f}) supports ${klass}.` };
   }
 
@@ -357,9 +392,17 @@ const Engine = (() => {
           else ceiling = "standard";
         } else if (meta.id === "substance_treatment") {
           const years = has(c, "yearsSober") ? Number(c.yearsSober) : null;
-          if (years !== null && years > 10 && !c.relapse) ceiling = "preferred";
-          else if (years !== null && years < 2) { decline.push({ id: c.id, text: "Substance treatment with less than 2 years sobriety." }); ceiling = "decline"; }
-          else ceiling = "standard";
+          const tiers = rules.substanceTiers || { declineYears: 2, tiers: [{ minYears: 10, klass: "preferred" }, { minYears: 0, klass: "standard" }] };
+          if (years !== null && years < tiers.declineYears) {
+            decline.push({ id: c.id, text: `Substance treatment with less than ${tiers.declineYears} years since last use.` });
+            ceiling = "decline";
+          } else if (years !== null) {
+            ceiling = null;
+            for (const t of tiers.tiers) { if (years >= t.minYears) { ceiling = t.klass; break; } }
+            if (!ceiling) ceiling = "table";
+          } else {
+            ceiling = "standard";
+          }
         } else if (meta.id === "dysplastic_nevi") {
           ceiling = (c.count && c.count <= 3) ? "preferred" : "preferred_plus";
         } else {
@@ -382,6 +425,23 @@ const Engine = (() => {
         } else if (c.status === "current") {
           ceiling = "table"; // significant current condition without a published ceiling -> table/specialist review
           details.push(`${meta.name}: current condition — table-rated or specialist review.`);
+        }
+      }
+
+      /* Carrier-specific cap: conditions that exclude the preferred classes (Transamerica:
+         no heart/vascular disease, diabetes, or cancer for preferred classes) */
+      if (ceiling && ceiling !== "postpone" && ceiling !== "decline" && rules.medicalStandardCap && rules.medicalStandardCap.includes(meta.id)) {
+        if (CLASS_INDEX[ceiling] < CLASS_INDEX.standard) ceiling = "standard";
+      }
+
+      /* Carrier-specific auto-declines from the impairment table */
+      if (c.status === "current") {
+        if (rules.autoDeclineIds && rules.autoDeclineIds.includes(meta.id)) {
+          decline.push({ id: c.id, text: `${meta.name}: ${(meta.decline || "decline")}`, reason: "Carrier impairment table." });
+          ceiling = "decline";
+        } else if (rules.autoDeclineSevereIds && rules.autoDeclineSevereIds.includes(meta.id) && c.severity === "severe") {
+          decline.push({ id: c.id, text: `${meta.name}: ${(meta.decline || "severe — decline")}`, reason: "Carrier impairment table." });
+          ceiling = "decline";
         }
       }
 
@@ -668,6 +728,9 @@ const Engine = (() => {
 
     const build = evalBuild(rules, d);
     domains.build = build;
+    if (build.klass === "decline") {
+      out.gates.decline.push({ id: "bmi_decline", text: `Build: BMI ${build.bmi} (${build.bandName})`, reason: "Carrier BMI chart — decline band." });
+    }
 
     const bp = evalBP(rules, d);
     domains.bp = bp;
@@ -759,15 +822,15 @@ const Engine = (() => {
       }
     }
     let possibleCredit = null;
-    if (final === "preferred" && adverseDomains.length === 1) {
-      // e.g., BP in Preferred range while everything else is PP -> possible Preferred Plus via credit review
-      possibleCredit = { from: final, to: "preferred_plus", note: "Banner one-class credit may apply when the only adverse factor is build, blood pressure, family history, or cholesterol/HDL ratio. Requires 3 of 7 credit criteria — flagged for review, not auto-applied." };
-    }
-    if (final === "standard_plus" && adverseDomains.length === 1) {
-      possibleCredit = { from: final, to: "preferred", note: "Possible one-class credit — review required." };
-    }
-    if (final === "standard" && adverseDomains.length === 1) {
-      possibleCredit = { from: final, to: "standard_plus", note: "Possible one-class credit — review required." };
+    if (rules.credit && adverseDomains.length === 1) {
+      if (final === "preferred") {
+        // e.g., BP in Preferred range while everything else is PP -> possible Preferred Plus via credit review
+        possibleCredit = { from: final, to: "preferred_plus", note: rules.credit.note };
+      } else if (final === "standard_plus") {
+        possibleCredit = { from: final, to: "preferred", note: rules.credit.note };
+      } else if (final === "standard") {
+        possibleCredit = { from: final, to: "standard_plus", note: rules.credit.note };
+      }
     }
     out.possibleCredit = possibleCredit;
 
