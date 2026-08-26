@@ -12,6 +12,18 @@ const App = (() => {
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  /* The carrier lineup — shared by the applicant-step panel, the comparison
+     header, and anywhere else the carrier choice appears. */
+  const CARRIER_OPTIONS = [
+    ["banner", "Banner Life"],
+    ["foresters", "Foresters (Your Term / AP II / SMART UL)"],
+    ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"],
+    ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"],
+    ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"],
+    ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"],
+    ["national_life", "National Life Group (NL / LSW)"]
+  ];
+
   let state = defaultState();
 
   function defaultState() {
@@ -377,7 +389,7 @@ const App = (() => {
     /* Carrier panel: the one choice that drives the entire estimate. */
     const carrierPanel = el("div", { class: "carrier-panel" });
     carrierPanel.appendChild(el("p", { class: "carrier-label" }, "1 · Underwriting carrier"));
-    carrierPanel.appendChild(selectInput("carrier", [["banner", "Banner Life"], ["foresters", "Foresters (Your Term / AP II / SMART UL)"], ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"], ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"], ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"], ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"], ["national_life", "National Life Group (NL / LSW)"]], { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }));
+    carrierPanel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }));
     const cr = CARRIER_RULES[state.carrier];
     carrierPanel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — build charts, BP/cholesterol thresholds, nicotine lookbacks, decline/postpone screens, and evidence requirements all come from this ruleset."));
     c.appendChild(carrierPanel);
@@ -843,6 +855,18 @@ const App = (() => {
     const wrap = el("div", { id: "comparison", class: "card" });
     wrap.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
     wrap.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
+
+    /* Prominent primary-carrier panel — same treatment as the applicant step.
+       Switching here re-runs the estimate and re-renders the table with the
+       new carrier's row highlighted. */
+    const cr = CARRIER_RULES[state.carrier];
+    const prevCarrier = state.carrier; // render-time value; selectInput mutates state before onChange
+    const panel = el("div", { class: "carrier-panel" });
+    panel.appendChild(el("p", { class: "carrier-label" }, "Primary carrier · drives the full estimate below"));
+    panel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: (v) => { if (v !== prevCarrier) applyCarrierSwitch(v); } }));
+    panel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — the highlighted row is this carrier's full estimate below; click any other row to switch."));
+    wrap.appendChild(panel);
+
     const tbl = el("table", { class: "domain-table compare-table" });
     const thead = el("thead", {});
     thead.appendChild(el("tr", {}, [
@@ -1175,6 +1199,13 @@ const App = (() => {
      comparison open (re-rendered) so the new row is highlighted. */
   function switchCarrier(id) {
     if (id === state.carrier) return;
+    applyCarrierSwitch(id);
+  }
+
+  /* The actual switch. The comparison panel's select drives this directly
+     because selectInput sets state.carrier before calling onChange — the guard
+     in switchCarrier would see an already-updated state and no-op. */
+  function applyCarrierSwitch(id) {
     const keepOpen = !!document.getElementById("comparison");
     state.carrier = id;
     saveState();
