@@ -17,15 +17,15 @@ const App = (() => {
   function defaultState() {
     return {
       carrier: "banner",
-      age: "", sex: "", state: "", occupation: "", occupationHazardous: "no",
+      age: "", sex: "", state: "", occupation: "", occupationHazardous: "",
       faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "no", financing: "no",
       usedNicotine: "", nicotineProduct: "cigarette", nicotineLastUse: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
       marijuana: "none",
       heightFt: "", heightIn: "", weightLb: "", weightOneYearAgoLb: "", weightIntentional: false, weightChangeUnintentional: false,
       bpSys: "", bpDia: "", bpTreated: "no", cholTotal: "", cholHdl: "", a1c: "",
-      movingViolations3yr: "0", seriousDriving: false, seriousDrivingYears: "",
+      movingViolations3yr: "", seriousDriving: false, seriousDrivingYears: "",
       criminalActive: false, bankruptcyActive: false,
-      alcoholConcern: "no", drugAbuse: "no", drugAbuseYears: "",
+      alcoholConcern: "", drugAbuse: "", drugAbuseYears: "",
       conditions: [],
       medicationsText: "",
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",

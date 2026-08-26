@@ -67,9 +67,10 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
    health classes — so it is surfaced as a guide note, never auto-applied.
 5. **Confidence and flags.** Confidence reflects evidence completeness — and skipped questions are
    treated as missing, never as the best answer. Tobacco & nicotine is a required question (the estimate
-   cannot run without it); family history, pending care, and functional status start unanswered and count
-   against confidence until explicitly answered, showing as "Not provided" in the domain table rather
-   than silently assuming "none"/"no". A build that cannot be evaluated (height/weight outside the
+   cannot run without it); family history, pending care, functional status, driving violations, substance
+   history, and hazardous-occupation status all start unanswered and count against confidence until
+   explicitly answered, showing as "Not provided" in the domain table rather than silently assuming
+   "none"/"no"/zero. A build that cannot be evaluated (height/weight outside the
    carrier chart) ranks as `manual_review` — above any estimable class but never overriding a
    decline or postpone gate outcome, which always win. Flags include `needs_aps`,
    `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`,

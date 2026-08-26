@@ -782,7 +782,7 @@ const Engine = (() => {
     let score = 0, total = 0, missing = [];
     const checks = [
       ["heightIn", "height"], ["weightLb", "weight"], ["usedNicotine", "nicotine history"], ["bpSys", "blood pressure"],
-      ["movingViolations3yr", "driving history"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
+      ["movingViolations3yr", "driving history"], ["alcoholConcern", "substance history"], ["drugAbuse", "drug use history"], ["occupationHazardous", "hazardous occupation status"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
       ["livingSetting", "living setting"], ["mobility", "mobility"], ["pendingTests", "pending-care status"],
       ["recentHospitalization", "hospitalization status"], ["recentSurgery", "surgery status"], ["activeSymptom", "symptom status"],
       ["age", "age"], ["faceAmount", "face amount"]

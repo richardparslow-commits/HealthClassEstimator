@@ -757,6 +757,10 @@ add("Nicotine unanswered -> missing domain, not assumed non-tobacco", d => { d.u
 add("Family history unanswered -> missing, no cap", d => { d.famCardio = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["family"] });
 add("Pending care unanswered -> missing, no postpone", d => { d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["pending"] });
 add("Functional status unanswered -> missing, no cap", d => { d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["functional"] });
+add("Driving unanswered -> missing, no cap", d => { d.movingViolations3yr = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["driving"] });
+add("Substance unanswered -> missing, no cap", d => { d.alcoholConcern = ""; d.drugAbuse = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["substance"] });
+add("Hazardous occupation unanswered -> missing, no cap", d => { d.occupationHazardous = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["avocation"] });
+add("Driving + substance skipped -> Moderate confidence", d => { d.movingViolations3yr = ""; d.alcoholConcern = ""; d.drugAbuse = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Moderate" });
 add("All key radios skipped -> Low confidence", d => { d.usedNicotine = ""; d.famCardio = ""; d.pendingTests = ""; d.recentHospitalization = ""; d.recentSurgery = ""; d.activeSymptom = ""; d.adlAssistance = ""; d.livingSetting = ""; d.mobility = ""; }, { klass: "preferred_plus", tobacco: false, wantConfidence: "Low" });
 add("Fully answered profile -> High confidence", d => {}, { klass: "preferred_plus", tobacco: false, wantConfidence: "High" });
 
