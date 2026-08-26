@@ -908,9 +908,10 @@ const Engine = (() => {
     if (d.ownership === "business") list.push("Business-owned coverage disclosed — business insurance questionnaire / ownership documentation may be required.");
     if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) list.push("History of probation/parole disclosed — carriers review recency and offense severity; additional information may be required.");
     if (isYes(d.foreignTravel)) list.push("Foreign travel disclosed — review destinations and duration; some destinations trigger postponement or additional requirements.");
-    if (d.militaryService === "yes" || d.militaryService === "combat") {
+    if (d.militaryService === "yes" || d.militaryService === "combat" || d.militaryService === "veteran") {
       list.push("Military service disclosed — VA treatment records may be requested.");
       if (d.militaryService === "combat") list.push("Combat deployment disclosed — mental-health / TBI screening may apply.");
+      if (d.militaryService === "veteran") list.push("Veteran status disclosed — prior service with separation date; review for combat exposure, disability rating, or VA treatment history.");
     }
     if (d.foreignResidence === "short" || d.foreignResidence === "long") {
       list.push("Foreign residence disclosed — carrier residency requirements and country-of-residence review apply; certain countries may postpone or add requirements.");

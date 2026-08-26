@@ -10,7 +10,7 @@ const App = (() => {
 
   const STORAGE_KEY = "hce_state_v1";
   const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const $$ = (sel, scope) => Array.from((scope || document).querySelectorAll(sel));
 
   /* The carrier lineup — shared by the applicant-step panel, the comparison
      header, and anywhere else the carrier choice appears. */
@@ -458,8 +458,8 @@ const App = (() => {
     c.appendChild(r3);
 
     const r4 = el("div", { class: "field-row" });
-    r4.appendChild(field("Military service", radioPill("militaryService", [["no", "No"], ["yes", "Yes — non-combat"], ["combat", "Yes — combat deployment"]])));
-    r4.appendChild(field("Lived outside the US recently?", radioPill("foreignResidence", [["no", "No"], ["short", "Yes — under 6 months"], ["long", "Yes — 6 months or more"]])));
+    r4.appendChild(field("Military service", radioPill("militaryService", [["no", "No"], ["veteran", "Veteran"], ["yes", "Yes — non-combat"], ["combat", "Yes — combat deployment"]])));
+    r4.appendChild(field("Currently live outside the USA", radioPill("foreignResidence", [["no", "No"], ["short", "Yes — under 6 months"], ["long", "Yes — 6 months or more"]])));
     c.appendChild(r4);
 
     _radioHandlers.sex = () => {};
