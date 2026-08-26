@@ -765,7 +765,7 @@ const Engine = (() => {
       cancer: "Cancer", diabetes: "Diabetes", cad: "Heart (cardiac) disease", heart_disease: "Heart (cardiac) disease",
       stroke: "Stroke / TIA", copd: "COPD / emphysema", kidney_disease: "Kidney disease", liver_disease: "Liver disease",
       dementia: "Cognitive disorders", substance_treatment: "Substance abuse/dependence", hiv: "Blood disorders",
-      seizures: "Cognitive disorders", transplant: "Paralysis"
+      seizures: "Cognitive disorders", transplant: "Transplant", paralysis: "Paralysis"
     };
     const apsNeeded = [];
     conditionIds.forEach(id => { if (apsMap[id] && !apsNeeded.includes(apsMap[id])) apsNeeded.push(apsMap[id]); });

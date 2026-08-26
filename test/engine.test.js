@@ -73,6 +73,14 @@ add("Pending biopsy -> postpone", d => { d.pendingTests = "yes"; }, { klass: "po
 
 add("Hazardous avocation clean -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
 
+add("Transplant -> Decline + APS Transplant evidence", d => { d.conditions = [{ id: "transplant", status: "current", severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false, wantEvidence: ["APS: Transplant"] });
+
+add("Paralysis -> Table + APS Paralysis evidence", d => { d.conditions = [{ id: "paralysis", status: "current", severity: "moderate", control: "good" }]; }, { klass: "table", tobacco: false, wantEvidence: ["APS: Paralysis"] });
+
+add("Stroke mild -> Table + APS Stroke evidence", d => { d.conditions = [{ id: "stroke", status: "current", severity: "mild", control: "good" }]; }, { klass: "table", tobacco: false, wantEvidence: ["Stroke / TIA"] });
+
+add("Dementia -> Decline + APS Cognitive evidence", d => { d.conditions = [{ id: "dementia", status: "current", severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false, wantEvidence: ["Cognitive disorders"] });
+
 add("Nursing facility resident -> decline screen", d => { d.livingSetting = "nursing"; }, { klass: "decline", tobacco: false });
 
 add("ADL assistance -> decline screen", d => { d.adlAssistance = "yes"; }, { klass: "decline", tobacco: false });
@@ -347,6 +355,10 @@ madd("Substance treatment 3 yrs ago -> Standard", d => {
 madd("Hazardous avocation -> Flat extra (Standard Plus base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "standard_plus" });
 
 madd("Hazardous avocation + depression (Standard cap) -> Standard, no flat extra", d => { d.occupationHazardous = "yes"; d.conditions = [{ id: "depression", status: "current", severity: "moderate", control: "good" }]; }, { klass: "standard", tobacco: false, wantFlatExtra: false });
+
+madd("Transplant -> Table (not decline) + APS Transplant evidence", d => { d.conditions = [{ id: "transplant", status: "current", severity: "moderate", control: "good" }]; }, { klass: "table", tobacco: false, wantEvidence: ["APS: Transplant"] });
+
+madd("Paralysis -> Table + APS Paralysis evidence", d => { d.conditions = [{ id: "paralysis", status: "current", severity: "moderate", control: "good" }]; }, { klass: "table", tobacco: false, wantEvidence: ["APS: Paralysis"] });
 
 madd("HIV -> decline screen (not in published table)", d => { d.conditions = [{ id: "hiv", status: "current", severity: "severe", control: "poor" }]; }, { klass: "decline", tobacco: false });
 
@@ -862,6 +874,34 @@ for (const carrier of CARRIER_IDS) {
 for (const carrier of CARRIER_IDS) {
   const never = Object.keys(context.__CARRIERS[carrier].classInfo || {}).filter(k => !engine.includes(k));
   if (never.length) console.log("WARN | contract " + carrier + " classInfo documents classes the engine never emits: " + never.join(", "));
+}
+
+// ---- evidence-content probe -----------------------------------------------
+// Regression guard for the APS mapping. A copy-paste bug mapped transplant to
+// "APS: Paralysis" (all seven carriers), and paralysis had no APS line at all.
+// Each condition must produce its carrier-published APS trigger, and
+// transplant must never echo the paralysis label.
+const evidenceProbes = [
+  ["transplant", "Transplant", "Paralysis"], // expect label, must-not-contain
+  ["paralysis", "Paralysis", null],
+  ["stroke", "Stroke / TIA", null],
+  ["dementia", "Cognitive disorders", null]
+];
+for (const carrier of CARRIER_IDS) {
+  for (const [cond, expectLabel, forbidden] of evidenceProbes) {
+    const d = JSON.parse(JSON.stringify(base));
+    d.carrier = carrier;
+    d.conditions = [{ id: cond, status: "current", severity: "moderate", control: "good" }];
+    const out = Engine.run(carrier, d);
+    const apsLines = ((out.evidence && out.evidence.list) || []).filter(l => /^APS:/.test(l));
+    const hasLabel = apsLines.some(l => l.toLowerCase().includes(expectLabel.toLowerCase()));
+    const noForbidden = forbidden === null || !apsLines.some(l => l.toLowerCase().includes(forbidden.toLowerCase()));
+    if (hasLabel && noForbidden) { pass++; console.log("PASS | evidence probe " + cond + " [" + carrier + "] -> APS " + expectLabel); }
+    else {
+      fail++;
+      console.log("FAIL | evidence probe " + cond + " [" + carrier + "] expected APS " + expectLabel + (forbidden ? " and no " + forbidden : "") + " got: " + JSON.stringify(apsLines));
+    }
+  }
 }
 
 for (const s of scenarios) {
