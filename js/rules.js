@@ -395,6 +395,16 @@ const CARRIER_RULES = {
       { id: "oxygen_use", text: "Oxygen use", reason: "Decline list." }
     ],
 
+    /* ---- Hazardous occupation / avocation (flat-extra lane) ----------- */
+    avocation: {
+      currentHazardousText: "Hazardous occupation/avocation disclosed — Banner Preferred Plus requires no flat-extra premium; Preferred may allow a flat extra for aviation/avocation; otherwise the best class is Standard Plus with a flat extra.",
+      flatExtra: {
+        baseClass: "preferred",
+        text: "Hazardous avocation/aviation disclosed — Banner: Preferred is the best class available with a flat extra (Preferred Plus requires no flat-extra premium); flat-extra or aviation-exclusion-rider schedules apply, otherwise the best class is Standard Plus with a flat extra."
+      },
+      cleanText: "No hazardous occupation or avocation disclosed."
+    },
+
     /* ---- Evidence / workflow ----------------------------------------- */
     evidence: {
       apsConditions: [
@@ -1086,6 +1096,10 @@ const CARRIER_RULES = {
        Preferred — none in last 2 years; Standard Plus — flat extras allowed. */
     avocation: {
       currentHazardousText: "Hazardous occupation/avocation disclosed — Preferred classes require no hazardous occupation, avocation, or sport (Preferred Plus: 5 years, Preferred: 2 years); Standard Plus allows flat extras. Aviation, diving, and climbing have published flat-extra schedules (e.g., private pilots with aviation exclusion may qualify for preferred classes; scuba <100 ft certified may qualify for all preferred classes).",
+      flatExtra: {
+        baseClass: "standard_plus",
+        text: "Hazardous avocation/aviation disclosed — MOO: Standard Plus is the best class with flat extras; aviation, diving, and climbing have published flat-extra schedules."
+      },
       cleanText: "No hazardous occupation or avocation disclosed."
     },
 
@@ -1203,6 +1217,7 @@ const CARRIER_RULES = {
       standard_plus: { name: "Standard Plus Non-Tobacco", meaning: "No nicotine 12 months; BP <150/90; ratio <7.0; one parent heart-disease death <60 allowed; flat extras allowed for avocations.", color: "#3b82b0" },
       standard: { name: "Standard Non-Tobacco", meaning: "Average insurable risk; meets non-nicotine qualification (no nicotine 12 months).", color: "#4a6fa5" },
       table: { name: "Table-rated (Table 1-12)", meaning: "Build above Standard (Table 1 +25 lb through Table 12 +300 lb) or an impairment with a published table range — premium from standard rates.", color: "#b8860b" },
+      flat_extra: { name: "Flat extra", meaning: "Added charge for a specific measurable risk — MOO: Standard Plus allows flat extras for hazardous avocations/aviation; published flat-extra schedules for aviation, diving, and climbing.", color: "#c2691b" },
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 2-5 years, alcoholism treatment 2 years, drug/cocaine 3 years, gastric bypass 1 year, recent events).", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "Impairment listed as decline (CHF, cardiomyopathy, cirrhosis, dialysis, dementia, sickle cell, quadriplegia) or outside the published ranges — carrier direction required.", color: "#b3364a" }
     }
@@ -1356,8 +1371,11 @@ const CARRIER_RULES = {
        requires no rateable activity — so hazardous activities do not cap
        Preferred, they add a flat extra. */
     avocation: {
-      classCap: "preferred_plus",
       currentHazardousText: "Hazardous occupation/avocation disclosed — F&G Preferred allows flat-extra ratings for aviation/avocation; the Standard class requires no rateable activity. Flat-extra schedules are reviewed by underwriting.",
+      flatExtra: {
+        baseClass: "preferred",
+        text: "Hazardous avocation/aviation disclosed — F&G: Preferred is the best class available at the appropriate flat-extra rating (Preferred Plus requires no rateable activity); flat-extra schedules are reviewed by underwriting."
+      },
       cleanText: "No hazardous occupation or avocation disclosed."
     },
 
@@ -1463,6 +1481,7 @@ const CARRIER_RULES = {
       standard_plus: { name: "Non-Tobacco", meaning: "F&G publishes no Standard Plus class; Non-Tobacco (Standard) is the second non-tobacco class.", color: "#3b82b0" },
       standard: { name: "Non-Tobacco", meaning: "No tobacco 1 year; no rateable conditions (Standard class, ages 0-17; Non-Tobacco for adults).", color: "#4a6fa5" },
       table: { name: "Substandard (Table A-D / 4)", meaning: "Substandard ratings through Table D/4 — build above Standard within the Table D maximum, or an impairment reviewed individually.", color: "#b8860b" },
+      flat_extra: { name: "Flat extra", meaning: "Added charge for a specific measurable risk — F&G: Preferred may be available for certain aviation/avocation activities at the appropriate flat-extra rating; schedules reviewed by underwriting.", color: "#c2691b" },
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 10 years, gastric bypass 1 year, heart event 5 years, epilepsy 5 years) or pending workup.", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "On the Quantum decline lists (cancer within 10 years, diabetes with A1c 7+, HIV, dementia, kidney/liver disease, respiratory disorder, etc.) — carrier direction required.", color: "#b3364a" }
     }
@@ -1622,8 +1641,11 @@ const CARRIER_RULES = {
        activity — so hazardous activities do not cap Preferred, they add a
        flat extra. */
     avocation: {
-      classCap: "preferred_plus",
       currentHazardousText: "Hazardous occupation/avocation disclosed — F&G Preferred allows flat-extra ratings for aviation/avocation; the Standard class requires no rateable activity. Flat-extra schedules are reviewed by underwriting.",
+      flatExtra: {
+        baseClass: "preferred",
+        text: "Hazardous avocation/aviation disclosed — F&G: Preferred is the best class available at the appropriate flat-extra rating (Preferred Plus requires no rateable activity); flat-extra schedules are reviewed by underwriting."
+      },
       cleanText: "No hazardous occupation or avocation disclosed."
     },
 
@@ -1683,6 +1705,7 @@ const CARRIER_RULES = {
       standard_plus: { name: "Non-Tobacco", meaning: "F&G publishes no Standard Plus class; Non-Tobacco (Standard) is the second non-tobacco class.", color: "#3b82b0" },
       standard: { name: "Non-Tobacco", meaning: "No tobacco 1 year; no rateable conditions. Applicants who do not qualify for Preferred or Standard may be approved at Express Standard Tobacco / Express Standard Non-Tobacco rates without medical requirements.", color: "#4a6fa5" },
       table: { name: "Substandard (through Table H / 300%)", meaning: "Substandard ratings through Table H (300%) — build above Standard within the Table H maximum, or an impairment reviewed individually.", color: "#b8860b" },
+      flat_extra: { name: "Flat extra", meaning: "Added charge for a specific measurable risk — F&G: Preferred may be available for certain aviation/avocation activities at the appropriate flat-extra rating; schedules reviewed by underwriting.", color: "#c2691b" },
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability or wait-out (cancer 10 years, gastric bypass 1 year, heart event 5 years, epilepsy 5 years) or pending workup.", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "On the F&G decline lists (cancer within 10 years, diabetes with A1c 7+, HIV, dementia, kidney/liver disease, respiratory disorder, etc.) — carrier direction required.", color: "#b3364a" }
     }

@@ -71,6 +71,8 @@ add("Diabetes A1c 10.5 -> decline screen", d => {
 
 add("Pending biopsy -> postpone", d => { d.pendingTests = "yes"; }, { klass: "postpone", tobacco: false });
 
+add("Hazardous avocation clean -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
+
 add("Nursing facility resident -> decline screen", d => { d.livingSetting = "nursing"; }, { klass: "decline", tobacco: false });
 
 add("ADL assistance -> decline screen", d => { d.adlAssistance = "yes"; }, { klass: "decline", tobacco: false });
@@ -342,7 +344,9 @@ madd("Substance treatment 3 yrs ago -> Standard", d => {
   d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "mild", control: "good", yearsSober: 3, relapse: false }];
 }, { klass: "standard", tobacco: false });
 
-madd("Hazardous occupation yes -> Standard Plus cap (PP/P exclude hazardous activities)", d => { d.occupationHazardous = "yes"; }, { klass: "standard_plus", tobacco: false });
+madd("Hazardous avocation -> Flat extra (Standard Plus base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "standard_plus" });
+
+madd("Hazardous avocation + depression (Standard cap) -> Standard, no flat extra", d => { d.occupationHazardous = "yes"; d.conditions = [{ id: "depression", status: "current", severity: "moderate", control: "good" }]; }, { klass: "standard", tobacco: false, wantFlatExtra: false });
 
 madd("HIV -> decline screen (not in published table)", d => { d.conditions = [{ id: "hiv", status: "current", severity: "severe", control: "poor" }]; }, { klass: "decline", tobacco: false });
 
@@ -493,7 +497,11 @@ qadd("3 moving violations -> outside -> table (Standard requires no rateable vio
 
 qadd("DUI 2 yrs ago -> outside 5-yr window -> table", d => { d.seriousDriving = true; d.seriousDrivingYears = 2; }, { klass: "table", tobacco: false });
 
-qadd("Hazardous occupation -> still Preferred (flat extras allowed)", d => { d.occupationHazardous = "yes"; }, { klass: "preferred_plus", tobacco: false });
+qadd("Hazardous avocation -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
+
+qadd("Hazardous avocation + HIV -> Decline (flat extra never masks gates)", d => { d.occupationHazardous = "yes"; d.conditions = [{ id: "hiv", status: "current", severity: "severe", control: "poor" }]; }, { klass: "decline", tobacco: false, wantFlatExtra: false });
+
+qadd("Hazardous avocation + tobacco -> Flat extra, tobacco basis", d => { d.occupationHazardous = "yes"; d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }, { klass: "flat_extra", tobacco: true });
 
 qadd("Face 1.5M -> exceeds $1M max -> financial review flag", d => { d.faceAmount = 1500000; }, { klass: "preferred_plus", tobacco: false, wantFlag: "financial_review" });
 
@@ -584,7 +592,7 @@ padd("2 moving violations -> Preferred (<=2 allowed)", d => { d.movingViolations
 
 padd("3 moving violations -> outside -> table", d => { d.movingViolations3yr = 3; }, { klass: "table", tobacco: false });
 
-padd("Hazardous occupation -> still Preferred (flat extras allowed)", d => { d.occupationHazardous = "yes"; }, { klass: "preferred_plus", tobacco: false });
+padd("Hazardous avocation -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
 
 padd("Metformin undisclosed -> mismatch + APS (shared F&G APS list)", d => {
   d.medicationsText = "metformin 500mg";
@@ -869,6 +877,8 @@ for (const s of scenarios) {
   if (ok && s.expect.wantConfidence) ok = out.confidence && out.confidence.level === s.expect.wantConfidence;
   if (ok && s.expect.wantDeclineGates !== undefined) ok = (out.gates.decline || []).length === s.expect.wantDeclineGates;
   if (ok && s.expect.wantPostponeGates !== undefined) ok = (out.gates.postpone || []).length === s.expect.wantPostponeGates;
+  if (ok && s.expect.wantFlatExtra !== undefined) ok = (!!out.flatExtra) === s.expect.wantFlatExtra;
+  if (ok && s.expect.wantFlatBase !== undefined) ok = out.flatExtra && out.flatExtra.baseClass === s.expect.wantFlatBase;
   if (ok && s.expect.noCredit) ok = !out.possibleCredit;
   if (ok && s.expect.wantCredit) ok = !!out.possibleCredit;
   if (ok && s.expect.wantMeds) {

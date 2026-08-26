@@ -830,6 +830,7 @@ const Engine = (() => {
       financial: null,
       comorbidityFlags: [],
       limitingFactors: [],
+      flatExtra: null,
       notes: []
     };
 
@@ -954,12 +955,20 @@ const Engine = (() => {
 
     /* Hazardous occupation / avocation (carrier-published class criteria,
        e.g., MOO: PP no hazardous activity in 5 years, P in 2 years,
-       Standard Plus allows flat extras). */
+       Standard Plus allows flat extras; F&G: Preferred + flat-extra rating). */
     if (rules.avocation) {
       if (d.occupationHazardous === "yes") {
-        // Carrier may allow preferred classes with a flat extra (e.g., F&G) or cap
-        // below preferred (e.g., MOO caps at Standard Plus where flat extras are allowed).
-        domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
+        const fe = rules.avocation.flatExtra;
+        if (fe) {
+          // Flat-extra lane: the base class is the best class available with a
+          // flat extra (e.g., F&G Preferred, MOO Standard Plus); the outcome
+          // conversion happens after the class merge below.
+          domains.avocation = { klass: fe.baseClass, flatExtra: fe, flag: "hazardous_avocation", detail: fe.text };
+        } else {
+          // Carrier caps below preferred instead of offering a flat extra
+          // (e.g., National Life: Verified Standard pending underwriter review).
+          domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
+        }
       } else if (d.occupationHazardous === "no") {
         domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
       } else {
@@ -1030,6 +1039,18 @@ const Engine = (() => {
       final = gateOutcome;
     }
 
+    /* Flat-extra outcome: when the carrier publishes a flat-extra lane for a
+       hazardous avocation (e.g., F&G Preferred + flat extra, MOO Standard Plus
+       + flat extra) and the rest of the profile supports at least the flat-extra
+       base class, the estimate is a flat extra on that base class. A worse class
+       from another domain stands on its own, and a gate outcome always wins —
+       a flat extra never masks a decline/postpone. */
+    const fe = domains.avocation && domains.avocation.flatExtra;
+    if (!gateOutcome && fe && CLASS_INDEX[final] !== undefined && CLASS_INDEX[final] <= CLASS_INDEX[fe.baseClass]) {
+      out.flatExtra = { baseClass: fe.baseClass, reason: fe.text, tobacco: !!out.tobaccoClass };
+      final = "flat_extra";
+    }
+
     out.finalClass = final;
 
     /* ---- 5. Credits (possible, not applied) ----------------------- */
@@ -1063,6 +1084,7 @@ const Engine = (() => {
     }
     if (meds.undisclosed && meds.undisclosed.length) flags.push("undisclosed_meds");
     if (final === "manual_review") flags.push("manual_review");
+    if (out.flatExtra) flags.push("flat_extra");
 
     // evidence flags
     const ev = evidenceNeeded(rules, d, condIds);

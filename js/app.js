@@ -906,6 +906,15 @@ const App = (() => {
     hero.appendChild(meta);
     wrap.appendChild(hero);
 
+    /* ---- Flat-extra outcome ---- */
+    if (out.flatExtra) {
+      const fe = el("div", { class: "card flat-extra-card" });
+      fe.appendChild(el("h2", {}, "Flat extra may apply"));
+      fe.appendChild(el("p", {}, ["The estimate is a flat extra on the ", el("strong", {}, classLabel(out.flatExtra.baseClass)), " base class", out.flatExtra.tobacco ? " (tobacco class)" : "", "."]));
+      fe.appendChild(el("p", { class: "card-sub" }, out.flatExtra.reason));
+      wrap.appendChild(fe);
+    }
+
     /* ---- Gate screen results ---- */
     if (out.gates.postpone.length || out.gates.decline.length) {
       if (out.gates.postpone.length) {
@@ -1293,7 +1302,8 @@ const App = (() => {
     missing_material_data: "Missing key data",
     accelerated_uw_possible: "Accelerated UW may apply",
     financial_review: "Financial justification needed",
-    undisclosed_meds: "Medication-condition mismatch — confirm"
+    undisclosed_meds: "Medication-condition mismatch — confirm",
+    flat_extra: "Flat extra may apply"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",

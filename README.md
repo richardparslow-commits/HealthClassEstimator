@@ -124,7 +124,7 @@ hook). National Life also illustrates the guide's three underwriting lanes (full
 | Standard | Likely insurable, but health or lifestyle factors may not meet preferred thresholds. |
 | Tobacco class | Nicotine history drives a separate class; other health factors still affect the result. |
 | Table rating | Coverage may be available at a higher premium because medical or lifestyle risk appears above standard. |
-| Flat extra | An added charge may apply for a specific, measurable risk (avocation, aviation, certain medical circumstances). |
+| Flat extra | An added charge may apply for a specific, measurable risk (avocation, aviation, certain medical circumstances). Hazardous avocation on an otherwise qualifying profile produces this outcome where the carrier publishes a flat-extra lane: Banner and F&G Quantum/Pathsetter (Preferred base), Mutual of Omaha (Standard Plus base); National Life caps hazardous avocation at Verified Standard instead. Gate outcomes (decline/postpone) always win over a flat extra. |
 | Postpone / pre-review | A decision should wait for stability, completed testing, recovery, or additional records. |
 | Specialist review / likely decline | Severe impairment, serious active disease, substantial ADL dependence, facility care, or other major concern needs carrier direction. |
 
