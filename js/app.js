@@ -702,8 +702,9 @@ const App = (() => {
 
   /* ---------- results -------------------------------------------------- */
 
-  function runEstimate() {
-    // assemble computed fields the engine expects
+  /* Assemble the computed fields the engine expects from the form state.
+     Shared by the single-carrier estimate and the cross-carrier comparison. */
+  function buildInput() {
     const d = Object.assign({}, state);
     d.usedNicotine = state.usedNicotine === "yes";
     const hfRaw = state.heightFt, hiRaw = state.heightIn;
@@ -730,7 +731,6 @@ const App = (() => {
     });
 
     // condition-level extra flags -> form-level flags the engine reads
-    const ids = new Set(d.conditions.map(c => c.id));
     const diabetes = d.conditions.find(c => c.id === "diabetes");
     if (diabetes) {
       if (diabetes.a1c && Number(diabetes.a1c) > 10) d.a1cHigh = true;
@@ -749,8 +749,11 @@ const App = (() => {
       if (st.severity === "severe") d.strokeSevere = true;
       if (st.recentEvent) d.multipleStrokes = false;
     }
+    return d;
+  }
 
-    const out = Engine.run(state.carrier, d);
+  function runEstimate() {
+    const out = Engine.run(state.carrier, buildInput());
     renderResults(out);
   }
 
@@ -774,6 +777,85 @@ const App = (() => {
       btnBack.textContent = "← Back";
       render();
     };
+  }
+
+  /* ---------- cross-carrier comparison ------------------------------- */
+
+  /* Run the same assembled profile through every carrier ruleset and return
+     { carrierId, out } rows, ordered by the carrier select list. */
+  function runComparison() {
+    const d = buildInput();
+    return Object.keys(CARRIER_RULES).map(id => ({ id, out: Engine.run(id, d) }));
+  }
+
+  function compareClassName(out, rules) {
+    if (out.finalClass === "manual_review") return { name: "Manual review", color: "#5b6b7b" };
+    const ci = rules.classInfo[out.finalClass] || {};
+    if (out.tobaccoClass) {
+      const tName = (out.finalClass === "preferred_plus" || out.finalClass === "preferred") ? "Preferred Tobacco" :
+        (out.finalClass === "table" ? "Table-rated (tobacco base)" : "Standard Tobacco");
+      return { name: tName, color: "#b8860b" };
+    }
+    return { name: ci.name || out.finalClass.replace(/_/g, " "), color: ci.color || "#5b6b7b" };
+  }
+
+  function compareEvidence(out) {
+    const list = (out.evidence && out.evidence.list) || [];
+    if (!list.length) return "Application only";
+    const shown = list.slice(0, 3);
+    const more = list.length - shown.length;
+    return shown.join("; ") + (more > 0 ? ` (+${more} more)` : "");
+  }
+
+  function compareLimiting(row) {
+    const { id, out } = row;
+    const parts = [];
+    if (out.gates.decline.length) parts.push("Decline: " + out.gates.decline.map(g => g.text || g.id).slice(0, 2).join("; "));
+    if (out.gates.postpone.length) parts.push("Postpone: " + out.gates.postpone.map(g => g.text || g.id).slice(0, 2).join("; "));
+    if (!parts.length) {
+      [...out.limitingFactors, ...(out.outsideFactors || [])].slice(0, 3).forEach(l => parts.push(DOMAIN_LABELS[l.domain] || l.domain));
+    }
+    if (!parts.length) parts.push("No single cap — consistent profile");
+    return parts.join(" · ");
+  }
+
+  function compareFinancial(out) {
+    if (!out.financial) return "—";
+    if (out.financial.ok === false) return "Exceeds " + out.financial.multiplier + "X guideline";
+    if (out.financial.ok === true) return "Within " + out.financial.multiplier + "X guideline";
+    return "—";
+  }
+
+  function renderComparison(rows) {
+    const wrap = el("div", { id: "comparison", class: "card" });
+    wrap.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
+    wrap.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
+    const tbl = el("table", { class: "domain-table compare-table" });
+    const thead = el("thead", {});
+    thead.appendChild(el("tr", {}, [
+      el("th", {}, "Carrier"), el("th", {}, "Estimated class"), el("th", {}, "Limiting factors / gates"), el("th", {}, "Evidence highlights"), el("th", {}, "Financial")
+    ]));
+    tbl.appendChild(thead);
+    const tbody = el("tbody", {});
+    rows.forEach(row => {
+      const rules = CARRIER_RULES[row.id];
+      const cn = compareClassName(row.out, rules);
+      const tr = el("tr", { class: row.id === state.carrier ? "compare-current" : "compare-row" });
+      tr.appendChild(el("td", { style: "font-weight:600" }, [rules.name, el("div", { class: "compare-version" }, rules.guide.version)]));
+      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
+      tr.appendChild(el("td", {}, compareLimiting(row)));
+      tr.appendChild(el("td", {}, compareEvidence(row.out)));
+      tr.appendChild(el("td", {}, compareFinancial(row.out)));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+
+    const note = el("div", { class: "note-box" });
+    note.appendChild(el("strong", {}, "How to read this: "));
+    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
+    wrap.appendChild(note);
+    return wrap;
   }
 
   function resultsView(out) {
@@ -1040,13 +1122,24 @@ const App = (() => {
     wrap.appendChild(guard);
 
     /* ---- Actions ---- */
-    const actions = el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" });
+    const actions = el("div", { id: "results-actions", style: "display:flex;gap:10px;flex-wrap:wrap" });
+    actions.appendChild(el("button", { class: "btn btn-compare", id: "btn-compare", onclick: () => toggleComparison() }, "Compare across carriers"));
     actions.appendChild(el("button", { class: "btn btn-print", onclick: () => window.print() }, "Print / save PDF"));
     actions.appendChild(el("button", { class: "btn btn-ghost", onclick: () => { $("#results-content").classList.add("hidden"); $("#step-content").classList.remove("hidden"); render(); } }, "Edit answers"));
     actions.appendChild(el("button", { class: "btn btn-danger-ghost", onclick: () => { if (confirm("Start a new case? Current answers will be cleared.")) resetState(); } }, "New case"));
     wrap.appendChild(actions);
 
     return wrap;
+  }
+
+  function toggleComparison() {
+    const existing = $("#comparison");
+    if (existing) { existing.remove(); return; }
+    const wrap = renderComparison(runComparison());
+    const resultsBox = $("#results-content");
+    const anchor = $("#results-actions");
+    resultsBox.insertBefore(wrap, anchor ? anchor.parentNode : null);
+    wrap.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function questionnaireNames(conditions) {

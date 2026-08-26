@@ -17,7 +17,11 @@ No build step, no dependencies — plain HTML/CSS/JavaScript.
 - Or serve the folder: `python3 -m http.server 8000` then open `http://localhost:8000`.
 
 Answers are saved automatically to the browser's localStorage; **Save draft** persists the current state.
-**Run estimate** produces the case-triage page, which can be printed or saved as PDF.
+**Run estimate** produces the case-triage page, which can be printed or saved as PDF. From the results page,
+**Compare across carriers** runs the same applicant profile through every carrier ruleset side by side — each
+carrier's estimated class, limiting factors/gates, evidence highlights, and financial outcome — with the
+currently selected carrier highlighted; the current carrier's row is re-computed from the same answers each
+time (toggle to collapse).
 
 ## The interview
 
