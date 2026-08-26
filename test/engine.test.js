@@ -890,6 +890,22 @@ for (const carrier of CARRIER_IDS) {
   if (never.length) console.log("WARN | contract " + carrier + " classInfo documents classes the engine never emits: " + never.join(", "));
 }
 
+// ---- eligibility-block probe ------------------------------------------------
+// The carrier panel renders a product lineup + eligibility notes from
+// rules.eligibility — every carrier must carry a well-formed block.
+for (const carrier of CARRIER_IDS) {
+  const e = context.__CARRIERS[carrier].eligibility || {};
+  const missing = ["products", "issueAges", "faceRange", "residency"].filter(f => !e[f]);
+  const notesOk = Array.isArray(e.notes) && e.notes.length >= 1;
+  if (!missing.length && notesOk) {
+    pass++;
+    console.log("PASS | eligibility probe " + carrier + " -> " + e.products + " | " + e.notes.length + " notes");
+  } else {
+    fail++;
+    console.log("FAIL | eligibility probe " + carrier + " missing: " + missing.join(", ") + (notesOk ? "" : " (notes)"));
+  }
+}
+
 // ---- evidence-content probe -----------------------------------------------
 // Regression guard for the APS mapping. A copy-paste bug mapped transplant to
 // "APS: Paralysis" (all seven carriers), and paralysis had no APS line at all.

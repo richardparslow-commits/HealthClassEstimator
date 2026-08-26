@@ -381,6 +381,26 @@ const App = (() => {
     { id: "pending", label: "Pending care", render: renderPending }
   ];
 
+  /* Product lineup + eligibility notes for the selected carrier, rendered
+     under the carrier panel. Data comes from the ruleset's eligibility block. */
+  function carrierEligibility(rules) {
+    const e = rules.eligibility || {};
+    const wrap = el("div", { class: "carrier-eligibility" });
+    const dl = el("dl", { class: "elig-grid" });
+    [["Products", e.products], ["Issue ages", e.issueAges], ["Face amounts", e.faceRange], ["Residency", e.residency]].forEach(([k, v]) => {
+      if (!v) return;
+      dl.appendChild(el("dt", {}, k));
+      dl.appendChild(el("dd", {}, v));
+    });
+    wrap.appendChild(dl);
+    if (e.notes && e.notes.length) {
+      const ul = el("ul", { class: "elig-notes" });
+      e.notes.forEach(n => ul.appendChild(el("li", {}, n)));
+      wrap.appendChild(ul);
+    }
+    return wrap;
+  }
+
   function renderProfile() {
     const c = el("div", { class: "card" });
     c.appendChild(el("h2", {}, "Applicant profile"));
@@ -392,6 +412,7 @@ const App = (() => {
     carrierPanel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }));
     const cr = CARRIER_RULES[state.carrier];
     carrierPanel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — build charts, BP/cholesterol thresholds, nicotine lookbacks, decline/postpone screens, and evidence requirements all come from this ruleset."));
+    carrierPanel.appendChild(carrierEligibility(cr));
     c.appendChild(carrierPanel);
 
     const r1 = el("div", { class: "field-row" });
@@ -865,6 +886,7 @@ const App = (() => {
     panel.appendChild(el("p", { class: "carrier-label" }, "Primary carrier · drives the full estimate below"));
     panel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: (v) => { if (v !== prevCarrier) applyCarrierSwitch(v); } }));
     panel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — the highlighted row is this carrier's full estimate below; click any other row to switch."));
+    panel.appendChild(carrierEligibility(cr));
     wrap.appendChild(panel);
 
     const tbl = el("table", { class: "domain-table compare-table" });

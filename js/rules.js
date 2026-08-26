@@ -54,6 +54,17 @@ const CARRIER_RULES = {
       version: "March 2026",
       note: "Banner states it evaluates the entire risk and may request additional evidence; final decisions may be more or less favorable than this guide."
     },
+    eligibility: {
+      products: "Banner Life term and permanent portfolio; William Penn products exclusively in New York",
+      issueAges: "All issue ages through age 70 (maximum issue age 70)",
+      faceRange: "All coverage amounts — Horizon digital application (pending applications up to $1,000,000 per applicant)",
+      residency: "49 states + DC (Banner Life); William Penn exclusively in New York",
+      notes: [
+        "Horizon digital application / Accelerated Underwriting: ages 20-60 to $5,000,000; ages 61-70 to $500,000 with APS required.",
+        "One-class credit review may improve build, blood-pressure, family-history, or cholesterol/HDL findings (3 of 7 credit criteria).",
+        "Total in-force + applied-for coverage with all carriers must be financially justified."
+      ]
+    },
 
     /* ---- Nicotine / tobacco classification --------------------------- */
     nicotine: {
@@ -512,6 +523,17 @@ const CARRIER_RULES = {
       version: "506305 US (04/26)",
       note: "Final action is the decision of the Underwriter based on all circumstances; similar impairments can receive different final actions."
     },
+    eligibility: {
+      products: "Your Term, Advantage Plus II, SMART UL, Strong Foundation",
+      issueAges: "0-80 by product (non-medical lanes)",
+      faceRange: "Non-med issue limits by age and product — e.g., Your Term $400,000 (18-55) / $150,000 (56-80); Strong Foundation $500,000 (18-55) / $250,000 (56-80); SMART UL & AP II $400,000 (16-55) / $150,000 (56-75)",
+      residency: "US",
+      notes: [
+        "Non-medical lanes: no cigarettes in the past 12 months — cigar, pipe, chewing tobacco, vape pens, marijuana and substitutes allowed on Strong Foundation.",
+        "Preferred rates are only available on fully underwritten plans.",
+        "Advantage Plus II 10/20-year term riders have their own maximum benefit amounts by issue age."
+      ]
+    },
 
     nicotine: {
       classes: [
@@ -717,6 +739,17 @@ const CARRIER_RULES = {
       title: "A Field Guide to Underwriting: Trendsetter Super, Trendsetter LB, Transamerica Financial Foundation IUL II/IUL, Financial Choice IUL II/IUL",
       version: "03/25",
       note: "Rate classes shown are not guaranteed but are a best-case scenario. Actual offer is subject to underwriting and may vary by age, date of diagnosis, and severity."
+    },
+    eligibility: {
+      products: "Trendsetter Super, Trendsetter LB, Financial Choice IUL (I/II), Financial Foundation IUL (I/II) and TFLIC equivalents",
+      issueAges: "0-85 by product and band (Trendsetter LB band one $25,000-$99,000 not available ages 18-22)",
+      faceRange: "Band-based, minimum from $25,000; IRS 4506-C required at $5,000,000+; cover letters recommended at $10,000,000+",
+      residency: "US residents; non-US residents via International Underwriting (no fluidless processing)",
+      notes: [
+        "Digital underwriting (iGO e-App) can decide within minutes; digital decisions are not reconsidered for a better class.",
+        "CS (cardiac/stroke profile) required at age 70 for face amounts $100,000 and higher.",
+        "Blended (sex-neutral) BMI chart — BMI is the build rule, not a height/weight lookup."
+      ]
     },
 
     /* ---- Nicotine ----------------------------------------------------- */
@@ -954,6 +987,17 @@ const CARRIER_RULES = {
       title: "Underwriting Guidelines — Life Insurance (Brokerage), For Term and Permanent Products",
       version: "417212_0120 (January 2020)",
       note: "United of Omaha uses age last birthday (advantage to the applicant). Unisex build charts. Fit underwriting credit program: up to 2 table credits (3 characteristics = 1 credit; 5 = 2 credits) for ages 18-75, $100K-$5M, non-tobacco, base rating Table 4 or less — best final class is Standard; excludes flat extras, current rateable substance abuse, CAD before age 50, stroke/rateable cancer, and Type 1 diabetes. Express simplified lanes (TLE/GULE/IULE, ages 18-70) are separate and decline many impairments that fully underwritten review may still rate."
+    },
+    eligibility: {
+      products: "Term Life Answers, Term Life Express (TLE), Guaranteed UL Express (GULE), Indexed UL Express (IULE), whole life, Children's Whole Life, Living Promise",
+      issueAges: "18-70+ by product (Express simplified lanes 18-60)",
+      faceRange: "Accelerated UW $100,000-$1,000,000 (ages 18-55); Express $25,000-$300,000; jumbo limits to $65,000,000 (ages ≤80)",
+      residency: "US (United of Omaha)",
+      notes: [
+        "Age last birthday (advantage to the applicant); unisex build charts.",
+        "Fit program: up to 2 table credits for ages 18-75, $100K-$5M, non-tobacco — best final class is Standard.",
+        "Express simplified lanes decline many impairments that fully underwritten review may still rate."
+      ]
     },
 
     /* ---- Nicotine ----------------------------------------------------- */
@@ -1238,6 +1282,17 @@ const CARRIER_RULES = {
       version: "ADV5691 (07-2025)",
       note: "Quantum eligibility: issue ages 0-60, minimum $50,000, maximum $500,000 (ages 0-17) / $1,000,000 (18-60); total in-force + applied with F&G over $1,000,000 requires another product. No internal or external replacements allowed. Underwriting runs from the application plus electronic databases (MIB on all applications, RX/lab/medical-claims history, MVR as needed, ID verification) — a paramedical exam will not improve the rate class. Residents of all 50 US states; Puerto Rico and US territories not eligible. The AMAM simplified-issue products (Express Term, Home Certainty, Term Made Simple, Dignity Solutions) are separate lanes and are not modeled here."
     },
+    eligibility: {
+      products: "F&G Quantum (term and IUL); AMAM simplified-issue products are separate lanes, not modeled here",
+      issueAges: "0-60",
+      faceRange: "Minimum $50,000; maximum $500,000 (ages 0-17) / $1,000,000 (18-60)",
+      residency: "All 50 US states; Puerto Rico and US territories not eligible",
+      notes: [
+        "No internal or external replacements allowed.",
+        "Total in-force + applied coverage over $1,000,000 requires application and underwriting on another product.",
+        "Underwritten from the application plus electronic databases — a paramedical exam will not improve the rate class."
+      ]
+    },
 
     /* ---- Nicotine ----------------------------------------------------- */
     nicotine: {
@@ -1505,6 +1560,17 @@ const CARRIER_RULES = {
       version: "(IUL; company underwriting standards per ADV5691, 07-2025)",
       note: "Pathsetter eligibility: issue ages 0-80, minimum $50,000, through Table H (300%) with retention $1,000,000, automatic reinsurance binding to $10,000,000, jumbo limit $20,000,000. Exam-Free Underwriting for ages 0-60 through $1,000,000 (MIB, MVR, credit/public-records, RX/lab/medical-claims databases, InstantID — a paramedical exam will not improve the rate class); above those ages/amounts, paramedical + HOS/blood (+ EKG at 71+ or higher amounts) are ordered. Applicants who do not qualify for Preferred or Standard may be approved at Express Standard Tobacco / Express Standard Non-Tobacco rates without medical requirements; Express Standard is also used when individuals 45-60 have not seen a medical professional in the previous 3 years. Impairment specifics follow F&G company standards (Quantum guidelines, ADV5691). Non-working spouse: maximum $1,000,000 per primary insured, not to exceed the wage earner's in-force coverage. Large case ($2,000,000+ face or $20,000+ planned annual premium): Large Case Transmittal form + illustration required."
     },
+    eligibility: {
+      products: "F&G Pathsetter (IUL; company underwriting standards per ADV5691)",
+      issueAges: "0-80",
+      faceRange: "Minimum $50,000; retention $1,000,000; automatic reinsurance binding to $10,000,000; jumbo $20,000,000; tables through H (300%)",
+      residency: "US",
+      notes: [
+        "Exam-Free underwriting ages 0-60 through $1,000,000 — no paramedical; a paramedical exam will not improve the rate class.",
+        "Express Standard rates for applicants who don't qualify for Preferred or Standard (and ages 45-60 with no medical visit in the previous 3 years).",
+        "Large case ($2,000,000+ face or $20,000+ planned annual premium): Large Case Transmittal form + illustration required."
+      ]
+    },
 
     /* ---- Nicotine ----------------------------------------------------- */
     nicotine: {
@@ -1741,6 +1807,17 @@ CARRIER_RULES.national_life = {
     title: "Life Insurance Underwriting Guide",
     version: "TC102228(0319)P (March 2019)",
     note: "National Life Group (National Life Insurance Co / Life Insurance Company of the Southwest) term, whole life and IUL products. Three underwriting lanes: full medical/financial underwriting (blood profile, urinalysis, paramedical exam, EKG as required); Streamlined Underwriting (face $250,000 or less, age 65 and under — MIB, prescription database, MVR, no medical testing; Verified Standard NT / Express Standard NT / Standard Tobacco classes); and EZ-Underwriting accelerated (ages 18-60 through $1,000,000, ages 61-65 through $250,000 — MIB, prescription database, LexisNexis Risk Classifier, best class may be available with no medical requirements). Applicants age 60 and over must have routine health care with a physical within the last 24 months or the case is declined. If declined by another carrier within the last year, a quick quote is required. IOLI/SOLI (investor/stranger-owned life insurance) is not accepted. Final expense is not a stand-alone product — up to $100,000 of final-expense need may be considered as part of overall need."
+  },
+  eligibility: {
+    products: "LSW/NL Flex Life II, LSW/NL Term, TotalSecure, Advantage 79, LifeCycle, LifeBuilder, Income Builder, Protector Life, Peaklife IUL",
+    issueAges: "18-70+ (Mature Assessment at 70+)",
+    faceRange: "Streamlined to $250,000 (age ≤65); EZ-Underwriting to $1,000,000 (18-60) / $250,000 (61-65); large case $10,000,000+",
+    residency: "US (LSW not authorized in New York)",
+    notes: [
+      "Elite / Preferred / Select / Verified Standard NT classes with 60/36/12-month tobacco lookbacks.",
+      "Age 60+ requires routine health care with a physical within the last 24 months — otherwise declined.",
+      "Income replacement not applicable at ages 70+; final expense up to $100,000 as part of overall need."
+    ]
   },
 
   /* ---- Nicotine ----------------------------------------------------- */
