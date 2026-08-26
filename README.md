@@ -52,7 +52,8 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
 1. **Gate screen first.** Pending tests, recent hospitalization/surgery, active uninvestigated symptoms,
    unstable or recent-onset serious conditions, facility/hospice care, ADL dependence, active substance abuse,
    and other postpone/decline triggers are resolved **before** any class is assigned. A missing outcome can
-   matter more than the known history.
+   matter more than the known history. Gate lists are deduplicated per condition — a condition's published
+   decline text and its auto-decline trigger are the same screen and appear once.
 2. **Best class per domain.** Tobacco/nicotine lookback, build (carrier height/weight chart), blood pressure,
    cholesterol/HDL ratio, driving history, family history, medical ceilings, substance history, and functional
    status are each scored independently. BMI is a *screening flag only* — the carrier chart is the binding rule.

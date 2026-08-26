@@ -850,10 +850,7 @@ const Engine = (() => {
     const conds = d.conditions || [];
     const condIds = conds.map(c => c.id);
     const med = evalMedical(rules, d);
-    for (const dc of med.decline || []) {
-      const idMatch = (rules.declineTriggers || []).find(t => dc.text.includes(t.text.split(" ")[0]) || t.id && dc.text.toLowerCase().includes(t.id.replace(/_/g, " ").slice(0, 8)));
-      out.gates.decline.push(dc);
-    }
+    for (const dc of med.decline || []) out.gates.decline.push(dc);
     for (const pp of med.postpone || []) out.gates.postpone.push(pp);
 
     /* Foresters-specific medical screens (non-medical impairment guide) */
@@ -899,6 +896,22 @@ const Engine = (() => {
         if (t && !out.gates.postpone.some(g => g.id === t.id)) out.gates.postpone.push({ id: t.id, text: t.text, reason: t.reason });
       });
     }
+
+    /* Deduplicate gate entries. evalMedical can push the same condition twice —
+       its published decline/postpone text and the carrier's auto-decline trigger
+       both fire — so keep the first entry per condition id. The results page,
+       comparison view, and print sheet all consume these lists. */
+    const dedupGates = arr => {
+      const seen = new Set();
+      return arr.filter(g => {
+        const key = g.id || g.text;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+    out.gates.decline = dedupGates(out.gates.decline);
+    out.gates.postpone = dedupGates(out.gates.postpone);
 
     /* ---- 2. Domain best classes ----------------------------------- */
     const domains = {};
