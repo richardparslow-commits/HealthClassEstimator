@@ -171,11 +171,13 @@ hook). National Life also illustrates the guide's three underwriting lanes (full
 ## Project layout
 
 ```
-index.html          App shell
+index.html          App shell (inline loader stamps HCE_VERSION on all script URLs)
 css/styles.css      Styling (screen + print)
 js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
+test/engine.test.js Engine test harness — 286 assertions (230 scenarios + cross-carrier gate-dedup probe)
+package.json        npm test wiring (no dependencies, no install needed)
 ```
 
 ## Adding or updating rules
@@ -183,9 +185,10 @@ js/app.js           Wizard UI, localStorage persistence, results rendering
 Edit `js/rules.js` only — every threshold is keyed to its source guide. Run the engine test harness:
 
 ```bash
-node /tmp/engine_test.js   # 286 assertions: 230 scenarios + cross-carrier gate-dedup probe
+npm test   # 286 assertions: 230 scenarios + cross-carrier gate-dedup probe
 ```
 
-Then open `index.html` and walk a sample case through to the estimate. After any edit to
-`js/*.js`, bump the single `HCE_VERSION` constant in `index.html` (an inline loader stamps it on all
-three script URLs) so the preview does not serve a stale cached script set.
+No dependencies — `npm test` is just `node test/engine.test.js`, so a fresh checkout needs no
+install step. Then open `index.html` and walk a sample case through to the estimate. After any edit
+to `js/*.js`, bump the single `HCE_VERSION` constant in `index.html` (an inline loader stamps it on
+all three script URLs) so the preview does not serve a stale cached script set.

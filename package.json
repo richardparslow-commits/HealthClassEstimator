@@ -1,0 +1,9 @@
+{
+  "name": "health-class-estimator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Life-insurance pre-underwriting and case-triage estimator — dependency-free static web app",
+  "scripts": {
+    "test": "node test/engine.test.js"
+  }
+}
