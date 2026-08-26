@@ -897,12 +897,13 @@ for (const carrier of CARRIER_IDS) {
   const e = context.__CARRIERS[carrier].eligibility || {};
   const missing = ["products", "issueAges", "faceRange", "residency"].filter(f => !e[f]);
   const notesOk = Array.isArray(e.notes) && e.notes.length >= 1;
-  if (!missing.length && notesOk) {
+  const chartsOk = Array.isArray(e.charts) && e.charts.length >= 1 && e.charts.every(c => c.product && c.ages && c.face);
+  if (!missing.length && notesOk && chartsOk) {
     pass++;
-    console.log("PASS | eligibility probe " + carrier + " -> " + e.products + " | " + e.notes.length + " notes");
+    console.log("PASS | eligibility probe " + carrier + " -> " + e.products + " | " + e.charts.length + " chart rows, " + e.notes.length + " notes");
   } else {
     fail++;
-    console.log("FAIL | eligibility probe " + carrier + " missing: " + missing.join(", ") + (notesOk ? "" : " (notes)"));
+    console.log("FAIL | eligibility probe " + carrier + " missing: " + missing.join(", ") + (notesOk ? "" : " (notes)") + (chartsOk ? "" : " (charts)"));
   }
 }
 

@@ -393,6 +393,23 @@ const App = (() => {
       dl.appendChild(el("dd", {}, v));
     });
     wrap.appendChild(dl);
+    if (e.charts && e.charts.length) {
+      const tbl = el("table", { class: "elig-chart" });
+      const thead = el("thead", {});
+      thead.appendChild(el("tr", {}, [el("th", {}, "Product"), el("th", {}, "Issue ages"), el("th", {}, "Face range")]));
+      tbl.appendChild(thead);
+      const tbody = el("tbody", {});
+      e.charts.forEach(c => {
+        const tr = el("tr", {});
+        tr.appendChild(el("td", {}, c.product));
+        tr.appendChild(el("td", {}, c.ages));
+        tr.appendChild(el("td", {}, c.face));
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      wrap.appendChild(tbl);
+      if (e.chartNote) wrap.appendChild(el("p", { class: "elig-chart-note" }, e.chartNote));
+    }
     if (e.notes && e.notes.length) {
       const ul = el("ul", { class: "elig-notes" });
       e.notes.forEach(n => ul.appendChild(el("li", {}, n)));

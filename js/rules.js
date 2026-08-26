@@ -63,7 +63,11 @@ const CARRIER_RULES = {
         "Horizon digital application / Accelerated Underwriting: ages 20-60 to $5,000,000; ages 61-70 to $500,000 with APS required.",
         "One-class credit review may improve build, blood-pressure, family-history, or cholesterol/HDL findings (3 of 7 credit criteria).",
         "Total in-force + applied-for coverage with all carriers must be financially justified."
-      ]
+      ],
+      charts: [
+        { product: "Banner Life term & permanent (Horizon digital app)", ages: "All issue ages through 70", face: "All coverage amounts; NY via William Penn" }
+      ],
+      chartNote: "The field guide publishes no per-product age/face charts — eligibility is all issue ages through 70 at all coverage amounts."
     },
 
     /* ---- Nicotine / tobacco classification --------------------------- */
@@ -532,6 +536,11 @@ const CARRIER_RULES = {
         "Non-medical lanes: no cigarettes in the past 12 months — cigar, pipe, chewing tobacco, vape pens, marijuana and substitutes allowed on Strong Foundation.",
         "Preferred rates are only available on fully underwritten plans.",
         "Advantage Plus II 10/20-year term riders have their own maximum benefit amounts by issue age."
+      ],
+      charts: [
+        { product: "Your Term (non-medical)", ages: "18-80", face: "To $400,000 (18-55) / $150,000 (56-80)" },
+        { product: "Strong Foundation (non-medical)", ages: "18-80", face: "To $500,000 (18-55) / $250,000 (56-80); substandard to $300,000 / $150,000" },
+        { product: "SMART UL / Advantage Plus II (non-medical)", ages: "0-75", face: "To $400,000 (16-55); $150,000 (0-15 and 56-75)" }
       ]
     },
 
@@ -749,6 +758,11 @@ const CARRIER_RULES = {
         "Digital underwriting (iGO e-App) can decide within minutes; digital decisions are not reconsidered for a better class.",
         "CS (cardiac/stroke profile) required at age 70 for face amounts $100,000 and higher.",
         "Blended (sex-neutral) BMI chart — BMI is the build rule, not a height/weight lookup."
+      ],
+      charts: [
+        { product: "Trendsetter Super / Trendsetter LB", ages: "18-85", face: "$25,000-$10,000,000+ by band (LB band one $25K-$99,999 not available ages 18-22)" },
+        { product: "Financial Choice IUL (I/II)", ages: "0-85", face: "$250,000-$10,000,000+ by band" },
+        { product: "Financial Foundation IUL (I/II) & TFLIC equivalents", ages: "0-85", face: "$25,000-$10,000,000+ by band" }
       ]
     },
 
@@ -997,6 +1011,12 @@ const CARRIER_RULES = {
         "Age last birthday (advantage to the applicant); unisex build charts.",
         "Fit program: up to 2 table credits for ages 18-75, $100K-$5M, non-tobacco — best final class is Standard.",
         "Express simplified lanes decline many impairments that fully underwritten review may still rate."
+      ],
+      charts: [
+        { product: "Term Life Answers (accelerated UW)", ages: "18-55", face: "$100,000-$1,000,000" },
+        { product: "TLE / GULE / IULE (Express lanes)", ages: "18-60", face: "$25,000-$300,000 (combined maximum by age)" },
+        { product: "Fully underwritten term / permanent", ages: "18-80+", face: "Through $5,000,000+; jumbo limits to $65,000,000 (ages ≤80)" },
+        { product: "Children's Whole Life", ages: "0-17", face: "Generally to $100,000 — not over 50% of the lesser parent's in-force coverage" }
       ]
     },
 
@@ -1291,6 +1311,9 @@ const CARRIER_RULES = {
         "No internal or external replacements allowed.",
         "Total in-force + applied coverage over $1,000,000 requires application and underwriting on another product.",
         "Underwritten from the application plus electronic databases — a paramedical exam will not improve the rate class."
+      ],
+      charts: [
+        { product: "F&G Quantum (term & IUL)", ages: "0-60", face: "$50,000-$500,000 (ages 0-17) / $1,000,000 (18-60)" }
       ]
     },
 
@@ -1569,6 +1592,10 @@ const CARRIER_RULES = {
         "Exam-Free underwriting ages 0-60 through $1,000,000 — no paramedical; a paramedical exam will not improve the rate class.",
         "Express Standard rates for applicants who don't qualify for Preferred or Standard (and ages 45-60 with no medical visit in the previous 3 years).",
         "Large case ($2,000,000+ face or $20,000+ planned annual premium): Large Case Transmittal form + illustration required."
+      ],
+      charts: [
+        { product: "F&G Pathsetter (IUL)", ages: "0-80", face: "$50,000-$20,000,000 — retention $1M; auto-reinsurance binding to $10M; jumbo $20M; tables through H (300%)" },
+        { product: "Exam-Free lane", ages: "0-60", face: "Through $1,000,000" }
       ]
     },
 
@@ -1817,7 +1844,13 @@ CARRIER_RULES.national_life = {
       "Elite / Preferred / Select / Verified Standard NT classes with 60/36/12-month tobacco lookbacks.",
       "Age 60+ requires routine health care with a physical within the last 24 months — otherwise declined.",
       "Income replacement not applicable at ages 70+; final expense up to $100,000 as part of overall need."
-    ]
+    ],
+    charts: [
+      { product: "Streamlined Underwriting lane (all products)", ages: "18-65", face: "Through $250,000" },
+      { product: "EZ-Underwriting lane (all products)", ages: "18-60 (61-65 to $250K)", face: "Through $1,000,000" },
+      { product: "Full underwriting (LSW/NL Flex Life II, Term, TotalSecure, etc.)", ages: "18-70+", face: "Large case $10,000,000+; product-specific grids in the Life Underwriting Requirements" }
+    ],
+    chartNote: "The underwriting guide's age/face structure is lane-based (Streamlined / EZ / full) rather than per-product."
   },
 
   /* ---- Nicotine ----------------------------------------------------- */

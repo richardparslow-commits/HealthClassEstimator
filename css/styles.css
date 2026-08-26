@@ -244,6 +244,39 @@ input:focus, select:focus, textarea:focus {
 .elig-notes li {
   margin-bottom: 3px;
 }
+.elig-chart {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.elig-chart th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--navy);
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(14, 122, 95, .35);
+}
+.elig-chart td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e3eaef;
+  vertical-align: top;
+  color: var(--ink);
+  opacity: .9;
+}
+.elig-chart td:first-child {
+  font-weight: 600;
+  opacity: 1;
+}
+.elig-chart-note {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--ink);
+  opacity: .7;
+  font-style: italic;
+}
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
