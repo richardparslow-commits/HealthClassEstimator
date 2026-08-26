@@ -9,6 +9,40 @@
 </head>
 <body>
 
+<!-- Mandatory acknowledgment gate: the wizard stays inert behind this overlay
+     until the user accepts that the estimate is non-binding and that each
+     carrier has the final and absolute say on underwriting. -->
+<div class="ack-gate hidden" id="ack-gate" role="dialog" aria-modal="true" aria-labelledby="ack-title">
+  <div class="ack-card">
+    <div class="ack-mark">HCE</div>
+    <h2 id="ack-title">Acknowledgment required</h2>
+    <p class="ack-statement">
+      This tool helps <strong>estimate</strong> a person&rsquo;s health class for life-insurance
+      pre-underwriting and case triage. The estimate is <strong>preliminary and non-binding</strong>.
+      All carriers have the <strong>final and absolute say</strong> on the client&rsquo;s underwriting
+      and health class.
+    </p>
+    <div class="ack-disclaimer">
+      <strong>Legal disclaimer.</strong> This tool is not a medical diagnostic tool and does not
+      issue insurance, bind coverage, or replace a carrier underwriter&rsquo;s decision. The estimate
+      is based only on disclosed information. The carrier may obtain medical records, prescription
+      history, laboratory/paramedical results, consumer reports, and information from other insurers
+      or MIB, subject to authorization &mdash; those sources can change the estimate. Never suggest
+      withholding information or &ldquo;answering around&rdquo; a condition: applications state that answers
+      influence acceptance and that material misrepresentation or nondisclosure can jeopardize
+      coverage. Temporary coverage exists only if the exact carrier receipt conditions are met, not
+      because this tool gives a favorable estimate.
+    </div>
+    <label class="ack-check">
+      <input type="checkbox" id="ack-check">
+      <span>I have read and acknowledge the above. I understand this estimate is not binding and
+      that each carrier has the final and absolute say on the client&rsquo;s underwriting and health class.</span>
+    </label>
+    <button class="btn btn-primary" id="ack-accept" type="button" disabled>I acknowledge &mdash; continue</button>
+    <p class="ack-hint">You must acknowledge before entering any applicant information.</p>
+  </div>
+</div>
+
 <header class="app-header">
   <div class="header-inner">
     <div class="brand">
@@ -47,6 +81,12 @@
       this estimate. This tool is not a medical diagnostic tool and does not issue insurance, bind coverage, or replace a
       carrier underwriter’s decision.
     </p>
+    <div class="footer-links">
+      <span class="footer-links-label">Request your consumer-report records:</span>
+      <a href="https://www.mib.com/request_your_record.html" target="_blank" rel="noopener noreferrer">MIB Consumer File</a>
+      <span class="footer-links-sep">·</span>
+      <a href="https://www.rxhistories.com/for-consumers/insurance/" target="_blank" rel="noopener noreferrer">Milliman IntelliScript</a>
+    </div>
   </div>
 </footer>
 
@@ -59,7 +99,7 @@
      in order when async=false, preserving the rules -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "27";
+    var HCE_VERSION = "28";
     ["js/rules.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");
       s.src = src + "?v=" + HCE_VERSION;

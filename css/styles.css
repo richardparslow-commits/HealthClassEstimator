@@ -437,6 +437,59 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .finance-ok { color: var(--teal); font-weight: 600; }
 .finance-fail { color: var(--danger); font-weight: 600; }
 
+/* ---- Acknowledgment gate --------------------------------------------- */
+.ack-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(8, 20, 33, .68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.ack-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(8, 20, 33, .4);
+  max-width: 660px;
+  width: 100%;
+  padding: 30px 32px;
+  border-top: 6px solid var(--teal);
+  margin: auto;
+}
+.ack-mark {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--teal), var(--accent));
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 13px; letter-spacing: .5px;
+  margin-bottom: 14px;
+}
+.ack-card h2 { margin: 0 0 6px; font-size: 22px; color: var(--navy); }
+.ack-statement { font-size: 15px; margin: 10px 0; }
+.ack-disclaimer {
+  background: var(--teal-light);
+  border-left: 4px solid var(--teal);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: var(--ink);
+  margin: 14px 0;
+}
+.ack-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  margin: 16px 0 12px;
+  cursor: pointer;
+}
+.ack-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--teal); }
+.ack-hint { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+
 /* ---- Footer ---------------------------------------------------------- */
 .app-footer {
   position: fixed;
@@ -460,6 +513,22 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   margin: 8px 0 0;
   line-height: 1.45;
 }
+.footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.footer-links-label { font-weight: 600; }
+.footer-links-sep { color: var(--line); }
+.footer-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
+.footer-links a:hover { color: var(--navy); }
 
 /* ---- Buttons --------------------------------------------------------- */
 .btn {

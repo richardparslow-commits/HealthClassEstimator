@@ -144,6 +144,19 @@ product is selected, so the exact set depends on the product — the union is th
 - Separate an underwriting-class estimate from conditional or temporary coverage: temporary coverage exists
   only if the exact carrier receipt conditions are met, **not** because the app gives a favorable estimate.
 
+## Acknowledgment gate & consumer-report links
+
+- Before any applicant information can be entered, the user must check the acknowledgment box and accept that
+  the tool is only an **estimate**, is **not binding**, and that **all carriers have the final and absolute say**
+  on the client's underwriting and health class. The gate blocks the entire wizard until accepted; acceptance
+  persists per browser via localStorage (`hce_ack_v1`).
+- The gate repeats the full legal disclaimer (non-diagnostic tool; carrier may obtain records, prescription
+  history, lab/paramedical results, consumer reports, and information from other insurers or MIB; never
+  suggest withholding information; temporary coverage only per carrier receipt conditions).
+- The footer links to the consumer-report record-request pages the disclaimer references: **MIB Consumer File**
+  (https://www.mib.com/request_your_record.html) and **Milliman IntelliScript**
+  (https://www.rxhistories.com/for-consumers/insurance/).
+
 ## Reference documents
 
 - `Start with a carrier-specific model.pdf` — the build plan and data schema

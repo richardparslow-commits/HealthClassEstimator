@@ -1393,6 +1393,13 @@ const App = (() => {
 
   /* ---------- boot ----------------------------------------------------- */
 
+  /* Acknowledgment gate: no applicant information may be entered before the
+     user accepts that the estimate is non-binding and that each carrier has
+     the final and absolute say on the client's underwriting and health class.
+     Acceptance persists per browser (localStorage); the gate re-appears until
+     accepted. */
+  const ACK_KEY = "hce_ack_v1";
+
   function boot() {
     loadState();
     $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name;
@@ -1400,6 +1407,25 @@ const App = (() => {
       saveState();
       showToast("Draft saved to this browser.");
     });
+
+    const gate = $("#ack-gate");
+    const check = $("#ack-check");
+    const accept = $("#ack-accept");
+    let acknowledged = false;
+    try { acknowledged = localStorage.getItem(ACK_KEY) === "1"; } catch (e) { /* ignore */ }
+
+    check.addEventListener("change", () => { accept.disabled = !check.checked; });
+    accept.addEventListener("click", () => {
+      try { localStorage.setItem(ACK_KEY, "1"); } catch (e) { /* ignore */ }
+      gate.classList.add("hidden");
+      render();
+    });
+
+    if (!acknowledged) {
+      // Keep the wizard inert until the acknowledgment is accepted.
+      gate.classList.remove("hidden");
+      return;
+    }
     render();
   }
 
