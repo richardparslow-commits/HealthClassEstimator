@@ -850,6 +850,23 @@ const Engine = (() => {
     if (d.ownership === "business") list.push("Business-owned coverage disclosed — business insurance questionnaire / ownership documentation may be required.");
     if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) list.push("History of probation/parole disclosed — carriers review recency and offense severity; additional information may be required.");
     if (isYes(d.foreignTravel)) list.push("Foreign travel disclosed — review destinations and duration; some destinations trigger postponement or additional requirements.");
+    if (d.militaryService === "yes" || d.militaryService === "combat") {
+      list.push("Military service disclosed — VA treatment records may be requested.");
+      if (d.militaryService === "combat") list.push("Combat deployment disclosed — mental-health / TBI screening may apply.");
+    }
+    if (d.foreignResidence === "short" || d.foreignResidence === "long") {
+      list.push("Foreign residence disclosed — carrier residency requirements and country-of-residence review apply; certain countries may postpone or add requirements.");
+    }
+    if (d.doctorVisits === "frequent" && !(d.conditions && d.conditions.length)) {
+      list.push("Frequent physician visits with no disclosed condition — confirm the reason; uninvestigated care can matter more than known history.");
+    }
+    if (isYes(d.nicotineEver)) {
+      if (d.usedNicotine === "no") {
+        const qy = Number(d.nicotineQuitYears);
+        if (!isNaN(qy) && qy >= 0 && qy <= 10) list.push("Nicotine answers conflict: 'ever used' yes but last use within 10 years contradicts the 'no' answer — confirm the quit date.");
+        else list.push("Tobacco/nicotine use disclosed, last use more than 10 years ago — outside every carrier's lookback window; no class impact.");
+      }
+    }
 
     return { list, apsNeeded, apsList };
   }
@@ -869,7 +886,8 @@ const Engine = (() => {
       ["replacement", "replacement status"], ["financing", "premium financing status"], ["marijuana", "marijuana use"],
       ["paroleCurrent", "probation/parole status (current)"], ["parolePast", "probation/parole history"],
       ["aviation", "aviation exposure"], ["hazardousSports", "hazardous sports"], ["foreignTravel", "foreign travel"],
-      ["ownership", "coverage ownership"], ["premiumPayor", "premium payor"]
+      ["ownership", "coverage ownership"], ["premiumPayor", "premium payor"],
+      ["doctorVisits", "physician-visit frequency"], ["militaryService", "military service"], ["foreignResidence", "foreign residence"], ["nicotineEver", "nicotine ever-use history"]
     ];
     for (const [k, label] of checks) {
       total++;
@@ -1187,6 +1205,14 @@ const Engine = (() => {
     // Past (not current) probation/parole is a review item, not an automatic
     // decline — carriers weigh recency and offense severity.
     if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) flags.push("criminal_history");
+    // Frequent physician visits with no disclosed condition = uninvestigated
+    // care, which can matter more than the known history.
+    if (d.doctorVisits === "frequent" && !(d.conditions && d.conditions.length)) flags.push("unexplained_care");
+    // Extended foreign residence triggers carrier residency eligibility review.
+    if (d.foreignResidence === "long") flags.push("foreign_residence");
+    // Nicotine ever/quit-history conflicts — surface for confirmation.
+    if (d.usedNicotine === "yes" && d.nicotineEver === "no") flags.push("conflicting_disclosure");
+    if (d.usedNicotine === "no" && d.nicotineEver === "yes" && !isNaN(Number(d.nicotineQuitYears)) && Number(d.nicotineQuitYears) >= 0 && Number(d.nicotineQuitYears) <= 10) flags.push("conflicting_disclosure");
 
     // evidence flags
     const ev = evidenceNeeded(rules, d, condIds);

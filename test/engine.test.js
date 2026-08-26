@@ -24,11 +24,12 @@ const base = {
   faceAmount: 500000, income: 120000, existingCoverage: 0,
   policyPurpose: "income", replacement: "no", financing: "no",
   ownership: "personal", premiumPayor: "self",
-  usedNicotine: false, nicotineLastUse: "",
+  usedNicotine: false, nicotineEver: "no", nicotineQuitYears: "", nicotineLastUse: "",
   heightIn: 70, weightLb: 165,
   bpSys: 120, bpDia: 78, cholTotal: 190, cholHdl: 60,
   movingViolations3yr: 0, seriousDriving: false,
   occupationHazardous: "no", aviation: "no", hazardousSports: "no", foreignTravel: "no",
+  militaryService: "no", foreignResidence: "no", doctorVisits: "yearly",
   criminalActive: false, paroleCurrent: "no", parolePast: "no",
   alcoholConcern: "no", drugAbuse: "no", marijuana: "none",
   conditions: [],
@@ -787,6 +788,16 @@ add("Foresters 10 cigarettes/day -> Tobacco Plus", d => { d.carrier = "foresters
 add("Foreign travel -> evidence note", d => { d.foreignTravel = "yes"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Foreign travel disclosed"] });
 add("Third-party premium payor -> Banner AU excluded", d => { d.premiumPayor = "third_party"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible", wantEvidence: ["accelerated underwriting not available"] });
 add("Business ownership -> ownership evidence note", d => { d.ownership = "business"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Business-owned coverage"] });
+
+/* ---- Master-list additions: care, military, residence, nicotine history - */
+add("Frequent doctor visits with no condition -> unexplained-care flag", d => { d.doctorVisits = "frequent"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "unexplained_care" });
+add("Frequent doctor visits WITH a disclosed condition -> no flag", d => { d.doctorVisits = "frequent"; d.conditions = [{ id: "asthma", status: "current", severity: "mild", control: "good" }]; }, { klass: "standard", tobacco: false, wantNoFlag: "unexplained_care" });
+add("Military combat -> evidence notes, no class change", d => { d.militaryService = "combat"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Military service disclosed", "Combat deployment"] });
+add("Foreign residence 6+ months -> eligibility-review flag", d => { d.foreignResidence = "long"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "foreign_residence" });
+add("Foreign residence under 6 months -> note only, no flag", d => { d.foreignResidence = "short"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "foreign_residence", wantEvidence: ["Foreign residence disclosed"] });
+add("Nicotine conflict: ever=no but 10-yr=yes -> conflict flag", d => { d.usedNicotine = "yes"; d.nicotineEver = "no"; d.nicotineLastUse = monthsAgo(3); }, { klass: "preferred_plus", tobacco: true, wantFlag: "conflicting_disclosure" });
+add("Nicotine quit 15 yrs ago -> beyond-lookback note, no flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 15; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "conflicting_disclosure", wantEvidence: ["outside every carrier's lookback"] });
+add("Nicotine quit 5 yrs ago but 10-yr=no -> conflict flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 5; }, { klass: "preferred_plus", tobacco: false, wantFlag: "conflicting_disclosure" });
 
 let pass = 0, fail = 0;
 

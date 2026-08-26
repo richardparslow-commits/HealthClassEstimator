@@ -31,15 +31,16 @@ layout.
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties, plus aviation exposure, hazardous sports, and frequent foreign travel (aviation/sports feed the hazardous-avocation lane; travel is an evidence/review note)
+1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, or National Life Group), age, sex, state, occupation, hazardous duties, plus aviation exposure, hazardous sports, frequent foreign travel, military service (combat → MH/TBI screening note), and foreign-residence history (6+ months → eligibility-review flag)
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source, coverage ownership, premium payor (evaluated: income multipliers, carrier total-line caps, replacement rules, purpose-driven evidence, third-party/financed-payor review and accelerated-UW exclusion)
-3. **Tobacco & nicotine** — product (cigarettes, vaping/e-cigarettes, chewing tobacco/snuff, cigars, nicotine substitutes), last-use date, frequency, per-product amount (cigarettes per day feeds Foresters Tobacco Plus ≤1 pack/day; heavier use → Standard Tobacco), cigar exception
+3. **Tobacco & nicotine** — ever-used history (quit >10 years ago → beyond-lookback note; answers that contradict the 10-year question → conflict flag), product (cigarettes, vaping/e-cigarettes, chewing tobacco/snuff, cigars, nicotine substitutes), last-use date, frequency, per-product amount (cigarettes per day feeds Foresters Tobacco Plus ≤1 pack/day; heavier use → Standard Tobacco), cigar exception
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
 5. **Vitals & labs** — blood pressure (readings only — carriers evaluate with or without treatment), total/HDL cholesterol, A1c
 6. **Driving & criminal** — moving violations, DUI/reckless/suspension, criminal status, **current and past probation/parole** (current → decline screen where the carrier publishes one; past → review flag), bankruptcy
 7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration, marijuana (rated separately from tobacco; daily-use declines per F&G/National Life)
 8. **Medical history** — condition picker with per-condition detail (status, severity, control, medications,
-   onset, complications, stability, postpone/decline concerns)
+   onset, complications, stability, postpone/decline concerns), plus physician-visit frequency (frequent visits
+   with no disclosed condition → unexplained-care flag; explained by a disclosed condition → benign)
 9. **Medications & prescriptions** — current prescription list, cross-checked against disclosed conditions
    and each carrier's APS triggers
 10. **Family history** — early cardiovascular death in parents/siblings

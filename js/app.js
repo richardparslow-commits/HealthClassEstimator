@@ -29,17 +29,18 @@ const App = (() => {
   function defaultState() {
     return {
       carrier: "banner",
-      age: "", sex: "", state: "", occupation: "", occupationHazardous: "",
-      aviation: "", hazardousSports: "", foreignTravel: "",
+      age: "", sex: "", state: "", occupation: "",      occupationHazardous: "",
+      aviation: "", hazardousSports: "", foreignTravel: "", militaryService: "", foreignResidence: "",
       faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "", financing: "",
       ownership: "", premiumPayor: "",
-      usedNicotine: "", nicotineProduct: "cigarette", nicotineLastUse: "", nicotineAmount: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
+      usedNicotine: "", nicotineEver: "", nicotineQuitYears: "", nicotineProduct: "cigarette", nicotineLastUse: "", nicotineAmount: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
       marijuana: "",
       heightFt: "", heightIn: "", weightLb: "", weightOneYearAgoLb: "", weightIntentional: false, weightChangeUnintentional: false,
       bpSys: "", bpDia: "", cholTotal: "", cholHdl: "", a1c: "",
       movingViolations3yr: "", seriousDriving: false, seriousDrivingYears: "",
       criminalActive: false, paroleCurrent: "", parolePast: "", bankruptcyActive: false,
       alcoholConcern: "", drugAbuse: "", drugAbuseYears: "",
+      doctorVisits: "",
       conditions: [],
       medicationsText: "",
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
@@ -451,11 +452,18 @@ const App = (() => {
     r3.appendChild(field("Frequent foreign travel", radioPill("foreignTravel", [["no", "No"], ["yes", "Yes"]])));
     c.appendChild(r3);
 
+    const r4 = el("div", { class: "field-row" });
+    r4.appendChild(field("Military service", radioPill("militaryService", [["no", "No"], ["yes", "Yes — non-combat"], ["combat", "Yes — combat deployment"]])));
+    r4.appendChild(field("Lived outside the US recently?", radioPill("foreignResidence", [["no", "No"], ["short", "Yes — under 6 months"], ["long", "Yes — 6 months or more"]])));
+    c.appendChild(r4);
+
     _radioHandlers.sex = () => {};
     _radioHandlers.occupationHazardous = () => {};
     _radioHandlers.aviation = () => {};
     _radioHandlers.hazardousSports = () => {};
     _radioHandlers.foreignTravel = () => {};
+    _radioHandlers.militaryService = () => {};
+    _radioHandlers.foreignResidence = () => {};
     return c;
   }
 
@@ -491,6 +499,13 @@ const App = (() => {
     const rules = CARRIER_RULES[state.carrier];
     c.appendChild(el("h2", {}, "Tobacco & nicotine use"));
     c.appendChild(el("p", { class: "card-sub" }, rules.nicotine.tobaccoDefinition || "Lookbacks vary by class."));
+
+    c.appendChild(field("Have you EVER used tobacco or nicotine in any form?", radioPill("nicotineEver", [["no", "No"], ["yes", "Yes"]])));
+    _radioHandlers.nicotineEver = () => render();
+
+    const quitBox = el("div", { class: (state.nicotineEver === "yes" && state.usedNicotine === "no" ? "" : "hidden") });
+    quitBox.appendChild(field("Years since you quit", numInput("nicotineQuitYears", { min: 0, step: 1 }), "Last use more than 10 years ago is outside every carrier's lookback window — no class impact. If you quit within the last 10 years, answer 'Yes' to the 10-year question below."));
+    c.appendChild(quitBox);
 
     c.appendChild(field("Used tobacco or nicotine in the past 10 years?", radioPill("usedNicotine", [["yes", "Yes"], ["no", "No"]])));
     _radioHandlers.usedNicotine = () => render();
@@ -633,6 +648,10 @@ const App = (() => {
     const c = el("div", { class: "card" });
     c.appendChild(el("h2", {}, "Medical history"));
     c.appendChild(el("p", { class: "card-sub" }, "Select each condition disclosed in the interview. For each, record status, severity, control, and the condition-specific details — the estimator uses control, duration, complications, and treatment intensity, not just the diagnosis label."));
+
+    const rDoc = el("div", { class: "field-row" });
+    rDoc.appendChild(field("How often do you see a doctor?", selectInput("doctorVisits", [["rarely", "Rarely — less than once a year"], ["yearly", "Yearly checkup"], ["regular", "Regular follow-ups (known conditions)"], ["frequent", "Frequently — monthly or more"]], { onChange: () => render() })));
+    c.appendChild(rDoc);
 
     for (const group of GROUPS) {
       const items = CONDITION_CATALOG.filter(x => x.group === group);
@@ -1484,12 +1503,16 @@ const App = (() => {
     financial_review: "Financial justification needed",
     undisclosed_meds: "Medication-condition mismatch — confirm",
     flat_extra: "Flat extra may apply",
-    criminal_history: "Criminal history disclosed — carrier review"
+    criminal_history: "Criminal history disclosed — carrier review",
+    unexplained_care: "Frequent care without disclosed condition — confirm",
+    foreign_residence: "Foreign residence — eligibility review",
+    conflicting_disclosure: "Nicotine history conflict — confirm"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
     possible_decline: "flag-danger", manual_review: "flag-warn", missing_material_data: "flag-warn",
-    accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn"
+    accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn",
+    unexplained_care: "flag-warn", foreign_residence: "flag-warn", conflicting_disclosure: "flag-danger"
   };
 
   const DOMAIN_LABELS = {
