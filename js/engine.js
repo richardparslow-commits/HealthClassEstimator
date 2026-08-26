@@ -448,8 +448,14 @@ const Engine = (() => {
             decline.push({ id: c.id, text: `Diabetes A1c ${a1c} ${dm && dm.a1cDeclineMin !== undefined ? "≥ " + dm.a1cDeclineMin : "> 10"} — decline/postpone screen.` });
             ceiling = "decline";
           } else if (c.complications === "yes") {
-            decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
-            ceiling = "decline";
+            const dmc = dm && dm.complicationsCeiling;
+            if (dmc) {
+              ceiling = dmc;
+              details.push(`Diabetes with complications — ${dmc} best case (carrier tiering, e.g., Americo Eagle Select 2).`);
+            } else {
+              decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
+              ceiling = "decline";
+            }
           } else if (dm && dm.juvenileOnsetDeclineAge && onset !== null && onset < dm.juvenileOnsetDeclineAge) {
             // Carrier-published juvenile-onset decline (e.g., National Life:
             // diabetes diagnosed prior to age 20 is on the uninsurable list).
@@ -1017,6 +1023,26 @@ const Engine = (() => {
     if (issueCap !== undefined && has(d, "age") && Number(d.age) > issueCap) {
       out.gates.decline.push({ id: "eligibility_age", text: `Outside published issue ages — this carrier issues to age ${issueCap} only`, reason: "Carrier eligibility: the product is not available above the maximum issue age." });
     }
+    const issueMin = rules.eligibility && rules.eligibility.minIssueAge;
+    if (issueMin !== undefined && has(d, "age") && Number(d.age) < issueMin) {
+      out.gates.decline.push({ id: "eligibility_age_min", text: `Below the published minimum issue age — this carrier issues from age ${issueMin}`, reason: "Carrier eligibility: the product is not available below the minimum issue age." });
+    }
+    /* Carrier-published prescription decline lists (John Hancock, Corebridge):
+       a disclosed medication on the carrier's Rx exclusion list drives the
+       outcome, independent of the disclosed-condition screen. */
+    if (rules.rxDecline && rules.rxDecline.length && d.medicationsText && String(d.medicationsText).trim()) {
+      const rxHits = [];
+      for (const t of String(d.medicationsText).split(/[,;\n]+/)) {
+        const n = normalizeMed(t);
+        if (!n) continue;
+        const words = n.split(" ");
+        if (rules.rxDecline.some(r => words.includes(r)) && !rxHits.includes(n)) rxHits.push(n);
+      }
+      if (rxHits.length) {
+        const shown = rxHits.slice(0, 3).join(", ");
+        out.gates.decline.push({ id: "rx_decline", text: `Prescription(s) on the carrier's Rx exclusion list (${shown})`, reason: rules.rxDeclineNote || "Carrier prescription list — decline." });
+      }
+    }
     const func = evalFunctional(d);
     if (func.flag === "adl_dependence") declineHits.push("adl_dependence", "facility_care");
 
@@ -1058,7 +1084,10 @@ const Engine = (() => {
     const pend = evalPending(d);
     if (pend.klass === "postpone") postponeHits.push("pending_test");
     if (isYes(d.a1cHigh)) postponeHits.push("a1c_high");
-    if (isYes(d.diabetesComplications)) postponeHits.push("diabetes_complications");
+    /* Carriers that tier diabetes complications instead of postponing them
+       (e.g., Americo: complications -> Eagle Select 2) define a
+       complicationsCeiling — the generic postpone trigger is suppressed. */
+    if (isYes(d.diabetesComplications) && !(rules.diabetes && rules.diabetes.complicationsCeiling)) postponeHits.push("diabetes_complications");
     if (isYes(d.gastricBypassRecent)) postponeHits.push("gastric_bypass_recent");
 
     if (out.gates.postpone.length || postponeHits.length) {
@@ -1252,6 +1281,22 @@ const Engine = (() => {
     final = normK(rules, final);
     out.finalClass = final;
 
+    /* Americo Eagle Select tiering (informational): the health questions set
+       the product tier — Eagle Select 1 (best), 2, or 3 (graded). The class
+       reflects the non-tobacco lane; the tier note tells the producer which
+       Eagle Select product the carrier would offer. */
+    if (rules.id === "americo" && final !== "decline" && final !== "postpone" && final !== "manual_review") {
+      const nicUse = isYes(d.usedNicotine);
+      const hasCond = id => condIds.includes(id);
+      const hd = hasCond("heart_disease") || hasCond("cad");
+      const dia = hasCond("diabetes");
+      const st = hasCond("stroke");
+      const pvd = hasCond("peripheral_vascular");
+      const resp = hasCond("copd") || hasCond("asthma");
+      const tier = (hd || dia || st || pvd || resp || nicUse) ? "Eagle Select 2" : "Eagle Select 1";
+      out.notes.push(`${tier} product tier applies — Americo's health-question tiering (heart disease, diabetes, stroke/TIA, peripheral vascular disease, respiratory disease, or nicotine use move the offer to Eagle Select 2; the graded Eagle Select 3 tier applies when the application's graded-trigger conditions are present).`);
+    }
+
     /* ---- 5. Credits (possible, not applied) ----------------------- */
     const creditEligible = ["build", "bp", "family", "cholesterol"];
     const adverseDomains = [];
@@ -1385,6 +1430,20 @@ const Engine = (() => {
       case "amam_paralysis": return rules && rules.id === "amam" && condIds.includes("paralysis");
       case "amam_liver": return rules && rules.id === "amam" && condIds.includes("liver_disease");
       case "amam_third_party_payor": return rules && rules.id === "amam" && d.premiumPayor === "third_party" && d.age && Number(d.age) >= 30;
+      case "pending_test": return isYes(d.pendingTests);
+      case "driving_dui_recent": {
+        if (!isYes(d.seriousDriving)) return false;
+        const yrs = has(d, "seriousDrivingYears") ? Number(d.seriousDrivingYears) : null;
+        if (yrs === null) return true;
+        const cap = rules && rules.id === "john_hancock" ? 5 : 2; // JH: 5 years; Quility / Corebridge: 2 years
+        return yrs < cap;
+      }
+      case "jh_pending_test": return rules && rules.id === "john_hancock" && isYes(d.pendingTests);
+      case "jh_occupation": return rules && rules.id === "john_hancock" && isYes(d.occupationHazardous);
+      case "es_pending": return rules && rules.id === "americo" && (isYes(d.pendingTests) || isYes(d.recentHospitalization) || isYes(d.recentSurgery));
+      case "q_gastric": return rules && rules.id === "quility" && isYes(d.gastricBypassRecent);
+      case "cs_pending": return rules && rules.id === "corebridge" && isYes(d.pendingTests);
+      case "cs_terminal": return rules && rules.id === "corebridge" && d.activeSymptom === "severe" && (d.livingSetting === "hospice" || d.livingSetting === "nursing");
       case "dementia": return condIds.includes("dementia");
       case "cirrhosis": return condIds.includes("liver_disease") && isYes(d.cirrhosis);
       case "defibrillator": return condIds.includes("heart_disease") && isYes(d.defibrillator);

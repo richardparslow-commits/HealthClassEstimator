@@ -911,6 +911,125 @@ aadd("Dignity band (60 / $25K) -> Dignity final-expense evidence line", d => { d
 
 aadd("Metformin undisclosed -> mismatch + APS trigger", d => { d.medicationsText = "metformin 500mg"; }, { klass: "preferred", tobacco: false, wantMeds: { disclosed: 0, undisclosed: 1, aps: 1 }, wantFlag: "undisclosed_meds" });
 
+/* ---- John Hancock (Simple Term with Vitality, ages 20-60) --------------- */
+const jbase = JSON.parse(JSON.stringify(base));
+jbase.carrier = "john_hancock";
+jbase.usedNicotine = "no";
+
+function jadd(name, mutate, expect) {
+  const d = JSON.parse(JSON.stringify(jbase));
+  mutate(d);
+  scenarios.push({ name: "[John Hancock] " + name, d, expect });
+}
+
+jadd("Healthy clean profile -> Preferred", d => {}, { klass: "preferred", tobacco: false });
+
+jadd("DUI 3 yrs ago -> decline (5-yr disqualifier)", d => { d.seriousDriving = true; d.seriousDrivingYears = 3; }, { klass: "decline", tobacco: false });
+
+jadd("DUI 6 yrs ago -> no decline (outside 5-yr window)", d => { d.seriousDriving = true; d.seriousDrivingYears = 6; }, { klass: "preferred", tobacco: false });
+
+jadd("Pending diagnostic test -> decline (not eligible until completed)", d => { d.pendingTests = "yes"; }, { klass: "decline", tobacco: false });
+
+jadd("Cancer resolved 5 yrs ago -> decline (any cancer except BCC/SCC/Stage 0 melanoma)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 5, severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false });
+
+jadd("Type 1 diabetes onset at 30 -> decline (under age 40)", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", type: "type1", onsetAge: 30, a1c: 7 }]; }, { klass: "decline", tobacco: false });
+
+jadd("Type 2 diabetes onset at 45, controlled -> Select (standard)", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", type: "type2", onsetAge: 45, a1c: 7.2 }]; }, { klass: "standard", tobacco: false });
+
+jadd("Age 61 -> outside issue ages (max 60) -> decline", d => { d.age = 61; }, { klass: "decline", tobacco: false });
+
+jadd("Hazardous occupation -> decline (disqualifying occupations)", d => { d.occupationHazardous = "yes"; }, { klass: "decline", tobacco: false });
+
+jadd("Nicotine 3 mo ago -> tobacco risk class (base class kept per guide)", d => { d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }, { klass: "preferred", tobacco: true });
+
+/* ---- Americo (Eagle Select final expense, ages 40-85) ------------------- */
+const ebase = JSON.parse(JSON.stringify(base));
+ebase.carrier = "americo";
+ebase.age = 45;
+ebase.faceAmount = 25000;
+ebase.usedNicotine = "no";
+
+function eadd(name, mutate, expect) {
+  const d = JSON.parse(JSON.stringify(ebase));
+  mutate(d);
+  scenarios.push({ name: "[Americo] " + name, d, expect });
+}
+
+eadd("Healthy clean profile -> Eagle Select 1 (preferred)", d => {}, { klass: "preferred", tobacco: false });
+
+eadd("Organ transplant -> knock-out decline", d => { d.conditions = [{ id: "transplant", status: "current", severity: "severe" }]; }, { klass: "decline", tobacco: false });
+
+eadd("Pending tests -> 12-month declinable", d => { d.pendingTests = "yes"; }, { klass: "decline", tobacco: false });
+
+eadd("Heart disease + nicotine -> Eagle Select 2 (standard)", d => { d.conditions = [{ id: "heart_disease", status: "current", severity: "moderate", control: "good" }]; d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }, { klass: "standard", tobacco: true });
+
+eadd("Diabetes with complications -> Eagle Select 2 (standard), not decline", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "fair", complications: "yes", a1c: 7.5 }]; }, { klass: "standard", tobacco: false });
+
+eadd("Age 35 -> below minimum issue age (40) -> decline", d => { d.age = 35; }, { klass: "decline", tobacco: false });
+
+eadd("Age 86 -> above maximum issue age (85) -> decline", d => { d.age = 86; }, { klass: "decline", tobacco: false });
+
+eadd("Face 100K -> exceeds $40K maximum -> financial review", d => { d.faceAmount = 100000; }, { klass: "preferred", tobacco: false, wantFlag: "financial_review" });
+
+eadd("Alzheimer's dementia -> knock-out decline", d => { d.conditions = [{ id: "dementia", status: "current", severity: "severe", control: "poor" }]; }, { klass: "decline", tobacco: false });
+
+/* ---- Quility Term Plus (Legal & General America) ----------------------- */
+const qbase2 = JSON.parse(JSON.stringify(base));
+qbase2.carrier = "quility";
+qbase2.usedNicotine = "no";
+
+function qadd2(name, mutate, expect) {
+  const d = JSON.parse(JSON.stringify(qbase2));
+  mutate(d);
+  scenarios.push({ name: "[Quility] " + name, d, expect });
+}
+
+qadd2("Healthy clean profile -> Preferred Plus", d => {}, { klass: "preferred_plus", tobacco: false });
+
+qadd2("Cancer resolved 3 yrs ago -> decline (10-yr window)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 3, severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false });
+
+qadd2("DUI 1 yr ago -> decline (within 2-yr window)", d => { d.seriousDriving = true; d.seriousDrivingYears = 1; }, { klass: "decline", tobacco: false });
+
+qadd2("DUI 3 yrs ago -> accepted (outside 2-yr window)", d => { d.seriousDriving = true; d.seriousDrivingYears = 3; }, { klass: "preferred_plus", tobacco: false });
+
+qadd2("Diabetes A1c 7.5 onset 45 -> Standard (accepted criteria)", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", a1c: 7.5, onsetAge: 45 }]; }, { klass: "standard", tobacco: false });
+
+qadd2("Diabetes A1c 8.5 -> decline (requires A1c < 8)", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "fair", a1c: 8.5, onsetAge: 45 }]; }, { klass: "decline", tobacco: false });
+
+qadd2("Felony / probation -> declinable non-medical", d => { d.criminalActive = true; }, { klass: "decline", tobacco: false });
+
+qadd2("Build 70in/250lb -> Standard Plus (5'10\" Standard Plus band 226-285)", d => { d.heightIn = 70; d.weightLb = 250; }, { klass: "standard_plus", tobacco: false });
+
+qadd2("Build 70in/340lb -> above Standard max -> decline (no tables)", d => { d.heightIn = 70; d.weightLb = 340; }, { klass: "decline", tobacco: false });
+
+/* ---- Corebridge / AGL (SimpliNow Legacy SIWL, ages 50-80) -------------- */
+const cbase = JSON.parse(JSON.stringify(base));
+cbase.carrier = "corebridge";
+cbase.age = 55;
+cbase.usedNicotine = "no";
+
+function cadd(name, mutate, expect) {
+  const d = JSON.parse(JSON.stringify(cbase));
+  mutate(d);
+  scenarios.push({ name: "[Corebridge] " + name, d, expect });
+}
+
+cadd("Healthy clean profile -> Level benefit (preferred)", d => {}, { klass: "preferred", tobacco: false });
+
+cadd("Warfarin on Rx exclusion list -> decline", d => { d.medicationsText = "warfarin 5mg daily"; }, { klass: "decline", tobacco: false });
+
+cadd("Dementia -> decline (ever)", d => { d.conditions = [{ id: "dementia", status: "current", severity: "severe", control: "poor" }]; }, { klass: "decline", tobacco: false });
+
+cadd("Diabetes A1c 8.8 -> Graded benefit (standard)", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "fair", a1c: 8.8 }]; }, { klass: "standard", tobacco: false });
+
+cadd("Diabetes A1c 10.5 -> decline", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "poor", a1c: 10.5 }]; }, { klass: "decline", tobacco: false });
+
+cadd("Age 45 -> below minimum issue age (50) -> decline", d => { d.age = 45; }, { klass: "decline", tobacco: false });
+
+cadd("Age 81 -> above maximum issue age (80) -> decline", d => { d.age = 81; }, { klass: "decline", tobacco: false });
+
+cadd("Organ transplant -> decline (ever)", d => { d.conditions = [{ id: "transplant", status: "current", severity: "severe" }]; }, { klass: "decline", tobacco: false });
+
 let pass = 0, fail = 0;
 
 // ---- cross-carrier gate-dedup probe --------------------------------------

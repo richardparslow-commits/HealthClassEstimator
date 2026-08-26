@@ -22,7 +22,11 @@ const App = (() => {
     ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"],
     ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"],
     ["national_life", "National Life Group (NL / LSW)"],
-    ["amam", "American Amicable (Express Term / Term Made Simple)"]
+    ["amam", "American Amicable (Express Term / Term Made Simple)"],
+    ["john_hancock", "John Hancock (Simple Term with Vitality)"],
+    ["americo", "Americo (Eagle Select final expense)"],
+    ["quility", "Quility Term Plus (Legal & General America)"],
+    ["corebridge", "Corebridge / AGL (SimpliNow Legacy SIWL)"]
   ];
 
   let state = defaultState();
@@ -1165,6 +1169,9 @@ const App = (() => {
     sum.appendChild(el("h2", {}, "Case triage summary"));
     const sumList = el("ul", { class: "check-list" });
     out.summaryLines.forEach(l => sumList.appendChild(el("li", {}, l)));
+    if (out.notes && out.notes.length) {
+      out.notes.forEach(n => sumList.appendChild(el("li", { class: "note-line" }, n)));
+    }
     if (out.comorbidityFlags && out.comorbidityFlags.length) {
       sumList.appendChild(el("li", {}, "Combination flag: " + out.comorbidityFlags.join("; ") + " — materially different from an isolated diagnosis; specialist review recommended."));
     }
@@ -1351,6 +1358,25 @@ const App = (() => {
         evUl.appendChild(el("li", {}, "Dignity Solutions final-expense lane applies at this age/face band — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers; coverage is declined if any of the first three health questions are answered yes."));
       }
       evUl.appendChild(el("li", {}, "Underwriting is standard through Table 4 on an accept/reject basis — no table ratings are offered; conditions on the impairment-guide decline list and build outside the chart should not be submitted."));
+    } else if (out.carrier === "John Hancock") {
+      evUl.appendChild(el("li", {}, "Simple Term with Vitality is underwritten from the simplified application plus database checks — MIB, MVR, prescription history check, and identification. No paramedical exam is used for this product."));
+      evUl.appendChild(el("li", {}, "Any nicotine, tobacco, or smoking-cessation product within the past 12 months renders the tobacco risk class; a post-issue quality review may request medical records and a policy may be rescinded for material misrepresentation."));
+      if (age !== null && (age < 20 || age > 60)) evUl.appendChild(el("li", {}, `Simple Term with Vitality is available only at ages 20-60 — this age is outside the product's eligibility.`));
+      if (Number(state.faceAmount || 0) > 500000) evUl.appendChild(el("li", {}, "Coverage is limited to $500,000 and may not replace in-force coverage."));
+    } else if (out.carrier === "Americo") {
+      evUl.appendChild(el("li", {}, "Eagle Select uses a 100% instant-decision eApplication — the health questions plus MIB, prescriptions, medical information, and other third-party services generate the offer (Eagle Select 1 / 2 / 3 or decline) in minutes."));
+      evUl.appendChild(el("li", {}, "The Quit Smoking Advantage lets smokers receive non-nicotine rates for the first three policy years."));
+      if (age !== null && (age < 40 || age > 85)) evUl.appendChild(el("li", {}, `Eagle Select is available at ages 40-85 — this age is outside the product's eligibility.`));
+      if (Number(state.faceAmount || 0) > 40000) evUl.appendChild(el("li", {}, "Eagle Select maximum face is $40,000 (Eagle Select 1 & 2) / $25,000 (Eagle Select 3)."));
+    } else if (out.carrier === "Quility Term Plus (LGA)") {
+      evUl.appendChild(el("li", {}, "QTP is designed for instant decisions on about 70% of applicants and 20% APS-free decisions within 24 hours — underwritten and issued by Banner Life (William Penn in NY; QTP is not available in NY)."));
+      evUl.appendChild(el("li", {}, "No table ratings — a risk above Standard is declined, not table-rated. Half of intentional weight loss over the last 12 months is added to the current build."));
+      evUl.appendChild(el("li", {}, "Two-year contestability and suicide provisions apply."));
+    } else if (out.carrier === "Corebridge / AGL") {
+      evUl.appendChild(el("li", {}, "SimpliNow Legacy offers instant underwriting decisions with no underwriters — the electronic application plus prescription data; the condition table assigns Level / Graded / Decline by condition and time frame."));
+      evUl.appendChild(el("li", {}, "The prescription list flags medications that impact the death benefit (most result in decline); combinations of conditions can result in worse than listed decisions."));
+      if (age !== null && (age < 50 || age > 80)) evUl.appendChild(el("li", {}, `SimpliNow Legacy is available at ages 50-80 — this age is outside the product's eligibility.`));
+      evUl.appendChild(el("li", {}, "American General GIWL (guaranteed issue, ages 50-80, $5,000-$25,000, no health questions, graded years 1-2) is a separate lane for applicants who cannot pass even the simplified health screen."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));
