@@ -57,6 +57,7 @@ const CARRIER_RULES = {
     eligibility: {
       products: "Banner Life term and permanent portfolio; William Penn products exclusively in New York",
       issueAges: "All issue ages through age 70 (maximum issue age 70)",
+      maxIssueAge: 70,
       faceRange: "All coverage amounts — Horizon digital application (pending applications up to $1,000,000 per applicant)",
       residency: "49 states + DC (Banner Life); William Penn exclusively in New York",
       notes: [
@@ -530,6 +531,7 @@ const CARRIER_RULES = {
     eligibility: {
       products: "Your Term, Advantage Plus II, SMART UL, Strong Foundation",
       issueAges: "0-80 by product (non-medical lanes)",
+      maxIssueAge: 80,
       faceRange: "Non-med issue limits by age and product — e.g., Your Term $400,000 (18-55) / $150,000 (56-80); Strong Foundation $500,000 (18-55) / $250,000 (56-80); SMART UL & AP II $400,000 (16-55) / $150,000 (56-75)",
       residency: "US",
       notes: [
@@ -752,6 +754,7 @@ const CARRIER_RULES = {
     eligibility: {
       products: "Trendsetter Super, Trendsetter LB, Financial Choice IUL (I/II), Financial Foundation IUL (I/II) and TFLIC equivalents",
       issueAges: "0-85 by product and band (Trendsetter LB band one $25,000-$99,000 not available ages 18-22)",
+      maxIssueAge: 85,
       faceRange: "Band-based, minimum from $25,000; IRS 4506-C required at $5,000,000+; cover letters recommended at $10,000,000+",
       residency: "US residents; non-US residents via International Underwriting (no fluidless processing)",
       notes: [
@@ -1354,11 +1357,12 @@ const CARRIER_RULES = {
     guide: {
       title: "Underwriting Guidelines — F&G Quantum",
       version: "ADV5691 (07-2025)",
-      note: "Quantum eligibility: issue ages 0-60, minimum $50,000, maximum $500,000 (ages 0-17) / $1,000,000 (18-60); total in-force + applied with F&G over $1,000,000 requires another product. No internal or external replacements allowed. Underwriting runs from the application plus electronic databases (MIB on all applications, RX/lab/medical-claims history, MVR as needed, ID verification) — a paramedical exam will not improve the rate class. Residents of all 50 US states; Puerto Rico and US territories not eligible. The AMAM simplified-issue products (Express Term, Home Certainty, Term Made Simple, Dignity Solutions) are separate lanes and are not modeled here."
+      note: "Quantum eligibility: issue ages 0-60, minimum $50,000, maximum $500,000 (ages 0-17) / $1,000,000 (18-60); total in-force + applied with F&G over $1,000,000 requires another product. No internal or external replacements allowed. Underwriting runs from the application plus electronic databases (MIB on all applications, RX/lab/medical-claims history, MVR as needed, ID verification) — a paramedical exam will not improve the rate class. Residents of all 50 US states; Puerto Rico and US territories not eligible. American Amicable's simplified-issue products (Express Term, Term Made Simple, Dignity Solutions) are separate lanes modeled under the 'amam' ruleset."
     },
     eligibility: {
-      products: "F&G Quantum (term and IUL); AMAM simplified-issue products are separate lanes, not modeled here",
+      products: "F&G Quantum (term and IUL); American Amicable's simplified-issue products are separate lanes modeled under the 'amam' ruleset",
       issueAges: "0-60",
+      maxIssueAge: 60,
       faceRange: "Minimum $50,000; maximum $500,000 (ages 0-17) / $1,000,000 (18-60)",
       residency: "All 50 US states; Puerto Rico and US territories not eligible",
       notes: [
@@ -1640,6 +1644,7 @@ const CARRIER_RULES = {
     eligibility: {
       products: "F&G Pathsetter (IUL; company underwriting standards per ADV5691)",
       issueAges: "0-80",
+      maxIssueAge: 80,
       faceRange: "Minimum $50,000; retention $1,000,000; automatic reinsurance binding to $10,000,000; jumbo $20,000,000; tables through H (300%)",
       residency: "US",
       notes: [
@@ -2184,6 +2189,344 @@ CARRIER_RULES.national_life = {
     decline: { name: "Decline / specialist review", meaning: "On the uninsurable list (current cancer treatment, A1c 10+ or juvenile-onset diabetes, HIV, dementia, cirrhosis, dialysis, transplant, severe COPD, etc.) — carrier direction required.", color: "#b3364a" }
   }
 };
+
+/* ======================================================================
+   * AMERICAN AMICABLE — American-Amicable Life Insurance Company of Texas /
+   * Occidental Life Insurance Company of North Carolina / Pioneer American /
+   * Pioneer Security Life
+   * Sources (updated 12/24 - 1/25 editions):
+   *  - "Express Term Agent Guide" (3405, 12/24) — level term to age 95 with
+   *    10/20/25/30-yr level premium periods (+ Return of Premium), simplified
+   *    issue, NOT GUARANTEED ISSUE, underwritten standard through Table 4.
+   *  - "Term Made Simple Agent Guide" (1/25) — 10/15/20/30-yr level term,
+   *    Preferred Non-Tobacco / Standard Non-Tobacco / Standard Tobacco
+   *    classes, accept/reject (no table ratings).
+   *  - "Dignity Solutions Agent Guide" (12/24) — final-expense whole life,
+   *    ages 50-85, Immediate / Graded / Return-of-Premium plan tiers.
+   *  - Express Term Prescription Reference Guide + QFSP RX Guide (medication
+   *    cross-check conditions).
+   * All products check the simplified application, MIB, a pharmaceutical
+   * (prescription) facility, and an MVR; a telephone interview is required by
+   * age and amount (mandatory at age 65+ on Term Made Simple).
+   * ==================================================================== */
+CARRIER_RULES.amam = {
+    id: "amam",
+    name: "American Amicable",
+    company: "American-Amicable Life Insurance Company of Texas / Occidental Life Insurance Company of North Carolina / Pioneer American / Pioneer Security Life",
+    guide: {
+      title: "Express Term & Term Made Simple Agent Guides (American Amicable / Occidental)",
+      version: "Express Term 3405 (12/24) · Term Made Simple (1/25) · Dignity Solutions (12/24)",
+      note: "American Amicable's simplified-issue products are underwritten standard through Table 4 on an accept/reject basis — no table ratings are offered (a Table 1-4 risk is issued at Standard rates; above Table 4 is not eligible). Eligibility is based on the simplified application, MIB, a pharmaceutical (prescription) facility check, an MVR, and a telephone interview by age and amount (mandatory at age 65+ on Term Made Simple). These 12/24 and 1/25 editions update the prior 01/20 / 02/20 guides. Dignity Solutions (final-expense whole life, ages 50-85) is a separate lane modeled in eligibility and evidence."
+    },
+    eligibility: {
+      products: "Express Term (level term to 95: 10/20/25/30-yr periods, + Return of Premium), Term Made Simple (level term to 95: 10/15/20/30-yr); Dignity Solutions final-expense whole life is a separate lane (ages 50-85)",
+      issueAges: "Express Term: 18-75 (10-yr), 18-65 (20-yr), 18-60 (25-yr), 18-55 (30-yr); ROP: 20-yr 18-60, 25-yr 18-55, 30-yr 18-50. TMS: 10-yr 18-75, 15-yr 18-70, 20-yr 18-65, 30-yr 18-55. Dignity: 50-85",
+      maxIssueAge: 75,
+      faceRange: "Express Term: $25,000 minimum ($25/mo premium), $500,000 maximum (18-45) / $300,000 (46-75). TMS: $50,000 minimum, $500,000 maximum. Dignity: $2,500 minimum, $50,000 maximum (Immediate 50-75) / $25,000 (76-85 and Graded/ROP)",
+      residency: "US — products not approved in all states (check the State Approval Grid on the company website)",
+      notes: [
+        "Simplified issue, NOT GUARANTEED ISSUE: underwritten standard through Table 4 on an accept/reject basis — no table ratings are offered; above Table 4 is not eligible.",
+        "MIB check, pharmaceutical (prescription) facility check and MVR on all applications; telephone interview by age/amount (TMS: mandatory 65+; Express Term: per the non-med limits chart).",
+        "Third-party premium payor (other than the insured, spouse, business, or business partner) is NOT accepted when the insured is age 30 or older; ages 18-29 parent payor allowed with extra requirements.",
+        "Re-applying: two policies with the Company within 12 months, or three or more lapsed / not-taken / surrendered / canceled policies in five years — new applications are not processed."
+      ],
+      charts: [
+        { product: "Express Term (10/20/25/30-yr + ROP)", ages: "18-75 by term length (18-50 for 30-yr ROP)", face: "$25,000-$500,000 (18-45); $25,000-$300,000 (46-75)" },
+        { product: "Term Made Simple (10/15/20/30-yr)", ages: "18-75 by term length (18-55 for 30-yr)", face: "$50,000-$500,000" },
+        { product: "Dignity Solutions (final expense — separate lane)", ages: "50-85", face: "$2,500-$50,000 (Immediate 50-75); $25,000 max (76-85, Graded, ROP)" }
+      ],
+      chartNote: "Express Term and Term Made Simple share the same simplified-issue build chart (minimum weight, Table-2 and Table-4 maximums) and the same Preferred build chart (unisex). Dignity Solutions uses its own three-plan build chart (Immediate / Graded / Return of Premium)."
+    },
+
+    /* ---- Nicotine ----------------------------------------------------- */
+    nicotine: {
+      classes: [
+        { klass: "preferred", lookbackMonths: 36, label: "Preferred Non-Tobacco (no tobacco/nicotine in 36 months)" },
+        { klass: "standard", lookbackMonths: 12, label: "Standard Non-Tobacco (no tobacco/nicotine in 12 months)" }
+      ],
+      tobaccoLookbackMonths: 12,
+      tobaccoDefinition: "The application asks: 'During the past 12 months have you used tobacco in any form (excluding occasional cigar or pipe use)?' Tobacco in any form includes cigarettes, electronic cigarettes (e-cigs), vaping, chewing tobacco, cigars, pipes, snuff, nicotine patch/gum/aerosol/inhaler, hookah pipe, clove, bidis cigarettes, and oral nicotine pouches. Preferred Non-Tobacco additionally requires no tobacco or nicotine use in the past 36 months.",
+      cigarException: {
+        note: "Occasional cigar or pipe use is excluded from the tobacco question; frequency is not published in the guide — verify with underwriting. Tobacco answers must match the prescription database, medical records, and MIB.",
+        maxPerMonth: 1,
+        maxPerYear: 12
+      },
+      marijuana: "The guides publish no marijuana policy — review under the simplified-issue accept/reject rules and the underlying condition (distributor look-back guidance treats marijuana case by case)."
+    },
+
+    /* ---- Build: Express Term / TMS simplified-issue chart --------------
+       Columns: minimum weight (below = not eligible), Table 2 maximum
+       (Standard), Table 4 maximum (ceiling — above = not eligible). The
+       Preferred build chart (4'8\"-6'7\") sets the Preferred band. Accept/
+       reject: no table ratings; any medical condition combined with build
+       exceeding Table 2 = not eligible. */
+    build: {
+      chart: {
+        58: { min: 86, std: 199, tableMax: 199, pp: 154, p: 154, sp: 182, stdCredit: 182 },
+        59: { min: 88, std: 205, tableMax: 205, pp: 160, p: 160, sp: 188, stdCredit: 188 },
+        60: { min: 90, std: 212, tableMax: 212, pp: 165, p: 165, sp: 195, stdCredit: 195 },
+        61: { min: 93, std: 220, tableMax: 220, pp: 171, p: 171, sp: 201, stdCredit: 201 },
+        62: { min: 95, std: 227, tableMax: 227, pp: 177, p: 177, sp: 208, stdCredit: 208 },
+        63: { min: 99, std: 234, tableMax: 234, pp: 182, p: 182, sp: 215, stdCredit: 215 },
+        64: { min: 101, std: 242, tableMax: 242, pp: 188, p: 188, sp: 221, stdCredit: 221 },
+        65: { min: 104, std: 249, tableMax: 249, pp: 194, p: 194, sp: 228, stdCredit: 228 },
+        66: { min: 106, std: 257, tableMax: 257, pp: 200, p: 200, sp: 235, stdCredit: 235 },
+        67: { min: 110, std: 265, tableMax: 265, pp: 206, p: 206, sp: 243, stdCredit: 243 },
+        68: { min: 113, std: 273, tableMax: 273, pp: 212, p: 212, sp: 250, stdCredit: 250 },
+        69: { min: 117, std: 281, tableMax: 281, pp: 219, p: 219, sp: 257, stdCredit: 257 },
+        70: { min: 120, std: 289, tableMax: 289, pp: 225, p: 225, sp: 265, stdCredit: 265 },
+        71: { min: 125, std: 298, tableMax: 298, pp: 231, p: 231, sp: 272, stdCredit: 272 },
+        72: { min: 129, std: 306, tableMax: 306, pp: 238, p: 238, sp: 280, stdCredit: 280 },
+        73: { min: 133, std: 315, tableMax: 315, pp: 245, p: 245, sp: 288, stdCredit: 288 },
+        74: { min: 136, std: 323, tableMax: 323, pp: 251, p: 251, sp: 296, stdCredit: 296 },
+        75: { min: 140, std: 332, tableMax: 332, pp: 258, p: 258, sp: 304, stdCredit: 304 },
+        76: { min: 143, std: 341, tableMax: 341, pp: 265, p: 265, sp: 312, stdCredit: 312 },
+        77: { min: 146, std: 350, tableMax: 350, pp: 272, p: 272, sp: 320, stdCredit: 320 },
+        78: { min: 149, std: 359, tableMax: 359, pp: 279, p: 279, sp: 329, stdCredit: 329 },
+        79: { min: 153, std: 368, tableMax: 368, pp: 287, p: 287, sp: 337, stdCredit: 337 },
+        80: { min: 157, std: 378, tableMax: 378, sp: 346, stdCredit: 346 },
+        81: { min: 160, std: 387, tableMax: 387, sp: 355, stdCredit: 355 }
+      },
+      rules: {
+        minHeightIn: 58,
+        maxHeightIn: 81,
+        belowChartMin: 0,
+        applyWeightLossAdjustment: false,
+        belowChartDecline: true,
+        noPreferredPlus: true,
+        noStandardPlus: true,
+        noTables: true,
+        conditionTable2Decline: true,
+        halfInchRounding: "Half-inch measurements round up to the next inch.",
+        weightLossAdjustment: "No weight-loss adjustment is published — current height/weight per the chart.",
+        lowBuildReview: "Below the chart minimum for height -> not eligible (accept/reject). Heights below 4'10\" or above 6'9\" -> contact the home office.",
+        aboveStandard: "Above the Table 4 maximum for height -> not eligible (accept/reject; no table ratings).",
+        note: "Simplified-issue chart: minimum weight (below = not eligible), Table 2 maximum (Standard), Table 4 maximum (ceiling). Preferred band per the separate Preferred chart (4'8\"-6'7\"). Underwritten standard through Table 4 on an accept/reject basis — a Table 1-4 risk is issued at Standard rates; above Table 4 is not eligible. Any medical condition combined with build exceeding Table 2 is not eligible."
+      }
+    },
+
+    /* ---- Blood pressure ------------------------------------------------
+       The impairment guide rates by medication history, not readings: 'HTN —
+       controlled with two or fewer medications' -> Standard; uncontrolled or
+       three or more medications -> decline. TMS Preferred excludes BP
+       medication within 10 years (with an exception for one controlled factor).
+       The app captures readings, not med history, so the numeric bands below
+       are conservative placeholders mirroring simplified-issue practice — the
+       med-count rules are enforced through the hypertension condition (Standard
+       ceiling) and the hypertension decline screen. */
+    bp: {
+      preferred_plus: { sys: 135, dia: 85 },
+      preferred: { sys: 140, dia: 90 },
+      standard_plus: null,
+      standard: { sys: 155, dia: 95 }
+    },
+    bpTreatmentNote: "Impairment guide: 'Hypertension — controlled with two or fewer medications, provide current BP reading history' -> Standard; uncontrolled or requiring three or more medications to control -> decline (accept/reject). TMS Preferred excludes BP medication within the past 10 years (exception may be considered for one controlled factor).",
+
+    /* ---- Cholesterol ---------------------------------------------------
+       Guide: 'Cholesterol — controlled with medication' -> Standard; TMS
+       Preferred excludes cholesterol medication within 10 years. Numeric bands
+       are conservative placeholders (the guide publishes none); the medication
+       rules are enforced through the high-cholesterol condition. */
+    cholesterol: {
+      total: { preferred_plus: 240, preferred: 260, standard: 300 },
+      ratio: { preferred_plus: 5.5, preferred: 6, standard: 8 },
+      note: "The guide publishes no numeric cholesterol limits ('Cholesterol — controlled with medication' -> Standard; TMS Preferred excludes cholesterol medication within 10 years). Conservative thresholds mirror simplified-issue practice; readings beyond them are reviewed (refer to home office)."
+    },
+
+    /* ---- Driving ------------------------------------------------------ */
+    driving: {
+      preferred_plus: { maxViolations3yr: 2, cleanYears: 5, note: "No preferred driving criteria are published; the impairment guide declines only serious patterns (3+ violations, DUI, suspension)." },
+      preferred: null,
+      standard_plus: null,
+      standard: null
+    },
+    drivingDeclineNote: "Impairment guide — Decline: within the past three years an alcohol/drug-related infraction, two or more accidents, or three or more driving violations (or any combination); license currently suspended or revoked.",
+
+    /* ---- Family history ----------------------------------------------- */
+    familyHistory: {
+      mapping: { none: "preferred_plus", parent: "preferred_plus", parent_sibling: "standard", multiple: "standard" },
+      preferred_plus: { text: "TMS Preferred: no more than one family member (father, mother, brother, sister) died before age 60 from breast, colon, intestinal, or prostate cancer or from cardiovascular disease." },
+      preferred: { text: "TMS Preferred: no more than one family member died before age 60 from the listed cancers or cardiovascular disease." },
+      standard: { text: "Impairment guide: a natural parent or sibling with diabetes, kidney disease, major organ transplant, or heart/cerebrovascular disease/internal cancer before age 60 -> Standard for LIFE (Decline for the Critical Illness Rider)." }
+    },
+
+    /* Express Term / TMS impairment guide: hazardous avocations within the
+       past two years -> Standard; other pilots flying for pay and student
+       pilots -> Decline; scheduled-airline commercial pilots and private
+       pilots with more than 100 solo hours -> Standard. */
+    avocation: {
+      classCap: "standard",
+      currentHazardousText: "Hazardous occupation/avocation disclosed — Express Term / TMS impairment guide: hazardous avocations participated in within the past two years -> Standard (Preferred not available); DIR/AODIR riders are declined for hazardous avocations (exclusion rider considered). Scheduled-airline commercial pilots and private pilots with more than 100 solo hours -> Standard; other pilots flying for pay and student pilots -> Decline.",
+      cleanText: "No hazardous occupation or avocation disclosed."
+    },
+
+    /* ---- Medical ceilings (impairment guide) -------------------------- */
+    medicalCeilings: [
+      { id: "anxiety", name: "Anxiety", ceilings: [{ klass: "standard", when: "anxiety, one medication, situational in nature — Standard" }], worse: "Major depression, bipolar disorder, or schizophrenia — decline." },
+      { id: "depression", name: "Depression", ceilings: [{ klass: "standard", when: "anxiety, one medication, situational in nature — Standard" }], worse: "Major depression, bipolar disorder, or schizophrenia — decline." },
+      { id: "bipolar", name: "Bipolar disorder", ceilings: [], decline: "Bi-polar disorder — medically diagnosed, treated, or taken medication -> decline." },
+      { id: "schizophrenia", name: "Schizophrenia", ceilings: [], decline: "Schizophrenia / major mental or nervous disorder -> decline." },
+      { id: "substance_treatment", name: "Alcohol/drug treatment history", ceilings: [{ klass: "standard", when: "alcoholism with four or more years since abstaining; drug treatment four years or more with no usage since" }], worse: "Alcoholism within four years of abstaining, or illegal drug use / treatment within the past four years — decline." },
+      { id: "hypertension", name: "High blood pressure", ceilings: [{ klass: "standard", when: "controlled with two or fewer medications" }], worse: "Uncontrolled, or three or more medications to control — decline." },
+      { id: "high_cholesterol", name: "High cholesterol", ceilings: [{ klass: "standard", when: "controlled with medication" }] },
+      { id: "cad", name: "Coronary artery disease / angina", ceilings: [], decline: "Angina / heart disease — medically diagnosed, treated, or taken medication -> decline.", postpone: "Angioplasty or stent — impairment guide: decline until reviewed." },
+      { id: "heart_disease", name: "Heart disease (CHF, cardiomyopathy, valve, device)", ceilings: [], decline: "Heart disease/disorder including heart attack, coronary artery disease, angina, heart murmur, arrhythmia, pacemaker, valve replacement, cardiomyopathy — decline.", postpone: "Cardiac surgery or hospitalization — decline until stable." },
+      { id: "stroke", name: "Stroke / TIA", ceilings: [], decline: "Stroke/CVA — medically diagnosed, treated, or taken medication -> decline.", postpone: "TIA — after six months with no residuals -> Standard; combined with tobacco use -> decline." },
+      { id: "asthma", name: "Asthma", ceilings: [{ klass: "standard", when: "mild, occasional, brief episodes, allergic, seasonal; moderate (more than one episode a month)" }], decline: "Severe asthma, hospitalization or ER visit in the past 12 months, maintenance steroid use, or combined with tobacco use — decline." },
+      { id: "copd", name: "COPD / emphysema / chronic bronchitis", ceilings: [], decline: "COPD, emphysema, or chronic bronchitis — medically diagnosed, treated, or taken medication -> decline.", postpone: "Acute bronchitis — recovered -> Standard." },
+      { id: "sleep_apnea", name: "Sleep apnea", ceilings: [{ klass: "standard", when: "not combined with overweight, poorly controlled HBP, COPD, or heart arrhythmia" }], worse: "Combined with a history of overweight, poorly controlled high blood pressure, COPD, or heart arrhythmia — decline." },
+      { id: "diabetes", name: "Diabetes", ceilings: [{ klass: "standard", when: "controlled with oral medications" }], decline: "Combined with overweight, gout, retinopathy, or protein in urine; diagnosed prior to age 35; tobacco use in the past 12 months; or insulin use — decline." },
+      { id: "kidney_disease", name: "Kidney disease", ceilings: [], decline: "Kidney disease — dialysis, insufficiency, failure, nephrectomy, polycystic kidney disease, or transplant recipient -> decline." },
+      { id: "liver_disease", name: "Liver disease", ceilings: [], decline: "Cirrhosis of the liver, liver impairments, hepatitis B or C (medicated), or hepatomegaly — decline." },
+      { id: "hiv", name: "HIV / AIDS", ceilings: [], decline: "HIV positive / AIDS — decline." },
+      { id: "dementia", name: "Alzheimer's / dementia", ceilings: [], decline: "Alzheimer's disease / dementia — medically diagnosed, treated, or taken medication -> decline." },
+      { id: "seizures", name: "Seizures / epilepsy", ceilings: [{ klass: "standard", when: "petit mal" }], worse: "All other seizures / epilepsy — decline." },
+      { id: "skin_cancer", name: "Skin cancer (basal / squamous)", ceilings: [{ klass: "standard", when: "basal or squamous cell skin carcinoma, isolated occurrence" }] },
+      { id: "other_cancer", name: "Other cancer history", ceilings: [{ klass: "standard", when: "eight years since surgery, diagnosis, or last treatment, no recurrence or additional occurrence" }], decline: "All other cancer / melanoma — decline (8-year clear rule; basal or squamous isolated occurrence -> Standard).", postpone: "Cancer diagnosed/treated within the 8-year window — decline screen." },
+      { id: "transplant", name: "Organ transplant", ceilings: [], decline: "Organ or bone marrow transplant recipient, or on the waiting list — decline." },
+      { id: "paralysis", name: "Paralysis", ceilings: [], decline: "Paralysis including paraplegia and quadriplegia — decline." }
+    ],
+
+    /* ---- Postpone triggers ------------------------------------------- */
+    postponeTriggers: [
+      { id: "pending_test", text: "Diagnostic testing, surgery, or hospitalization recommended within the past 12 months with results not received or not completed", reason: "Impairment guide: not eligible until completed — postpone / pre-review; resubmit once results are available." }
+    ],
+
+    /* ---- Decline / not-eligible triggers ------------------------------ */
+    declineTriggers: [
+      { id: "alcohol_active", text: "Current alcohol abuse, or alcoholism with less than four years since abstaining", reason: "Express Term/TMS impairment guide." },
+      { id: "drug_use_recent", text: "Illegal drug use or drug-abuse treatment within the past four years", reason: "Express Term/TMS impairment guide." },
+      { id: "criminal_active", text: "Convicted of a felony or misdemeanor within the past five years; probation or parole within the past six months", reason: "Express Term/TMS impairment guide." },
+      { id: "amam_third_party_payor", text: "Third-party premium payor with the insured age 30 or older", reason: "Applications with a third-party payor (other than the insured, spouse, business, or business partner) are not accepted at ages 30+." },
+      { id: "amam_heart", text: "Heart disease / disorder — heart attack, coronary artery disease, angina, heart murmur, arrhythmia, angioplasty, bypass, pacemaker, valve replacement, or cardiomyopathy", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "amam_stroke", text: "Stroke / CVA — medically diagnosed, treated, or taken medication", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "amam_copd", text: "COPD / emphysema / chronic bronchitis", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "amam_paralysis", text: "Paralysis including paraplegia and quadriplegia", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "amam_liver", text: "Liver impairments / hepatomegaly (and cirrhosis, hepatitis B/C, via the liver condition)", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "dementia", text: "Alzheimer's disease or dementia", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "hiv", text: "HIV positive / AIDS", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "cirrhosis", text: "Cirrhosis of the liver", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "renal_failure", text: "Kidney disease — dialysis, insufficiency, failure, nephrectomy, polycystic kidney disease, or transplant recipient", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "transplant", text: "Organ or bone marrow transplant recipient, or on the waiting list", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "suicide_multiple", text: "Suicide attempt — medically diagnosed, treated, or taken medication (the app captures multiple attempts via the suicide-history flag)", reason: "Express Term/TMS impairment guide — decline." },
+      { id: "oxygen_use", text: "Oxygen use", reason: "Impairment guide — decline screen." },
+      { id: "adl_dependence", text: "Assistance needed with activities of daily living", reason: "Impairment guide — decline screen." },
+      { id: "facility_care", text: "Facility / hospice / home-health care or nursing home confinement", reason: "Impairment guide — decline screen." },
+      { id: "wheelchair", text: "Chronic wheelchair dependence due to illness or disability", reason: "Impairment guide — decline screen." }
+    ],
+
+    drugDeclineYears: 4,
+    drugRecoveryTiers: [{ minYears: 4, klass: "standard" }],
+    substanceTiers: { declineYears: 4, tiers: [{ minYears: 4, klass: "standard" }, { minYears: 0, klass: "table" }] },
+
+    conditionModels: {
+      anxiety: { best: "standard" },
+      depression: { best: "standard" },
+      bipolar: { best: "table" },
+      other_cancer: { declineWithinYears: 8, afterCeiling: "standard" }
+    },
+
+    /* Diabetes: controlled with oral medications -> Standard; insulin use,
+       tobacco use in the past 12 months, onset before age 35, or combined
+       with overweight/gout/retinopathy/protein -> decline. */
+    diabetes: { type1Ceiling: "standard", type2Ceiling: "standard", a1cDeclineMin: 10, juvenileOnsetDeclineAge: 35 },
+
+    /* ---- Dignity Solutions final-expense lane (ages 50-85) ------------ */
+    dignity: {
+      note: "Dignity Solutions (simplified-issue final-expense whole life, ages 50-85) is a separate lane: the plan tier is set by eight yes/no health questions — Immediate Death Benefit (all questions No), Graded Death Benefit (yes to question 8), Return of Premium Death Benefit (yes to any of questions 4-7), and NO coverage if any of questions 1-3 is answered yes. Maximum face: $50,000 (Immediate, ages 50-75) / $25,000 (76-85 and for Graded/ROP); minimum $2,500. Its own three-plan build chart applies. Not modeled as a class — the estimate reflects the simplified-issue term lane.",
+      buildChart: {
+        53: { immed: 173, graded: "174-180", rop: "181-190", immedMin: 82, ropMin: "77-81" },
+        54: { immed: 180, graded: "182-188", rop: "189-198", immedMin: 84, ropMin: "79-83" },
+        55: { immed: 187, graded: "189-196", rop: "197-206", immedMin: 86, ropMin: "81-85" },
+        56: { immed: 197, graded: "198-204", rop: "205-214", immedMin: 88, ropMin: "83-87" },
+        57: { immed: 204, graded: "205-212", rop: "213-222", immedMin: 90, ropMin: "85-89" },
+        58: { immed: 211, graded: "212-220", rop: "221-230", immedMin: 92, ropMin: "87-91" },
+        59: { immed: 218, graded: "219-228", rop: "229-238", immedMin: 94, ropMin: "89-93" },
+        60: { immed: 225, graded: "226-236", rop: "237-246", immedMin: 96, ropMin: "91-95" },
+        61: { immed: 233, graded: "234-244", rop: "245-254", immedMin: 99, ropMin: "94-98" },
+        62: { immed: 241, graded: "242-252", rop: "253-262", immedMin: 101, ropMin: "96-100" },
+        63: { immed: 248, graded: "249-260", rop: "261-271", immedMin: 105, ropMin: "100-104" },
+        64: { immed: 256, graded: "257-268", rop: "269-280", immedMin: 107, ropMin: "102-106" },
+        65: { immed: 264, graded: "265-276", rop: "277-288", immedMin: 110, ropMin: "105-109" },
+        66: { immed: 273, graded: "274-285", rop: "286-297", immedMin: 112, ropMin: "107-111" },
+        67: { immed: 281, graded: "282-294", rop: "295-306", immedMin: 116, ropMin: "111-115" },
+        68: { immed: 289, graded: "290-303", rop: "304-316", immedMin: 119, ropMin: "114-118" },
+        69: { immed: 298, graded: "299-312", rop: "313-325", immedMin: 123, ropMin: "118-122" },
+        70: { immed: 307, graded: "308-321", rop: "322-335", immedMin: 126, ropMin: "121-125" },
+        71: { immed: 315, graded: "316-330", rop: "331-344", immedMin: 131, ropMin: "126-130" },
+        72: { immed: 324, graded: "325-339", rop: "340-354", immedMin: 135, ropMin: "130-134" },
+        73: { immed: 334, graded: "335-349", rop: "350-364", immedMin: 139, ropMin: "134-138" },
+        74: { immed: 343, graded: "344-359", rop: "360-374", immedMin: 142, ropMin: "137-141" },
+        75: { immed: 352, graded: "353-368", rop: "369-384", immedMin: 146, ropMin: "141-145" },
+        76: { immed: 361, graded: "362-378", rop: "379-394", immedMin: 149, ropMin: "144-148" },
+        77: { immed: 370, graded: "371-388", rop: "389-404", immedMin: 152, ropMin: "147-151" },
+        78: { immed: 379, graded: "380-398", rop: "399-414", immedMin: 156, ropMin: "151-155" },
+        79: { immed: 388, graded: "389-408", rop: "409-424", immedMin: 160, ropMin: "155-159" },
+        80: { immed: 397, graded: "398-418", rop: "419-434", immedMin: 164, ropMin: "159-163" },
+        81: { immed: 406, graded: "407-428", rop: "429-440", immedMin: 168, ropMin: "162-167" }
+      },
+      noCoverage: [
+        "Assistance with bathing, dressing, eating, or toileting", "Amputation caused by disease", "Bed confinement",
+        "Current cancer or a history of metastatic cancer", "Home health care", "Hospice care", "Currently hospitalized",
+        "Nursing facility confinement", "Oxygen use", "Chronic wheelchair use due to illness or disease",
+        "Congestive heart failure", "Alzheimer's disease / dementia", "ALS (Lou Gehrig's disease)", "Kidney dialysis advised",
+        "Liver failure", "Mental incapacity", "Organ transplant advised", "Respiratory failure", "Terminal illness / end-stage disease", "HIV / AIDS"
+      ],
+      ropTriggers: [
+        "Diabetes with retinopathy, nephropathy, or neuropathy", "Insulin before age 50", "Insulin shock or diabetic coma",
+        "Chronic kidney disease / kidney failure / renal insufficiency", "Cancer — more than one occurrence, or any cancer within 2 years",
+        "Heart attack / angina / angioplasty / heart surgery / bypass within 2 years", "Stroke / TIA / lupus / COPD / hepatitis C / cirrhosis / pancreatitis within 2 years",
+        "Pacemaker or defibrillator within 2 years", "Oxygen required within 2 years", "Alcohol or drug abuse within 2 years",
+        "Pending diagnostic testing, surgery, or hospitalization within 2 years"
+      ],
+      gradedTriggers: [
+        "3-year windows of the ROP conditions", "Aneurysm, angioplasty, circulatory/heart surgery, CABG within 3 years",
+        "Multiple sclerosis, muscular dystrophy, Parkinson's disease, seizures, or paralysis within 3 years", "Ulcerative colitis within 3 years", "Liver disease treated within 3 years"
+      ]
+    },
+
+    /* ---- Evidence / workflow ----------------------------------------- */
+    evidence: {
+      apsAge: 200,
+      genericGrid: false,
+      apsConditions: [
+        "High blood pressure", "Diabetes", "Asthma", "COPD / emphysema / chronic bronchitis", "Congestive heart failure (CHF)",
+        "Angina", "Stroke / heart or circulatory disease", "Cancer", "AIDS / HIV", "Bi-polar / schizophrenia",
+        "Parkinson's disease", "Multiple sclerosis", "Kidney dialysis", "Organ / tissue transplant", "Seizures",
+        "Blood clot / deep vein thrombosis", "Gout", "Alcohol / drugs"
+      ],
+      amountRules: [
+        { ageMin: 18, ageMax: 55, amountMin: 25000, items: ["Express Term: no telephone interview required at ages 18-55 (required only if the Critical Illness Rider at 100% acceleration is applied for)"] },
+        { ageMin: 56, ageMax: 65, amountMin: 25000, amountMax: 100000, items: ["Telephone interview required only if the Critical Illness Rider at 100% acceleration is applied for (Express Term ages 56-65)"] },
+        { ageMin: 66, ageMax: 75, amountMin: 25000, items: ["Telephone interview required (Express Term ages 66-75, all amounts)"] },
+        { ageMin: 65, ageMax: 75, amountMin: 50000, items: ["Term Made Simple: telephone interview required for all proposed insureds ages 65 and above"] },
+        { ageMin: 18, ageMax: 200, amountMin: 25000, items: ["MIB check", "Pharmaceutical (prescription) facility check", "MVR"] }
+      ],
+      acceleratedUw: { ageMin: 18, ageMax: 75, amountMin: 25000, amountMax: 500000, note: "Mobile application decision engine: a point-of-sale underwriting decision appears on screen within seconds — approved as applied for (firm), telephone interview needed, refer to home office, or not eligible for coverage." },
+      note: "Simplified-issue workflow: the simplified application, MIB, a pharmaceutical (prescription) facility check, and an MVR on every application; a telephone interview by age and amount (Express Term non-med limits: none at 18-55, 56-65 only for CIR at 100% up to $100,000, 66-75 at all amounts; Term Made Simple: mandatory at age 65+). Underwriting reserves the right to request medical records. Auto-declines should not be submitted — conditions on the impairment-guide decline list, or build outside the chart, are not eligible. The Express Term Prescription Reference Guide maps medications to plan eligibility (HTN controlled with 2 or fewer medications; diabetes — see the impairment criteria).",
+      temporaryCoverage: "Temporary or conditional coverage exists only under the exact terms of the conditional receipt (premium paid, no material change in health) — never because the app gives a favorable estimate."
+    },
+
+    /* ---- Financial justification ------------------------------------- */
+    financial: {
+      incomeMultipliers: [],
+      note: "The guides publish no income-multiplier schedule — the application requests annual salary and total coverage in force, and the face amount is reviewed individually. Maximum face: Express Term $500,000 (18-45) / $300,000 (46-75); Term Made Simple $500,000; Dignity Solutions $50,000 (Immediate 50-75) / $25,000 (76-85, Graded, ROP). Third-party premium payor is not accepted at ages 30+.",
+      maxFace: 500000
+    },
+
+    /* No credit program is published in the American Amicable guides. */
+    credit: null,
+
+    classInfo: {
+      preferred_plus: { name: "Preferred Non-Tobacco", meaning: "The best American Amicable class (no Preferred Plus is published). See Preferred Non-Tobacco.", color: "#0e7a5f" },
+      preferred: { name: "Preferred Non-Tobacco", meaning: "No tobacco or nicotine in 36 months; 'no' to the Preferred criteria (no BP/cholesterol medication within 10 years, no diabetes/cancer/cardiac history within 10 years, no alcohol/drug treatment in 10 years, no more than one early family death, no more than two moving violations and no DUI in 5 years, no felony/misdemeanor in 5 years); within the Preferred build chart.", color: "#1b9a7a" },
+      standard_plus: { name: "Standard Non-Tobacco", meaning: "No Standard Plus class — American Amicable issues Standard on an accept/reject basis.", color: "#3b82b0" },
+      standard: { name: "Standard Non-Tobacco", meaning: "No tobacco or nicotine in 12 months; standard risk through Table 4 — issued at Standard rates on an accept/reject basis (no table ratings; above Table 4 is not eligible).", color: "#4a6fa5" },
+      table: { name: "Not offered (accept/reject)", meaning: "No table ratings — a Table 1-4 risk is issued at Standard rates; above Table 4 is not eligible.", color: "#b8860b" },
+      postpone: { name: "Postpone / pre-review", meaning: "Not eligible until completed — e.g., diagnostic testing, surgery, or hospitalization recommended within the past 12 months with results pending. Resubmit once results are available.", color: "#8a5fb8" },
+      decline: { name: "Decline / not eligible", meaning: "On the Express Term / TMS impairment-guide decline list (heart disease, stroke, COPD, cancer within 8 years, diabetes with insulin/tobacco/early onset/complications, HIV, dementia, cirrhosis, kidney failure, transplant, paralysis, criminal history within 5 years, uncontrolled BP, etc.) — do not submit; carrier direction required.", color: "#b3364a" }
+    }
+  };
 
 /* ======================================================================
  * Medication reference dictionary

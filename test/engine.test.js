@@ -116,6 +116,13 @@ add("3 moving violations -> Standard Plus", d => { d.movingViolations3yr = 3; },
 
 add("DUI 2 yrs ago -> Standard (clean 2yr)", d => { d.seriousDriving = true; d.seriousDrivingYears = 2; }, { klass: "standard", tobacco: false });
 
+/* Regression: legacy state from before the checkPill switch stored
+   seriousDriving as the string "no"; the engine must treat that exactly
+   like false (a truthy "no" would tank every carrier to substandard). */
+add("Stale string 'no' for seriousDriving behaves like false", d => { d.seriousDriving = "no"; d.seriousDrivingYears = ""; }, { klass: "preferred_plus", tobacco: false });
+
+add("Stale string 'yes' for seriousDriving with years behaves like true", d => { d.seriousDriving = "yes"; d.seriousDrivingYears = 2; }, { klass: "standard", tobacco: false });
+
 /* ---------- Foresters scenarios ---------- */
 const fbase = JSON.parse(JSON.stringify(base));
 fbase.carrier = "foresters";
@@ -770,6 +777,19 @@ add("Marijuana daily -> no decline for Banner (no published daily rule)", d => {
 add("Marijuana medicinal -> rated on underlying condition, no class change", d => { d.marijuana = "medicinal"; }, { klass: "preferred_plus", tobacco: false });
 add("Quantum total line (existing + face) over $1M -> another product", d => { d.carrier = "fg_quantum"; d.existingCoverage = 600000; d.faceAmount = 500000; }, { klass: "preferred_plus", tobacco: false, wantFlag: "financial_review" });
 add("Quantum replacement disclosed -> not allowed, financial review", d => { d.carrier = "fg_quantum"; d.replacement = "yes"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "financial_review" });
+
+// ---- carrier maximum issue age (eligibility gate) --------------------------
+// Above a carrier's published maximum issue age the application is not
+// accepted — report an eligibility decline instead of fabricating a class
+// from data that was never published for that age.
+add("Quantum age 61 -> outside issue ages (0-60) -> decline, not a fabricated table", d => { d.carrier = "fg_quantum"; d.age = 61; }, { klass: "decline", tobacco: false, wantFlag: "possible_decline" });
+add("Quantum age 60 (issue-age cap inclusive) -> preferred_plus", d => { d.carrier = "fg_quantum"; d.age = 60; }, { klass: "preferred_plus", tobacco: false });
+add("Banner age 71 -> outside issue ages (max 70) -> decline", d => { d.carrier = "banner"; d.age = 71; }, { klass: "decline", tobacco: false });
+add("Banner age 70 (cap inclusive) -> preferred_plus", d => { d.carrier = "banner"; d.age = 70; }, { klass: "preferred_plus", tobacco: false });
+add("AMAM age 76 -> outside term-lane issue ages (max 75) -> decline", d => { d.carrier = "amam"; d.age = 76; }, { klass: "decline", tobacco: false });
+add("Foresters age 81 -> outside issue ages (max 80) -> decline", d => { d.carrier = "foresters"; d.age = 81; }, { klass: "decline", tobacco: false });
+add("Transamerica age 86 -> outside issue ages (max 85) -> decline", d => { d.carrier = "transamerica"; d.age = 86; }, { klass: "decline", tobacco: false });
+add("Pathsetter age 81 -> outside issue ages (max 80) -> decline", d => { d.carrier = "fg_pathsetter"; d.age = 81; }, { klass: "decline", tobacco: false });
 add("Banner financed premium -> accelerated UW excluded", d => { d.financing = "yes"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible", wantEvidence: ["accelerated underwriting not available"] });
 add("Banner replacement -> accelerated UW excluded", d => { d.replacement = "yes"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "accelerated_uw_possible" });
 add("Policy purpose business -> BIQ evidence listed", d => { d.policyPurpose = "business"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Business insurance questionnaire"] });
@@ -798,6 +818,98 @@ add("Foreign residence under 6 months -> note only, no flag", d => { d.foreignRe
 add("Nicotine conflict: ever=no but 10-yr=yes -> conflict flag", d => { d.usedNicotine = "yes"; d.nicotineEver = "no"; d.nicotineLastUse = monthsAgo(3); }, { klass: "preferred_plus", tobacco: true, wantFlag: "conflicting_disclosure" });
 add("Nicotine quit 15 yrs ago -> beyond-lookback note, no flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 15; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "conflicting_disclosure", wantEvidence: ["outside every carrier's lookback"] });
 add("Nicotine quit 5 yrs ago but 10-yr=no -> conflict flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 5; }, { klass: "preferred_plus", tobacco: false, wantFlag: "conflicting_disclosure" });
+
+/* ---- American Amicable (Express Term / Term Made Simple) ---------------- */
+const abase = JSON.parse(JSON.stringify(base));
+abase.carrier = "amam";
+abase.usedNicotine = "no";
+
+function aadd(name, mutate, expect) {
+  const d = JSON.parse(JSON.stringify(abase));
+  mutate(d);
+  scenarios.push({ name: "[AMAM] " + name, d, expect });
+}
+
+aadd("Healthy clean profile -> Preferred Non-Tobacco", d => {}, { klass: "preferred", tobacco: false });
+
+aadd("Tobacco user (cigarette) clean profile -> Preferred Tobacco", d => {
+  d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette";
+}, { klass: "preferred", tobacco: true });
+
+aadd("Quit nicotine 30 months ago -> Standard Non-Tobacco (needs 36 for Preferred)", d => {
+  d.usedNicotine = true; d.nicotineLastUse = monthsAgo(30); d.nicotineProduct = "vape";
+}, { klass: "standard", tobacco: false });
+
+aadd("Build 5'10/200 lb -> Preferred (preferred chart max 225)", d => { d.heightIn = 70; d.weightLb = 200; }, { klass: "preferred", tobacco: false });
+
+aadd("Build 5'10/240 lb -> Standard (Table-2 265 / Table-4 289)", d => { d.heightIn = 70; d.weightLb = 240; }, { klass: "standard", tobacco: false });
+
+aadd("Build 5'10/300 lb -> above Table 4 -> not eligible -> decline", d => { d.heightIn = 70; d.weightLb = 300; }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+
+aadd("Build below chart minimum (4'10/80 lb) -> not eligible -> decline", d => { d.heightIn = 58; d.weightLb = 80; }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+
+aadd("Build 5'10/275 lb + diabetes -> condition over Table 2 -> not eligible", d => {
+  d.heightIn = 70; d.weightLb = 275;
+  d.conditions = [{ id: "diabetes", status: "current", severity: "mild", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+
+aadd("Stroke -> decline (impairment guide)", d => { d.conditions = [{ id: "stroke", status: "current", severity: "mild", control: "good" }]; }, { klass: "decline", tobacco: false });
+
+aadd("COPD -> decline", d => { d.conditions = [{ id: "copd", status: "current", severity: "moderate", control: "fair" }]; }, { klass: "decline", tobacco: false });
+
+aadd("Paralysis (paraplegia) -> decline", d => { d.conditions = [{ id: "paralysis", status: "current", severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false });
+
+aadd("Liver disease -> decline", d => { d.conditions = [{ id: "liver_disease", status: "current", severity: "moderate", control: "fair" }]; }, { klass: "decline", tobacco: false });
+
+aadd("Diabetes controlled oral -> Standard", d => {
+  d.conditions = [{ id: "diabetes", status: "current", severity: "mild", control: "good", insulin: "no" }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Diabetes on insulin -> decline", d => {
+  d.conditions = [{ id: "diabetes", status: "current", severity: "mild", control: "good", insulin: "yes" }];
+}, { klass: "decline", tobacco: false });
+
+aadd("Diabetes onset before 35 -> decline", d => {
+  d.conditions = [{ id: "diabetes", status: "current", severity: "mild", control: "good", insulin: "no", onsetAge: 28 }];
+}, { klass: "decline", tobacco: false });
+
+aadd("Cancer resolved 3 yrs -> decline (8-yr window)", d => {
+  d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 3, severity: "moderate", control: "good" }];
+}, { klass: "decline", tobacco: false });
+
+aadd("Cancer resolved 10 yrs -> Standard (8-yr clear)", d => {
+  d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 10, severity: "moderate", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Anxiety 1 med -> Standard ceiling", d => {
+  d.conditions = [{ id: "anxiety", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Pending diagnostic testing -> postpone until results", d => { d.pendingTests = "yes"; }, { klass: "postpone", tobacco: false });
+
+aadd("Drug use 3 yrs ago -> decline (4-yr window)", d => { d.drugAbuse = "yes"; d.drugAbuseYears = 3; }, { klass: "decline", tobacco: false });
+
+aadd("Drug use 6 yrs ago -> Standard (4-yr recovery)", d => { d.drugAbuse = "yes"; d.drugAbuseYears = 6; }, { klass: "standard", tobacco: false });
+
+aadd("Third-party payor age 40 -> not accepted -> decline", d => { d.premiumPayor = "third_party"; }, { klass: "decline", tobacco: false });
+
+aadd("Current parole -> decline (5-yr conviction / 6-mo parole windows)", d => { d.paroleCurrent = "yes"; }, { klass: "decline", tobacco: false });
+
+aadd("Hazardous avocation -> capped at Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+
+aadd("3 moving violations -> decline (3+ violates)", d => { d.movingViolations3yr = 3; }, { klass: "decline", tobacco: false });
+
+aadd("2 moving violations -> Preferred (no preferred driving criteria published)", d => { d.movingViolations3yr = 2; }, { klass: "preferred", tobacco: false });
+
+aadd("BP 152/92 -> Standard (Standard band 155/95)", d => { d.bpSys = 152; d.bpDia = 92; }, { klass: "standard", tobacco: false });
+
+aadd("BP 162/98 -> beyond standard -> not eligible (accept/reject)", d => { d.bpSys = 162; d.bpDia = 98; }, { klass: "decline", tobacco: false });
+
+aadd("Face 600K -> exceeds $500K maximum -> financial review", d => { d.faceAmount = 600000; }, { klass: "preferred", tobacco: false, wantFlag: "financial_review" });
+
+aadd("Dignity band (60 / $25K) -> Dignity final-expense evidence line", d => { d.age = 60; d.faceAmount = 25000; }, { klass: "preferred", tobacco: false, wantEvidence: ["Dignity Solutions"] });
+
+aadd("Metformin undisclosed -> mismatch + APS trigger", d => { d.medicationsText = "metformin 500mg"; }, { klass: "preferred", tobacco: false, wantMeds: { disclosed: 0, undisclosed: 1, aps: 1 }, wantFlag: "undisclosed_meds" });
 
 let pass = 0, fail = 0;
 

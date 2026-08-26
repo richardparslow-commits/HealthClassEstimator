@@ -21,7 +21,8 @@ const App = (() => {
     ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"],
     ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"],
     ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"],
-    ["national_life", "National Life Group (NL / LSW)"]
+    ["national_life", "National Life Group (NL / LSW)"],
+    ["amam", "American Amicable (Express Term / Term Made Simple)"]
   ];
 
   let state = defaultState();
@@ -1336,6 +1337,20 @@ const App = (() => {
       if (Number(state.faceAmount || 0) >= 2000000) evUl.appendChild(el("li", {}, "Face over $2,000,000: APS + Personal Financial Questionnaire (form 1392) + Electronic Inspection Report required."));
       if (Number(state.faceAmount || 0) >= 5000000) evUl.appendChild(el("li", {}, "Face over $5,000,000: EKG added; income verification (4506T/W2/1099); third-party verified financials (age 70+ at $5M+, all ages at $10M+)."));
       if (age !== null && age >= 60) evUl.appendChild(el("li", {}, "Age 60+ requires routine health care with a physical within the last 24 months — otherwise declined."));
+    } else if (out.carrier === "American Amicable") {
+      evUl.appendChild(el("li", {}, "Simplified-issue workflow: application, MIB check, pharmaceutical (prescription) facility check, and MVR on every application — no exams or blood work required."));
+      evUl.appendChild(el("li", {}, "Telephone interview by age/amount — Term Made Simple: mandatory at age 65+; Express Term: none at 18-55, ages 56-65 only for the Critical Illness Rider at 100%, ages 66-75 at all amounts."));
+      if (age !== null && age >= 66) evUl.appendChild(el("li", {}, "Telephone interview required at this age (ages 66-75, all amounts)."));
+      if (Number(state.faceAmount || 0) > 300000 && age !== null && age >= 46) {
+        evUl.appendChild(el("li", {}, "Express Term maximum face at ages 46-75 is $300,000 — this amount exceeds it; verify the applicable product before submitting."));
+      }
+      if (age !== null && age >= 30 && state.premiumPayor === "third_party") {
+        evUl.appendChild(el("li", {}, "Third-party premium payor with the insured age 30 or older — American Amicable does not accept these applications (spouse, business, or business partner payors are accepted)."));
+      }
+      if (age !== null && age >= 50 && age <= 85 && Number(state.faceAmount || 0) >= 2500 && Number(state.faceAmount || 0) <= 50000) {
+        evUl.appendChild(el("li", {}, "Dignity Solutions final-expense lane applies at this age/face band — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers; coverage is declined if any of the first three health questions are answered yes."));
+      }
+      evUl.appendChild(el("li", {}, "Underwriting is standard through Table 4 on an accept/reject basis — no table ratings are offered; conditions on the impairment-guide decline list and build outside the chart should not be submitted."));
     }
     evUl.appendChild(el("li", {}, "Authorization: MIB, FCRA consumer report, prescription history, and medical-record authorization required."));
     evUl.appendChild(el("li", {}, "Condition-specific questionnaires: " + questionnaireNames(state.conditions) + "."));

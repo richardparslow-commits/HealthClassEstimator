@@ -35,6 +35,18 @@ const Engine = (() => {
     return classWorseThan(a, b) ? a : b;
   }
 
+  /* Normalize the shared class ladder for simplified-issue carriers that do
+     not publish the full ladder (e.g., American Amicable: accept/reject
+     underwriting with no Preferred Plus, Standard Plus, or table classes). */
+  function normK(rules, k) {
+    const b = rules && rules.build && rules.build.rules;
+    if (!b) return k;
+    if (b.noPreferredPlus && k === "preferred_plus") return "preferred";
+    if (b.noStandardPlus && k === "standard_plus") return "standard";
+    if (b.noTables && k === "table") return "decline";
+    return k;
+  }
+
   /* ---------- build evaluation ---------------------------------------- */
 
   /**
@@ -132,15 +144,23 @@ const Engine = (() => {
     // BMI screening flag
     const bmi = adjustedWeight / (lookupHeight * lookupHeight) * 703;
     const bmiLow = bmi < rules.build.rules.belowChartMin;
+    const br = rules.build.rules || {};
 
     const chartMin = band.min !== undefined ? band.min : (rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89);
     let klass = null;
     let bandName = "";
     let tableRating = null;
     if (bmiLow || adjustedWeight < chartMin) {
-      klass = "manual_review";
-      bandName = "below chart minimum";
-      flags.push("manual_review");
+      if (br.belowChartDecline) {
+        // Simplified-issue accept/reject: below the chart minimum = not eligible.
+        klass = "decline";
+        bandName = "below chart minimum — not eligible (accept/reject underwriting)";
+        flags.push("bmi_decline");
+      } else {
+        klass = "manual_review";
+        bandName = "below chart minimum";
+        flags.push("manual_review");
+      }
     } else if (adjustedWeight <= band.pp) {
       klass = "preferred_plus"; bandName = "Preferred Plus";
     } else if (adjustedWeight <= band.p) {
@@ -177,6 +197,24 @@ const Engine = (() => {
       }
     }
 
+    /* Simplified-issue carriers (e.g., American Amicable) publish no
+       Preferred Plus / Standard Plus / table classes — accept/reject
+       underwriting through a build ceiling. Normalize the ladder and treat
+       weights outside the published chart as not eligible. */
+    if (br.noPreferredPlus && klass === "preferred_plus") { klass = "preferred"; bandName = "Preferred"; }
+    if (br.noStandardPlus && klass === "standard_plus") { klass = "standard"; bandName = "Standard"; }
+    if (br.noTables) {
+      if (klass === "table") {
+        klass = "decline";
+        bandName = "above the Standard maximum — not eligible (accept/reject underwriting)";
+        flags.push("bmi_decline");
+      } else if (klass === "substandard_review") {
+        klass = "decline";
+        bandName = "above the highest published weight — not eligible (accept/reject underwriting)";
+        flags.push("bmi_decline");
+      }
+    }
+
     return {
       klass,
       bandName,
@@ -184,6 +222,7 @@ const Engine = (() => {
       adjustedWeight: Math.round(adjustedWeight),
       bmi: Math.round(bmi * 10) / 10,
       bmiLow,
+      aboveTable2: band.stdCredit !== undefined && adjustedWeight > band.stdCredit,
       weightNote,
       flags,
       detail: `${bandName} band at ${lookupHeight}" (raw height ${rawHeight}", rounded up)${band._sex ? ", " + band._sex + " chart" : ""}. ${weightNote}`
@@ -317,7 +356,7 @@ const Engine = (() => {
       return { klass: null, missing: true, detail: "Driving history not provided." };
     }
     const mv = Number(d.movingViolations3yr);
-    const serious = d.seriousDriving ? d.seriousDrivingYears : null; // years since last DUI/reckless/suspension
+    const serious = isYes(d.seriousDriving) ? d.seriousDrivingYears : null; // years since last DUI/reckless/suspension
     let klass = null;
     const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
     for (const k of order) {
@@ -327,10 +366,10 @@ const Engine = (() => {
       if (t.maxViolations3yr !== undefined) {
         // Banner shape
         if (mv > t.maxViolations3yr) ok = false;
-        if (d.seriousDriving && (serious === null || serious < t.cleanYears)) ok = false;
+        if (isYes(d.seriousDriving) && (serious === null || serious < t.cleanYears)) ok = false;
       } else {
         // Foresters shape: duiCleanYears + maxViolations over violationsYears
-        if (d.seriousDriving && (serious === null || serious < t.duiCleanYears)) ok = false;
+        if (isYes(d.seriousDriving) && (serious === null || serious < t.duiCleanYears)) ok = false;
         if (t.violationsYears >= 3 && mv > t.maxViolations) ok = false;
       }
       if (ok) { klass = k; break; }
@@ -433,6 +472,12 @@ const Engine = (() => {
           if (c.insulin === "yes" && c.tobaccoCurrent) {
             // tobacco + insulin diabetes is heavily rated
             ceiling = worstOf(ceiling || "standard", "table");
+          }
+          if (rules.id === "amam" && (isYes(c.insulin) || isYes(c.tobaccoCurrent))) {
+            // American Amicable: diabetes with insulin use or tobacco use in the
+            // past 12 months is on the decline list regardless of control.
+            decline.push({ id: c.id, text: `Diabetes ${isYes(c.insulin) ? "with insulin use" : "with tobacco use in the past 12 months"} — American Amicable decline list.` });
+            ceiling = "decline";
           }
         } else if (meta.id === "anxiety" || meta.id === "depression") {
           if (severity === "mild" && control === "good" && (c.medCount === 0 || (c.medCount === 1 && status === "current"))) {
@@ -729,8 +774,15 @@ const Engine = (() => {
     const income = Number(d.income);
     const face = Number(d.faceAmount);
     const age = d.age ? Number(d.age) : null;
+    const mults = (rules.financial && rules.financial.incomeMultipliers) || [];
+    if (!mults.length) {
+      // Carrier publishes no income-multiplier schedule (e.g., American
+      // Amicable simplified-issue products): face amount vs. income is
+      // reviewed individually.
+      return { flag: null, detail: "No published income-multiplier schedule — face amount vs. income is reviewed individually by underwriting.", ok: null, multiplier: null };
+    }
     if (age === null) return { flag: "missing_financial", detail: "Age not provided — financial multiplier unknown." };
-    const m = (rules.financial.incomeMultipliers || []).find(x => age >= x.ageMin && age <= x.ageMax);
+    const m = mults.find(x => age >= x.ageMin && age <= x.ageMax);
     if (!m) return { flag: "missing_financial", detail: "No financial multiplier for age." };
     const max = typeof m.multiplier === "number" ? m.multiplier * income : null;
     const ok = max === null ? null : face <= max;
@@ -868,6 +920,16 @@ const Engine = (() => {
       }
     }
 
+    /* American Amicable Dignity Solutions final-expense lane: when the profile
+       fits the final-expense band (ages 50-85, face $2,500-$50,000) the term
+       products are not the right fit — Dignity Solutions applies, with the
+       plan tier (Immediate / Graded / Return of Premium) set by the health
+       answers and the three-plan build chart. No class change; the estimate
+       reflects the simplified-issue term lane. */
+    if (rules.id === "amam" && age !== null && face !== null && age >= 50 && age <= 85 && face >= 2500 && face <= 50000) {
+      list.push("Final-expense lane: Dignity Solutions applies at this age/face band (ages 50-85, $2,500-$50,000) — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers and the three-plan build chart; a yes to any of the first three health questions means no coverage.");
+    }
+
     return { list, apsNeeded, apsList };
   }
 
@@ -947,6 +1009,14 @@ const Engine = (() => {
     }
     if (isYes(d.criminalActive) || isYes(d.paroleCurrent)) declineHits.push("criminal_active");
     if (isYes(d.bankruptcyActive)) declineHits.push("bankruptcy_active");
+    /* Carrier-published maximum issue age: above it the application would not
+       be accepted, so report an eligibility decline instead of fabricating an
+       estimate from data that was never published for that age (e.g., F&G
+       Quantum's BP/cholesterol bands end at 60 because the product issues to 60). */
+    const issueCap = rules.eligibility && rules.eligibility.maxIssueAge;
+    if (issueCap !== undefined && has(d, "age") && Number(d.age) > issueCap) {
+      out.gates.decline.push({ id: "eligibility_age", text: `Outside published issue ages — this carrier issues to age ${issueCap} only`, reason: "Carrier eligibility: the product is not available above the maximum issue age." });
+    }
     const func = evalFunctional(d);
     if (func.flag === "adl_dependence") declineHits.push("adl_dependence", "facility_care");
 
@@ -973,7 +1043,7 @@ const Engine = (() => {
     }
 
     for (const t of rules.declineTriggers || []) {
-      const hit = conditionDeclineHit(t.id, d, condIds, med);
+      const hit = conditionDeclineHit(t.id, d, condIds, med, rules);
       if (hit) declineHits.push(t.id);
     }
 
@@ -1033,6 +1103,12 @@ const Engine = (() => {
     domains.build = build;
     if (build.klass === "decline") {
       out.gates.decline.push({ id: "bmi_decline", text: `Build: BMI ${build.bmi} (${build.bandName})`, reason: "Carrier BMI chart — decline band." });
+    }
+    /* Simplified-issue rule (American Amicable): a medical condition combined
+       with build exceeding Table 2 is not eligible, even though build alone
+       within Table 4 would be issued at Standard. */
+    if (rules.build && rules.build.rules && rules.build.rules.conditionTable2Decline && build.aboveTable2 && (d.conditions || []).length) {
+      out.gates.decline.push({ id: "bmi_condition_decline", text: "Medical condition combined with build exceeding Table 2 — not eligible", reason: "Express Term / Term Made Simple build rule." });
     }
 
     const bp = evalBP(rules, d);
@@ -1095,13 +1171,14 @@ const Engine = (() => {
     let provisional = "preferred_plus";
     const limiting = [];
     for (const [k, v] of usable) {
+      const vk = normK(rules, v.klass);
       const txt = v.detail || (v.details ? v.details.join(" ") : "");
-      if (classWorseThan(v.klass, provisional)) {
-        provisional = v.klass;
+      if (classWorseThan(vk, provisional)) {
+        provisional = vk;
         limiting.length = 0;
-        limiting.push({ domain: k, klass: v.klass, detail: txt });
-      } else if (v.klass === provisional) {
-        limiting.push({ domain: k, klass: v.klass, detail: txt });
+        limiting.push({ domain: k, klass: vk, detail: txt });
+      } else if (vk === provisional) {
+        limiting.push({ domain: k, klass: vk, detail: txt });
       }
     }
     // Domain-specific "outside" results that force a worse outcome
@@ -1113,6 +1190,9 @@ const Engine = (() => {
     if (domains.build && domains.build.klass === "manual_review") outside.push({ domain: "build", reason: "Build requires manual review (low build / BMI / unexplained change)" });
 
     if (outside.length) provisional = "table";
+    // Simplified-issue carriers normalize the shared ladder (no Preferred Plus /
+    // Standard Plus / table classes) — an accept/reject model.
+    provisional = normK(rules, provisional);
     out.provisionalClass = provisional;
     out.limitingFactors = limiting;
     out.outsideFactors = outside;
@@ -1168,6 +1248,8 @@ const Engine = (() => {
       final = "flat_extra";
     }
 
+    // Normalize any residual ladder classes for simplified-issue carriers.
+    final = normK(rules, final);
     out.finalClass = final;
 
     /* ---- 5. Credits (possible, not applied) ----------------------- */
@@ -1273,10 +1355,14 @@ const Engine = (() => {
     let bestDomain = "preferred_plus";
     for (const [k, v] of Object.entries(domains)) {
       if (v && v.klass && !["tobacco", "bp_outside", "lipids_outside", "driving_outside", "substandard_review", "manual_review"].includes(v.klass)) {
-        if (CLASS_INDEX[v.klass] < CLASS_INDEX[bestDomain]) bestDomain = v.klass;
+        const vk = normK(rules, v.klass);
+        if (CLASS_INDEX[vk] < CLASS_INDEX[bestDomain]) bestDomain = vk;
       }
     }
-    if (nic.klass && nic.klass !== "tobacco" && CLASS_INDEX[nic.klass] < CLASS_INDEX[bestDomain]) bestDomain = nic.klass;
+    if (nic.klass && nic.klass !== "tobacco") {
+      const nk = normK(rules, nic.klass);
+      if (CLASS_INDEX[nk] < CLASS_INDEX[bestDomain]) bestDomain = nk;
+    }
     out.range = { low: bestDomain, high: final };
 
     out.summaryLines = buildSummary(out, rules);
@@ -1284,10 +1370,21 @@ const Engine = (() => {
   }
 
   /* conditionDeclineHit: map form flags to decline trigger ids */
-  function conditionDeclineHit(id, d, condIds, med) {
+  function conditionDeclineHit(id, d, condIds, med, rules) {
     switch (id) {
       case "alcohol_active": return d.alcoholConcern === "active";
-      case "drug_use_recent": return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || Number(d.drugAbuseYears) < 3);
+      case "drug_use_recent": {
+        // carrier-published drug-use decline window (e.g., Banner 3 years,
+        // American Amicable 4 years)
+        const dy = (rules && rules.drugDeclineYears) || 3;
+        return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || Number(d.drugAbuseYears) < dy);
+      }
+      case "amam_stroke": return rules && rules.id === "amam" && condIds.includes("stroke");
+      case "amam_heart": return rules && rules.id === "amam" && (condIds.includes("heart_disease") || condIds.includes("cad"));
+      case "amam_copd": return rules && rules.id === "amam" && condIds.includes("copd");
+      case "amam_paralysis": return rules && rules.id === "amam" && condIds.includes("paralysis");
+      case "amam_liver": return rules && rules.id === "amam" && condIds.includes("liver_disease");
+      case "amam_third_party_payor": return rules && rules.id === "amam" && d.premiumPayor === "third_party" && d.age && Number(d.age) >= 30;
       case "dementia": return condIds.includes("dementia");
       case "cirrhosis": return condIds.includes("liver_disease") && isYes(d.cirrhosis);
       case "defibrillator": return condIds.includes("heart_disease") && isYes(d.defibrillator);
