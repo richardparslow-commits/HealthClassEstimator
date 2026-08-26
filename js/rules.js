@@ -3252,7 +3252,7 @@ CARRIER_RULES.corebridge = {
       { product: "SimpliNow Legacy Max (level)", ages: "50-80", face: "Per policy form" },
       { product: "American General GIWL (guaranteed issue — separate lane)", ages: "50-80", face: "$5,000-$25,000; no health questions" }
     ],
-    chartNote: "Build chart (SimpliNow Legacy Max / level column): minimum and maximum weight per height. Outside the range — decline."
+    chartNote: "Build chart (SimpliNow Legacy Max / level column): minimum and maximum weight per height. Outside the range — decline. The knockout questions separately screen a BMI below 22.5 as graded — eligible only for the graded death benefit, not a decline."
   },
   nicotine: {
     classes: [
@@ -3306,9 +3306,9 @@ CARRIER_RULES.corebridge = {
       noTables: true,
       halfInchRounding: "Half-inch measurements round up to the next inch.",
       weightLossAdjustment: "Unexplained weight loss within the last 12 months → Graded decision (not an automatic decline).",
-      lowBuildReview: "Below the chart minimum for height — decline.",
+      lowBuildReview: "Below the chart minimum weight for height — not eligible (accept/reject). The SimpliNow Legacy knockout questions separately stipulate that a BMI below 22.5 results in the graded death benefit option, not a decline.",
       aboveStandard: "Above the chart maximum for height — decline.",
-      note: "SimpliNow Legacy Max (level benefit) build chart: minimum and maximum weight per height. Outside the range — decline. The graded (SimpliNow Legacy) column is more permissive; the Level column is the best offer."
+      note: "SimpliNow Legacy Max (level benefit) build chart: minimum and maximum weight per height. Outside the range — decline. The graded (SimpliNow Legacy) column is more permissive; the Level column is the best offer. The knockout questions screen lists a BMI below 22.5 as eligible only for the graded death benefit."
     }
   },
   bp: {

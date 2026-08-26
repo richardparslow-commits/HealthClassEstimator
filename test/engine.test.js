@@ -1092,6 +1092,19 @@ laneAssert("AMAM homeCertainty lane present with mortgage requirement", () => {
   if (!hc.mortgageRequirement.includes("mortgage")) throw new Error("mortgage requirement missing");
 });
 
+// Corebridge knockout source: the SimpliNow Legacy knockout questions doc
+// (AGLC201492 REV0425) screens "Steps 1-5" as not eligible and "Sections A-D"
+// as graded; a BMI below 22.5 is listed as graded, not declined.
+laneAssert("Corebridge build rules surface the BMI<22.5 graded knockout", () => {
+  const cb = LANES.corebridge;
+  const low = cb.build && cb.build.rules && cb.build.rules.lowBuildReview;
+  const note = cb.build && cb.build.rules && cb.build.rules.note;
+  if (!low || !/(BMI|body mass index)/i.test(low)) throw new Error("lowBuildReview missing BMI guidance");
+  if (!/22\.5/.test(low)) throw new Error("lowBuildReview missing BMI<22.5 threshold");
+  if (!/graded/.test(low)) throw new Error("lowBuildReview missing graded outcome");
+  if (![50, 80].includes(cb.eligibility.minIssueAge) || ![50, 80].includes(cb.eligibility.maxIssueAge)) throw new Error("eligibility ages not 50-80");
+});
+
 let pass = 0, fail = 0;
 
 // ---- cross-carrier gate-dedup probe --------------------------------------
