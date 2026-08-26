@@ -35,7 +35,7 @@ const App = (() => {
     return {
       carrier: "banner",
       age: "", sex: "", state: "", occupation: "",      occupationHazardous: "",
-      aviation: "", hazardousSports: "", foreignTravel: "", militaryService: "", foreignResidence: "",
+      aviation: "", hazardousSports: "", foreignTravel: "", militaryService: "", militaryRating: "", vaTreatment: "", foreignResidence: "",
       faceAmount: "", policyPurpose: "", income: "", existingCoverage: "", replacement: "", financing: "",
       ownership: "", premiumPayor: "",
       usedNicotine: "", nicotineEver: "", nicotineQuitYears: "", nicotineProduct: "cigarette", nicotineLastUse: "", nicotineAmount: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
@@ -462,12 +462,25 @@ const App = (() => {
     r4.appendChild(field("Currently live outside the USA", radioPill("foreignResidence", [["no", "No"], ["short", "Yes — under 6 months"], ["long", "Yes — 6 months or more"]])));
     c.appendChild(r4);
 
+    /* Military sub-questions: disability rating and VA treatment only matter
+       when service is disclosed — asking them for everyone would be noise. */
+    if (state.militaryService && state.militaryService !== "no") {
+      const r5 = el("div", { class: "field-row" });
+      r5.appendChild(field("VA disability rating", selectInput("militaryRating", [["none", "None"], ["lt30", "0–20%"], ["30to60", "30–60%"], ["60plus", "60% or more"], ["total", "Total / unemployable"]], { onChange: () => render() })));
+      r5.appendChild(field("Currently receiving VA treatment?", radioPill("vaTreatment", [["no", "No"], ["yes", "Yes"]])));
+      c.appendChild(r5);
+    }
+
     _radioHandlers.sex = () => {};
     _radioHandlers.occupationHazardous = () => {};
     _radioHandlers.aviation = () => {};
     _radioHandlers.hazardousSports = () => {};
     _radioHandlers.foreignTravel = () => {};
-    _radioHandlers.militaryService = () => {};
+    _radioHandlers.militaryService = (val) => {
+      // Disclosure drives the class caps; picking "No" clears the sub-answers.
+      if (val === "no") { state.militaryRating = ""; state.vaTreatment = ""; }
+      render();
+    };
     _radioHandlers.foreignResidence = () => {};
     return c;
   }
@@ -1661,13 +1674,17 @@ const App = (() => {
     criminal_history: "Criminal history disclosed — carrier review",
     unexplained_care: "Frequent care without disclosed condition — confirm",
     foreign_residence: "Foreign residence — eligibility review",
-    conflicting_disclosure: "Nicotine history conflict — confirm"
+    conflicting_disclosure: "Nicotine history conflict — confirm",
+    combat_exposure: "Combat exposure — best class capped pending records",
+    va_disability: "VA disability rating — class capped pending records",
+    va_treatment: "VA treatment without disclosed condition — confirm"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
     possible_decline: "flag-danger", manual_review: "flag-warn", missing_material_data: "flag-warn",
     accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn",
-    unexplained_care: "flag-warn", foreign_residence: "flag-warn", conflicting_disclosure: "flag-danger"
+    unexplained_care: "flag-warn", foreign_residence: "flag-warn", conflicting_disclosure: "flag-danger",
+    combat_exposure: "flag-warn", va_disability: "flag-warn", va_treatment: "flag-warn"
   };
 
   const DOMAIN_LABELS = {

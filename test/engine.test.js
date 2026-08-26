@@ -812,7 +812,24 @@ add("Business ownership -> ownership evidence note", d => { d.ownership = "busin
 /* ---- Master-list additions: care, military, residence, nicotine history - */
 add("Frequent doctor visits with no condition -> unexplained-care flag", d => { d.doctorVisits = "frequent"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "unexplained_care" });
 add("Frequent doctor visits WITH a disclosed condition -> no flag", d => { d.doctorVisits = "frequent"; d.conditions = [{ id: "asthma", status: "current", severity: "mild", control: "good" }]; }, { klass: "standard", tobacco: false, wantNoFlag: "unexplained_care" });
-add("Military combat -> evidence notes, no class change", d => { d.militaryService = "combat"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Military service disclosed", "Combat deployment"] });
+/* ---- Military service / veteran status affects the class estimate --------
+   Combat deployment caps the best class at Preferred pending records; VA
+   disability ratings cap further (30-60% -> Preferred, 60%+ / total ->
+   Standard); VA treatment without a disclosed condition is uninvestigated
+   care; combat + mental-health condition is a postpone gate. "No" and a
+   clean veteran are neutral. */
+add("Military no -> no cap", d => { d.militaryService = "no"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "combat_exposure" });
+add("Military unanswered -> missing domain, no cap", d => { d.militaryService = ""; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["military"] });
+add("Veteran clean (no rating, no treatment) -> no cap, records requested", d => { d.militaryService = "veteran"; d.militaryRating = "none"; d.vaTreatment = "no"; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Veteran status", "VA treatment records"] });
+add("Veteran rating unanswered -> missing VA fields, no cap", d => { d.militaryService = "veteran"; }, { klass: "preferred_plus", tobacco: false, wantMissing: ["military"] });
+add("Military combat -> capped at Preferred + combat flag", d => { d.militaryService = "combat"; }, { klass: "preferred", tobacco: false, wantFlag: "combat_exposure", wantEvidence: ["Military service disclosed", "Combat deployment"] });
+add("Military combat + depression -> postpone (PTSD/TBI screening pending)", d => { d.militaryService = "combat"; d.conditions = [{ id: "depression", status: "current", severity: "mild", control: "good" }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Military combat + anxiety -> postpone gate + combat cap", d => { d.militaryService = "combat"; d.conditions = [{ id: "anxiety", status: "current", severity: "mild", control: "good" }]; }, { klass: "postpone", tobacco: false, wantFlag: "combat_exposure" });
+add("Veteran rating 30-60% -> capped at Preferred + VA flag", d => { d.militaryService = "veteran"; d.militaryRating = "30to60"; d.vaTreatment = "no"; }, { klass: "preferred", tobacco: false, wantFlag: "va_disability", wantEvidence: ["30–60%"] });
+add("Veteran rating 60%+ -> capped at Standard + VA flag", d => { d.militaryService = "veteran"; d.militaryRating = "60plus"; d.vaTreatment = "no"; }, { klass: "standard", tobacco: false, wantFlag: "va_disability", wantEvidence: ["60% or more"] });
+add("Veteran total/unemployable -> capped at Standard + total evidence", d => { d.militaryService = "veteran"; d.militaryRating = "total"; d.vaTreatment = "no"; }, { klass: "standard", tobacco: false, wantFlag: "va_disability", wantEvidence: ["Total / unemployable"] });
+add("Veteran VA treatment with no condition -> unexplained-care flag", d => { d.militaryService = "veteran"; d.militaryRating = "none"; d.vaTreatment = "yes"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "va_treatment", wantEvidence: ["Receiving VA treatment"] });
+add("Veteran 0-20% rating -> no cap (below cap thresholds)", d => { d.militaryService = "veteran"; d.militaryRating = "lt30"; d.vaTreatment = "no"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "va_disability" });
 add("Foreign residence 6+ months -> eligibility-review flag", d => { d.foreignResidence = "long"; }, { klass: "preferred_plus", tobacco: false, wantFlag: "foreign_residence" });
 add("Foreign residence under 6 months -> note only, no flag", d => { d.foreignResidence = "short"; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "foreign_residence", wantEvidence: ["Foreign residence disclosed"] });
 add("Nicotine conflict: ever=no but 10-yr=yes -> conflict flag", d => { d.usedNicotine = "yes"; d.nicotineEver = "no"; d.nicotineLastUse = monthsAgo(3); }, { klass: "preferred_plus", tobacco: true, wantFlag: "conflicting_disclosure" });

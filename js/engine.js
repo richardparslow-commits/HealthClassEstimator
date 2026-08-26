@@ -912,6 +912,11 @@ const Engine = (() => {
       list.push("Military service disclosed — VA treatment records may be requested.");
       if (d.militaryService === "combat") list.push("Combat deployment disclosed — mental-health / TBI screening may apply.");
       if (d.militaryService === "veteran") list.push("Veteran status disclosed — prior service with separation date; review for combat exposure, disability rating, or VA treatment history.");
+      const rating = d.militaryRating;
+      if (rating === "30to60") list.push("VA disability rating of 30–60% disclosed — request the rating decision and disability basis (records confirm the impairment).");
+      if (rating === "60plus") list.push("VA disability rating of 60% or more disclosed — substantial impairment; medical records confirming the disability are required.");
+      if (rating === "total") list.push("Total / unemployable VA disability disclosed — severe impairment review; carrier direction is required before an estimate is reliable.");
+      if (d.vaTreatment === "yes") list.push("Receiving VA treatment — confirm the condition under treatment; uninvestigated care can matter more than the known history.");
     }
     if (d.foreignResidence === "short" || d.foreignResidence === "long") {
       list.push("Foreign residence disclosed — carrier residency requirements and country-of-residence review apply; certain countries may postpone or add requirements.");
@@ -961,6 +966,14 @@ const Engine = (() => {
     for (const [k, label] of checks) {
       total++;
       if (has(d, k)) score++; else missing.push(label);
+    }
+    /* Military sub-fields only matter once service is disclosed — asking for
+       a rating from someone who answered "No" would be noise. */
+    if (d.militaryService && d.militaryService !== "no") {
+      for (const [k, label] of [["militaryRating", "VA disability rating"], ["vaTreatment", "VA treatment status"]]) {
+        total++;
+        if (has(d, k)) score++; else missing.push(label);
+      }
     }
     if (d.conditions && d.conditions.length) {
       total++;
@@ -1090,6 +1103,13 @@ const Engine = (() => {
        complicationsCeiling — the generic postpone trigger is suppressed. */
     if (isYes(d.diabetesComplications) && !(rules.diabetes && rules.diabetes.complicationsCeiling)) postponeHits.push("diabetes_complications");
     if (isYes(d.gastricBypassRecent)) postponeHits.push("gastric_bypass_recent");
+    /* Combat deployment with a disclosed mental-health condition: the PTSD/TBI
+       screening outcome can matter more than the known history — gate-first.
+       Pushed directly (no carrier publishes a combat-specific trigger), so the
+       gate renders for every carrier with the same honest message. */
+    if (d.militaryService === "combat" && condIds.some(id => ["anxiety", "depression", "bipolar", "schizophrenia", "substance_treatment"].includes(id))) {
+      out.gates.postpone.push({ id: "combat_mental_health", text: "Combat deployment with a disclosed mental-health condition — PTSD/TBI screening outcome pending; carrier direction required before an estimate is reliable.", reason: "Gate-first: the missing screening outcome can matter more than the known history." });
+    }
 
     if (out.gates.postpone.length || postponeHits.length) {
       const postponeSet = new Set([...postponeHits, ...out.gates.postpone.map(g => g.id || "condition")]);
@@ -1187,6 +1207,36 @@ const Engine = (() => {
       } else {
         domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
       }
+    }
+
+    /* Military service / veteran status. Prior service alone is not rateable
+       in the modeled guides; combat exposure and VA disability ratings are
+       material history that caps the best class until records confirm the
+       picture (Elite / Preferred Plus classes require a clean, verifiable
+       profile). VA treatment without a disclosed condition is uninvestigated
+       care — a review flag, not a class cap by itself. */
+    if (isNo(d.militaryService)) {
+      domains.military = { klass: "preferred_plus", detail: "No military service disclosed." };
+    } else if (!d.militaryService) {
+      domains.military = { klass: null, missing: true, detail: "Military service status not confirmed — verify before quoting preferred classes." };
+    } else {
+      const combat = d.militaryService === "combat";
+      const rating = d.militaryRating || "none";
+      let klass = combat ? "preferred" : "preferred_plus";
+      let detail = combat
+        ? "Combat deployment disclosed — best class capped at Preferred pending records confirming no PTSD/TBI; Elite / Preferred Plus classes require a clean, verifiable profile."
+        : "Military service disclosed — no material disability rating; VA records may be requested.";
+      if (rating === "30to60" && classWorseThan("preferred", klass)) klass = "preferred";
+      if (rating === "60plus" && classWorseThan("standard", klass)) klass = "standard";
+      if (rating === "total" && classWorseThan("standard", klass)) klass = "standard";
+      if (rating === "30to60") detail = "VA disability rating of 30–60% disclosed — best class capped at Preferred; carriers review the disability basis and records.";
+      if (rating === "60plus") detail = "VA disability rating of 60% or more disclosed — best class capped at Standard; records confirming the impairment are required.";
+      if (rating === "total") detail = "Total / unemployable VA disability disclosed — best class capped at Standard pending carrier direction; severe impairment review applies.";
+      /* Service is disclosed but the VA sub-questions are unanswered: the
+         domain stays missing (do not silently assume "none") while any known
+         cap (combat) still applies. The confidence meter lists the sub-fields. */
+      const subUnanswered = !d.militaryRating || !d.vaTreatment;
+      domains.military = { klass, detail, flag: combat ? "combat_exposure" : null, missing: subUnanswered, ...(rating === "60plus" || rating === "total" ? { vaDisability: true } : {}) };
     }
 
     domains.functional = func;
@@ -1324,7 +1374,7 @@ const Engine = (() => {
     if (final === "table" || outside.length) flags.push("likely_table");
     if (gateOutcome === "decline" || out.gates.decline.length) flags.push("possible_decline");
     if (gateOutcome === "postpone" || out.gates.postpone.length) flags.push("manual_review");
-    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing || meds.missing) {
+    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing || meds.missing || (domains.military && domains.military.missing)) {
       flags.push("missing_material_data");
     }
     if (meds.undisclosed && meds.undisclosed.length) flags.push("undisclosed_meds");
@@ -1338,6 +1388,12 @@ const Engine = (() => {
     if (d.doctorVisits === "frequent" && !(d.conditions && d.conditions.length)) flags.push("unexplained_care");
     // Extended foreign residence triggers carrier residency eligibility review.
     if (d.foreignResidence === "long") flags.push("foreign_residence");
+    // Military service flags: combat exposure caps the best class; a material
+    // VA disability rating caps further; VA treatment without a disclosed
+    // condition is uninvestigated care — same honesty rule as frequent visits.
+    if (d.militaryService === "combat") flags.push("combat_exposure");
+    if (d.militaryRating === "30to60" || d.militaryRating === "60plus" || d.militaryRating === "total") flags.push("va_disability");
+    if (d.vaTreatment === "yes" && !(d.conditions && d.conditions.length)) flags.push("va_treatment");
     // Nicotine ever/quit-history conflicts — surface for confirmation.
     if (d.usedNicotine === "yes" && d.nicotineEver === "no") flags.push("conflicting_disclosure");
     if (d.usedNicotine === "no" && d.nicotineEver === "yes" && !isNaN(Number(d.nicotineQuitYears)) && Number(d.nicotineQuitYears) >= 0 && Number(d.nicotineQuitYears) <= 10) flags.push("conflicting_disclosure");
