@@ -32,8 +32,9 @@ const CLASS_ORDER = [
   "standard",         // 3
   "table",            // 4
   "flat_extra",       // 5
-  "postpone",         // 6
-  "decline"           // 7
+  "manual_review",    // 6 — key data missing/conflicting: review before estimating
+  "postpone",         // 7
+  "decline"           // 8
 ];
 
 const CLASS_INDEX = {};

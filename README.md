@@ -68,7 +68,9 @@ The engine follows a **gate-first, then least-favorable-wins** approach (per the
    treated as missing, never as the best answer. Tobacco & nicotine is a required question (the estimate
    cannot run without it); family history, pending care, and functional status start unanswered and count
    against confidence until explicitly answered, showing as "Not provided" in the domain table rather
-   than silently assuming "none"/"no". Flags include `needs_aps`,
+   than silently assuming "none"/"no". A build that cannot be evaluated (height/weight outside the
+   carrier chart) ranks as `manual_review` — above any estimable class but never overriding a
+   decline or postpone gate outcome, which always win. Flags include `needs_aps`,
    `needs_exam`, `likely_table`, `possible_decline`, `manual_review`, `missing_material_data`,
    `financial_review`, and `undisclosed_meds`.
 6. **Medication cross-check.** Disclosed prescriptions are matched against a reference dictionary of

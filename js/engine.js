@@ -1001,6 +1001,9 @@ const Engine = (() => {
       // nicotine lookback can cap NT class below other domains
       final = worstOf(final, nic.klass);
     }
+    // Build data that cannot be evaluated (manual_review) ranks above every
+    // estimable class but below the postpone/decline gates, so it never masks
+    // a gate outcome — the gate assignment below wins.
     if (domains.build && domains.build.klass === "manual_review") {
       final = worstOf(final, "manual_review");
     }
@@ -1012,9 +1015,6 @@ const Engine = (() => {
 
     if (gateOutcome) {
       final = gateOutcome;
-    }
-    if (domains.build && domains.build.klass === "manual_review") {
-      final = "manual_review";
     }
 
     out.finalClass = final;
