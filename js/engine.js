@@ -1906,7 +1906,10 @@ const Engine = (() => {
       case "cardiomyopathy_recent": return (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy));
       case "seizure_recent": return recentEventOn(["seizures"]);
       case "stroke_recent": return recentEventOn(["stroke"]);
-      case "copd_recent": return (d.conditions || []).some(c => c.id === "copd" && (isYes(c.recentEvent) || c.treatment === "oxygen"));
+      // Suppress when the separate oxygen_use form flag is set — that fires the
+      // stronger oxygen_use decline, so a copd_recent postpone beside it would
+      // describe the same COPD-on-oxygen fact twice (cosmetic gate duplication).
+      case "copd_recent": return !isYes(d.oxygenUse) && (d.conditions || []).some(c => c.id === "copd" && (isYes(c.recentEvent) || c.treatment === "oxygen"));
       case "schizophrenia_recent": {
         const scz = (d.conditions || []).find(c => c.id === "schizophrenia");
         if (!scz) return false;
