@@ -12,6 +12,28 @@ const App = (() => {
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel, scope) => Array.from((scope || document).querySelectorAll(sel));
 
+  /* Inline flag SVGs for the printable acknowledgment record header — the
+     same US-left / Texas-right motif as the app header top bar. */
+  function usFlagSvg(width, height) {
+    const star = '<path id="hce-print-us-star" d="M0 -2.6 L0.584 -0.803 L2.472 -0.803 L0.944 0.307 L1.528 2.103 L0 0.993 L-1.528 2.103 L-0.944 0.307 L-2.472 -0.803 L-0.584 -0.803 Z" fill="#fff"/>';
+    let uses = "";
+    [2.99, 14.97, 26.94, 38.91, 50.88].forEach(y => [7.6, 18.46, 29.31, 40.17, 51.03, 61.89].forEach(x => { uses += '<use href="#hce-print-us-star" x="' + x + '" y="' + y + '"/>'; }));
+    [8.98, 20.95, 32.92, 44.9].forEach(y => [12.67, 23.52, 34.38, 45.24, 56.1].forEach(x => { uses += '<use href="#hce-print-us-star" x="' + x + '" y="' + y + '"/>'; }));
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 100" width="' + width + '" height="' + height + '" role="img" aria-label="United States flag"><defs>' + star + '</defs>' +
+      '<rect width="190" height="100" fill="#fff"/>' +
+      [0, 15.384, 30.768, 46.152, 61.536, 76.92, 92.304].map(y => '<rect y="' + y + '" width="190" height="7.692" fill="#B22234"/>').join("") +
+      '<rect width="76" height="53.846" fill="#3C3B6E"/>' + uses + '</svg>';
+  }
+  function txFlagSvg(width, height) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 60" width="' + width + '" height="' + height + '" role="img" aria-label="Texas flag">' +
+      '<defs><path id="hce-print-tx-star" d="M0 -8.5 L1.908 -2.627 L8.084 -2.627 L3.088 1.003 L4.996 6.876 L0 3.247 L-4.996 6.876 L-3.088 1.003 L-8.084 -2.627 L-1.908 -2.627 Z" fill="#fff"/></defs>' +
+      '<rect width="30" height="60" fill="#002868"/>' +
+      '<rect x="30" width="60" height="30" fill="#fff"/>' +
+      '<rect x="30" y="30" width="60" height="30" fill="#BF0A30"/>' +
+      '<use href="#hce-print-tx-star" transform="translate(15 30)"/>' +
+      '</svg>';
+  }
+
   /* The carrier lineup — shared by the applicant-step panel, the comparison
      header, and anywhere else the carrier choice appears. */
   const CARRIER_OPTIONS = [
@@ -1644,13 +1666,17 @@ const App = (() => {
     }
     sheet.innerHTML = "";
 
-    const head = el("div", { class: "print-sheet-head" });
-    head.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
-    head.appendChild(el("div", { class: "print-sheet-title" }, "Acknowledgment record"));
+    const head = el("div", { class: "print-sheet-head print-sheet-head-flags" });
+    head.appendChild(el("div", { class: "print-flag print-flag-left", html: usFlagSvg(60, 32) }));
+    const center = el("div", { class: "print-sheet-center" });
+    center.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
+    center.appendChild(el("div", { class: "print-sheet-title" }, "Acknowledgment record"));
     const meta = el("div", { class: "print-sheet-meta" });
     meta.appendChild(el("span", {}, "Accepted: " + (ack && ack.acceptedAt ? new Date(ack.acceptedAt).toLocaleString() : "before dated records were stored")));
     meta.appendChild(el("span", {}, "App version " + (window.HCE_VERSION || "?") + " · printed " + new Date().toLocaleDateString()));
-    head.appendChild(meta);
+    center.appendChild(meta);
+    head.appendChild(center);
+    head.appendChild(el("div", { class: "print-flag print-flag-right", html: txFlagSvg(48, 32) }));
     sheet.appendChild(head);
 
     if (caseRef) sheet.appendChild(el("div", { class: "ack-record-ref" }, "Case reference: " + caseRef));
