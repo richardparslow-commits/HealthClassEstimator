@@ -235,7 +235,11 @@ const Engine = (() => {
     if (!dateStr) return null;
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return null;
-    return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+    const ms = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+    // Clamp negative counts to 0: a future-dated (or otherwise mis-keyed) last-use
+    // date must never fan out to a larger-than-reality month gap — which would let
+    // a typo quietly push the applicant past a longer lookback into a better class.
+    return Math.max(0, ms);
   }
 
   /**

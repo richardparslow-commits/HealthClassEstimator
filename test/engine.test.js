@@ -934,6 +934,15 @@ add("Nicotine conflict: ever=no but 10-yr=yes -> conflict flag", d => { d.usedNi
 add("Nicotine quit 15 yrs ago -> beyond-lookback note, no flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 15; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "conflicting_disclosure", wantEvidence: ["outside every carrier's lookback"] });
 add("Nicotine quit 5 yrs ago but 10-yr=no -> conflict flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 5; }, { klass: "preferred_plus", tobacco: false, wantFlag: "conflicting_disclosure" });
 
+/* ---- Nicotine lookback clamp: a future-dated (or missing) last-use date
+   must never fan out to a larger-than-reality month gap. Clamping negative
+   counts to 0 months means a mis-keyed future date reads as active/very recent
+   use (within every carrier's tobacco lookback), never as a satisfied long
+   lookback that would silently lift the class. */
+add("Future-dated last use -> clamped to 0 months -> tobacco class, never a silent non-tobacco upgrade", d => {
+  d.usedNicotine = "yes"; d.nicotineLastUse = new Date(Date.now() + (180 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}, { klass: "preferred_plus", tobacco: true, wantTobaccoPlus: false });
+
 /* ---- American Amicable (Express Term / Term Made Simple) ---------------- */
 const abase = JSON.parse(JSON.stringify(base));
 abase.carrier = "amam";
