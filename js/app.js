@@ -528,7 +528,12 @@ const App = (() => {
         tbody.appendChild(tr);
       });
       tbl.appendChild(tbody);
-      wrap.appendChild(tbl);
+      /* Scroll wrapper: the eligibility chart keeps its natural column
+         widths and scrolls horizontally on narrow screens instead of
+         crushing or overflowing the page. */
+      const eligScroll = el("div", { class: "table-scroll" });
+      eligScroll.appendChild(tbl);
+      wrap.appendChild(eligScroll);
       if (e.chartNote) wrap.appendChild(el("p", { class: "elig-chart-note" }, e.chartNote));
     }
     if (e.notes && e.notes.length) {
@@ -1352,7 +1357,11 @@ const App = (() => {
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
-    wrap.appendChild(tbl);
+    /* Scroll wrapper: the 12-row comparison table scrolls horizontally on
+       phones/tablets instead of overflowing the page. */
+    const compareScroll = el("div", { class: "table-scroll" });
+    compareScroll.appendChild(tbl);
+    wrap.appendChild(compareScroll);
 
     const bottomLine = el("div", { class: "compare-bottom-line" });
     bottomLine.appendChild(el("strong", {}, "Bottom line: "));
@@ -1574,7 +1583,9 @@ const App = (() => {
       tbody.appendChild(row);
     }
     tbl.appendChild(tbody);
-    dom.appendChild(tbl);
+    const domScroll = el("div", { class: "table-scroll" });
+    domScroll.appendChild(tbl);
+    dom.appendChild(domScroll);
     wrap.appendChild(dom);
 
     /* ---- Limiting factors ---- */
@@ -2049,8 +2060,20 @@ const App = (() => {
     } catch (e) { return null; }
   }
 
+  /* -- Responsive footer clearance ---------------------------------------
+     The footer is fixed; its height changes as the nav and links wrap at
+     different viewport widths. Expose the live height as --footer-h so the
+     main content's bottom padding always clears it — no dead space on
+     desktop, no hidden content behind the footer on phones. */
+  function syncFooterSpace() {
+    const f = $(".app-footer");
+    if (f) document.documentElement.style.setProperty("--footer-h", Math.ceil(f.offsetHeight) + "px");
+  }
+
   function boot() {
     loadState();
+    syncFooterSpace();
+    window.addEventListener("resize", syncFooterSpace);
     const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[state.carrier].name;
     $("#btn-save").addEventListener("click", () => {
       saveState();
