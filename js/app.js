@@ -487,7 +487,7 @@ const App = (() => {
     /* Carrier panel: the one choice that drives the entire estimate. */
     const carrierPanel = el("div", { class: "carrier-panel" });
     carrierPanel.appendChild(el("p", { class: "carrier-label" }, "1 · Underwriting carrier"));
-    carrierPanel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: () => { $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name; render(); } }));
+    carrierPanel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: () => { const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[state.carrier].name; render(); } }));
     const cr = CARRIER_RULES[state.carrier];
     carrierPanel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — build charts, BP/cholesterol thresholds, nicotine lookbacks, decline/postpone screens, and evidence requirements all come from this ruleset."));
     carrierPanel.appendChild(carrierEligibility(cr));
@@ -1535,7 +1535,7 @@ const App = (() => {
   function applyCarrierSwitch(id) {
     state.carrier = id;
     saveState();
-    $("#carrier-badge").textContent = CARRIER_RULES[id].name;
+    const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[id].name;
     runEstimate(); // re-renders results, including the all-carrier comparison
   }
 
@@ -1770,7 +1770,7 @@ const App = (() => {
 
   function boot() {
     loadState();
-    $("#carrier-badge").textContent = CARRIER_RULES[state.carrier].name;
+    const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[state.carrier].name;
     $("#btn-save").addEventListener("click", () => {
       saveState();
       showToast("Draft saved to this browser.");
