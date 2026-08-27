@@ -570,6 +570,19 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .footer-links-sep { color: var(--line); }
 .footer-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .footer-links a:hover { color: var(--navy); }
+/* Broker contact CTA — distinct from the plain footer text links so the
+   next step after an estimate is always one click away. */
+.footer-links a.footer-cta {
+  background: var(--navy);
+  color: #fff;
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+}
+.footer-links a.footer-cta:hover { filter: brightness(1.15); color: #fff; }
+.footer-links a.footer-cta:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
 
 /* ---- Comparison row expand ------------------------------------------ */
 .compare-expand-cell { width: 34px; text-align: center; }
