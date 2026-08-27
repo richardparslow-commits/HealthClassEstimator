@@ -24,6 +24,16 @@ let index = read("index.html");
 const css = read("css/styles.css");
 const [rulesJs, engineJs, appJs] = ["js/rules.js", "js/engine.js", "js/app.js"].map(read);
 
+// Capture the release version before the loader that defines it is stripped,
+// so the embedded build still exposes window.HCE_VERSION (the acknowledgment
+// record prints "App version N" — same as the desktop/index.html build).
+const versionMatch = index.match(/var HCE_VERSION = "(\d+)"/);
+if (!versionMatch) {
+  console.error("ERROR: could not find HCE_VERSION in index.html — aborting.");
+  process.exit(1);
+}
+const versionScript = "<script>\nwindow.HCE_VERSION = \"" + versionMatch[1] + "\"; // stamped by build-embedded.js\n</script>\n";
+
 // Inline the stylesheet — a relative href cannot resolve inside the iframe.
 // NB: split/join instead of String.replace: replace() interprets $ patterns in
 // the replacement string (e.g. "$$" collapses to "$"), which would corrupt
@@ -34,7 +44,7 @@ index = index.split(/<link rel="stylesheet"[^>]*>/).join("<style>\n" + css + "\n
 // build fails loudly if the loader's structure changes) and inline the scripts.
 index = index.split(/<script>\s*\/\* Single cache-busting version[\s\S]*?<\/script>/).join("");
 
-const inline = [rulesJs, engineJs, appJs].map((src) => "<script>\n" + src + "\n</script>").join("\n");
+const inline = versionScript + [rulesJs, engineJs, appJs].map((src) => "<script>\n" + src + "\n</script>").join("\n");
 index = index.split("</body>").join(inline + "\n</body>");
 
 if (index.includes('href="css/') || index.includes('src="js/') || index.includes("Single cache-busting")) {
