@@ -78,6 +78,13 @@ add("Pending biopsy -> postpone", d => { d.pendingTests = "yes"; }, { klass: "po
 
 add("Hazardous avocation clean -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
 
+/* Banner (field guide p. 9) publishes a distinct aviation lane: flat extras may
+   be added to a Preferred base class (excluding skydiving), with Preferred Plus
+   for major-airline pilots or with an Aviation Exclusion Rider. Aviation-only
+   disclosure therefore uses the Preferred base flat-extra lane. */
+add("Aviation only -> Banner flat extra on Preferred base (published aviation lane)", d => { d.aviation = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
+add("Aviation + hazardous occupation -> Banner flat extra on Preferred base", d => { d.aviation = "yes"; d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
+
 add("Transplant -> Decline + APS Transplant evidence", d => { d.conditions = [{ id: "transplant", status: "current", severity: "moderate", control: "good" }]; }, { klass: "decline", tobacco: false, wantEvidence: ["APS: Transplant"] });
 
 add("Paralysis -> Table + APS Paralysis evidence", d => { d.conditions = [{ id: "paralysis", status: "current", severity: "moderate", control: "good" }]; }, { klass: "table", tobacco: false, wantEvidence: ["APS: Paralysis"] });

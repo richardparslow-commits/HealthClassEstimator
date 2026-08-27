@@ -413,11 +413,16 @@ const CARRIER_RULES = {
 
     /* ---- Hazardous occupation / avocation (flat-extra lane) ----------- */
     avocation: {
-      currentHazardousText: "Hazardous occupation/avocation disclosed — Banner Preferred Plus requires no flat-extra premium; Preferred may allow a flat extra for aviation/avocation; otherwise the best class is Standard Plus with a flat extra.",
+      currentHazardousText: "Hazardous occupation/avocation disclosed — Banner: Preferred Plus requires no flat-extra premium; Preferred may allow a flat extra (flat extras may be added to a Preferred base class, excluding skydiving); otherwise the best class is Standard Plus with a flat extra. Auto racing and mountaineering/climbing are rated on the details (vehicle/engine, course, altitude, difficulty).",
+      aviationFlatExtra: {
+        baseClass: "preferred",
+        text: "Aviation exposure disclosed — Banner: flat extras may be added to a Preferred base class for general aviation (excluding skydiving) assuming the profile otherwise qualifies; Preferred Plus may be available for pilots of major airlines flying in the U.S. and Canada without other aviation exposure, or with an Aviation Exclusion Rider (AER) for other aviation activities. Private pilots over age 70 require an aviation exclusion rider. Otherwise the best class is Standard Plus with a flat extra."
+      },
       flatExtra: {
         baseClass: "preferred",
-        text: "Hazardous avocation/aviation disclosed — Banner: Preferred is the best class available with a flat extra (Preferred Plus requires no flat-extra premium); flat-extra or aviation-exclusion-rider schedules apply, otherwise the best class is Standard Plus with a flat extra."
+        text: "Hazardous avocation/aviation disclosed — Banner: Preferred is the best class available with a flat extra (Preferred Plus requires no flat-extra premium); flat extras may be added to a Preferred base class (excluding skydiving), otherwise the best class is Standard Plus with a flat extra."
       },
+      scubaPreferredPlusText: "Recreational scuba disclosed — Banner: Preferred Plus may be available when the dives do not exceed 100 feet, the applicant is PADI/NAUI/SSI certified and dives with a dive master or instructor, open-water dives only, no participation in wreck, salvage, ice or cave diving, and no medical impairment adversely affecting safety or mortality.",
       cleanText: "No hazardous occupation or avocation disclosed."
     },
 
@@ -1410,11 +1415,16 @@ const CARRIER_RULES = {
        Preferred Plus — no hazardous occupation/avocation/sport in last 5 years;
        Preferred — none in last 2 years; Standard Plus — flat extras allowed. */
     avocation: {
-      currentHazardousText: "Hazardous occupation/avocation disclosed — Preferred classes require no hazardous occupation, avocation, or sport (Preferred Plus: 5 years, Preferred: 2 years); Standard Plus allows flat extras. Aviation, diving, and climbing have published flat-extra schedules (e.g., private pilots with aviation exclusion may qualify for preferred classes; scuba <100 ft certified may qualify for all preferred classes).",
+      currentHazardousText: "Hazardous occupation/avocation disclosed — MOO prefers clean avocation history (Preferred Plus: none in 5 years; Preferred: none in 2 years); Standard Plus allows flat extras. Ratings depend on the type of avocation and details; hazardous avocations rate above Standard Plus.",
+      aviationFlatExtra: {
+        baseClass: "standard_plus",
+        text: "Aviation exposure disclosed — MOO: aviation is not allowable as a private pilot or crewmember unless an aviation exclusion is taken; with the exclusion, Standard Plus is the best class with flat extras. Commercial pilots for regularly scheduled passenger airlines can qualify for all Preferred classes, and private pilots with an Aviation Exclusion Rider (AER) may qualify for Preferred Plus / Preferred / Standard Plus; certain private pilots (ages 30-70, 1,000+ total hours, 50-250 flying hours annually, IFR/ATP rating, no FAA violations in 5 years) qualify for Preferred and Standard Plus without a rider."
+      },
       flatExtra: {
         baseClass: "standard_plus",
-        text: "Hazardous avocation/aviation disclosed — MOO: Standard Plus is the best class with flat extras; aviation, diving, and climbing have published flat-extra schedules."
+        text: "Hazardous avocation/aviation disclosed — MOO: Standard Plus is the best class with flat extras when the profile otherwise qualifies; hazardous avocations and aviation without an exclusion rate accordingly."
       },
+      scubaPreferredPlusText: "Recreational scuba disclosed — MOO: Preferred classes may be available when the dive does not exceed 100 feet and is limited to a vacation or other occasional occurrence (certified, open-water, no wreck/salvage/ice/cave diving); otherwise reviewed under avocation guidelines.",
       cleanText: "No hazardous occupation or avocation disclosed."
     },
 
