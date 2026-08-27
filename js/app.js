@@ -936,7 +936,10 @@ const App = (() => {
     d.income = state.income === "" ? "" : Number(state.income);
     d.conditions = (d.conditions || []).map(c => {
       const copy = Object.assign({}, c);
-      copy.medCount = copy.medCount === "" ? 0 : Number(copy.medCount);
+      // An unanswered medication count is NOT evidence of "no medications" —
+      // leave it null so the engine treats the condition conservatively instead
+      // of reading a blank as the favorable "on 0 meds" best case.
+      copy.medCount = copy.medCount === "" ? null : Number(copy.medCount);
       copy.onsetAge = copy.onsetAge === "" ? null : Number(copy.onsetAge);
       copy.a1c = copy.a1c === "" ? null : Number(copy.a1c);
       copy.stableYears = copy.stableYears === "" ? null : Number(copy.stableYears);

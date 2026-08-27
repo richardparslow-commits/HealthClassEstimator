@@ -948,6 +948,18 @@ add("Serious driving + negative years -> conservative review", d => { d.seriousD
 add("Substance treatment + garbage sober years -> conservative Standard, no silent lift", d => { d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "mild", control: "good", yearsSober: "abc" }]; }, { klass: "standard", tobacco: false });
 add("Resolved cancer + garbage resolved years -> stays at resolved-cancer ceiling, no lift", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: "abc" }]; }, { klass: "standard_plus", tobacco: false });
 
+/* ---- Condition count-field normalization: numOrNull() on onsetAge / medCount /
+   stableYears. The single most consequential case here is medCount: the wizard
+   used to coerce an *unanswered* medication count to 0, which the engine read as
+   the favorable "on zero meds" best case. An unanswered count must stay
+   conservative — only an explicit entered 0 reaches the Preferred-based branch. */
+add("Anxiety + unanswered medCount -> conservative Standard, never 'on zero meds'", d => { d.conditions = [{ id: "anxiety", status: "current", severity: "mild", control: "good", medCount: "" }]; }, { klass: "standard", tobacco: false });
+add("Anxiety + garbage medCount -> conservative Standard", d => { d.conditions = [{ id: "anxiety", status: "current", severity: "mild", control: "good", medCount: "abc" }]; }, { klass: "standard", tobacco: false });
+add("Anxiety + explicit 0 meds -> Preferred Plus retained", d => { d.conditions = [{ id: "anxiety", status: "current", severity: "mild", control: "good", medCount: 0 }]; }, { klass: "preferred_plus", tobacco: false });
+add("Diabetes + unanswered onsetAge -> conservative Standard, no silent Type 2 inference", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: "", onsetAge: "" }]; }, { klass: "standard", tobacco: false });
+add("Bipolar + unanswered stableYears -> conservative Standard", d => { d.conditions = [{ id: "bipolar", status: "current", severity: "mild", control: "good", stableYears: "" }]; }, { klass: "standard", tobacco: false });
+add("Bipolar + stable 7 yrs -> Standard Plus retained", d => { d.conditions = [{ id: "bipolar", status: "current", severity: "mild", control: "good", stableYears: 7 }]; }, { klass: "standard_plus", tobacco: false });
+
 /* ---- Nicotine lookback clamp: a future-dated (or missing) last-use date
    must never fan out to a larger-than-reality month gap. Clamping negative
    counts to 0 months means a mis-keyed future date reads as active/very recent

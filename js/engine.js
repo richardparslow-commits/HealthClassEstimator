@@ -232,22 +232,25 @@ const Engine = (() => {
   /* ---------- nicotine evaluation ------------------------------------- */
 
   /**
-   * Normalizes a "years ago" numeric value (seriousDrivingYears, drugAbuseYears,
-   * resolvedYears, yearsSober, nicotineQuitYears) to a non-negative number or
-   * null. JS's Number() silently coerces an empty string to 0 and a garbage
-   * string to NaN, and NaN comparisons are always false — so a malformed year
-   * count could quietly bypass a lookback fence (e.g. NaN < cleanYears is false,
-   * letting a recent event slip through a decline/clean-window gate). Returning
-   * null forces every caller's existing "=== null" conservative branch instead.
-   * A negative count (a mis-keyed "years ago") reads as null too, so it can
-   * never fan out to a larger-than-reality gap that lifts the class.
+   * Normalizes a non-negative numeric field (a "years ago" count, an onset age,
+   * a medication count, a stable-years count, etc.) to a number or null. JS's
+   * Number() silently coerces an empty string to 0 and a garbage string to NaN,
+   * and NaN comparisons are always false — so a malformed count could quietly
+   * bypass a fence in either direction (NaN < cleanYears is false, letting a
+   * recent event slip clean; Number("") is 0, making an *unanswered* med-count
+   * read as "taking no medication"). Returning null forces every caller's
+   * existing "=== null" conservative branch instead, and a negative count reads
+   * as null too so it can never fan out to a larger-than-reality gap.
    */
-  function yearsAgo(v) {
+  function numOrNull(v) {
     if (v === "" || v === null || v === undefined) return null;
     const n = Number(v);
     if (Number.isNaN(n) || !isFinite(n) || n < 0) return null;
     return n;
   }
+  // Lookback durations and other counts share identical normalization semantics;
+  // the alias keeps the intent legible at "years ago" call sites.
+  function yearsAgo(v) { return numOrNull(v); }
 
   /**
    * Strict date parsing for the nicotine last-use date. The wizard always
@@ -483,6 +486,12 @@ const Engine = (() => {
       const status = c.status || "current";
       const severity = c.severity || "mild";
       const control = c.control || "good";
+      /* Normalize the count fields once per condition. An unanswered medication
+         count must not read as "on zero meds" (a favorable lift), and a garbage
+         stable-years value must not tip the stability branch — both fall back to
+         null -> the conservative Standard path below. */
+      const medCount = numOrNull(c.medCount);
+      const stableYears = numOrNull(c.stableYears);
       /* Conditions the carrier does not publish: never silently ignore a
          disclosed condition. Evaluate it at a conservative fallback ceiling
          and tell the producer it needs individual review rather than
@@ -516,7 +525,7 @@ const Engine = (() => {
       let ceiling = null;
       if (meta.ceilings && meta.ceilings.length) {
         if (meta.id === "diabetes") {
-          const onset = has(c, "onsetAge") ? Number(c.onsetAge) : null;
+          const onset = has(c, "onsetAge") ? numOrNull(c.onsetAge) : null;
           const a1c = has(c, "a1c") ? Number(c.a1c) : null;
           const dm = rules.diabetes || null;
           // Carrier may publish a stricter A1c decline threshold (e.g., F&G: A1c 7 or above within the last year)
@@ -562,16 +571,16 @@ const Engine = (() => {
             ceiling = "decline";
           }
         } else if (meta.id === "anxiety" || meta.id === "depression") {
-          if (severity === "mild" && control === "good" && (c.medCount === 0 || (c.medCount === 1 && status === "current"))) {
+          if (severity === "mild" && control === "good" && (medCount === 0 || (medCount === 1 && status === "current"))) {
             ceiling = "preferred_plus";
-          } else if (severity === "mild" && control === "good" && c.medCount === 1) {
+          } else if (severity === "mild" && control === "good" && medCount === 1) {
             ceiling = "preferred";
           } else {
             ceiling = "standard";
           }
         } else if (meta.id === "asthma") {
-          if (severity === "mild" && c.medCount <= 1) ceiling = "preferred_plus";
-          else if (severity === "mild" && c.medCount <= 2) ceiling = "preferred";
+          if (medCount !== null && severity === "mild" && medCount <= 1) ceiling = "preferred_plus";
+          else if (medCount !== null && severity === "mild" && medCount <= 2) ceiling = "preferred";
           else ceiling = "standard";
         } else if (meta.id === "sleep_apnea") {
           if ((severity === "mild" || severity === "moderate") && control === "good" && !c.residualSymptoms) ceiling = "preferred";
@@ -594,7 +603,7 @@ const Engine = (() => {
         } else if (meta.id === "bipolar") {
           if (c.onsetWithin1yr) { postpone.push({ id: c.id, text: "Bipolar diagnosed within the last year." }); ceiling = "postpone"; }
           else if (c.suicide10yr) { decline.push({ id: c.id, text: "Suicide attempt within 10 years." }); ceiling = "decline"; }
-          else if (severity === "mild" && control === "good" && c.stableYears >= 5) ceiling = "standard_plus";
+          else if (stableYears !== null && severity === "mild" && control === "good" && stableYears >= 5) ceiling = "standard_plus";
           else ceiling = "standard";
         } else if (meta.id === "substance_treatment") {
           const years = has(c, "yearsSober") ? yearsAgo(c.yearsSober) : null;
@@ -623,7 +632,7 @@ const Engine = (() => {
               details.push("PTSD with self-harm/suicide history or alcohol use — below the accepted criteria; Standard ceiling.");
               ceiling = worstOf(base, meta.ceilings[0].klass);
             }
-          } else if (severity === "mild" && control === "good" && (c.medCount === 0 || c.medCount === 1)) {
+          } else if (severity === "mild" && control === "good" && (medCount === 0 || medCount === 1)) {
             base = "preferred_plus";
             // never exceed the carrier's published ceiling (e.g., Transamerica
             // lists PTSD under the depression row at Standard)
