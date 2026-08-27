@@ -10,6 +10,9 @@ name: Deploy Streamlit app
 # scope on richardparslow-commits/health_app.py and add it to this repo's
 # secrets as STREAMLIT_PUSH_TOKEN. Until that secret exists, the workflow runs
 # the test + build steps and skips the push with a warning.
+#
+# NB: the `secrets` context cannot be read inside `if:` expressions, so the
+# token is mapped to a job-level `env` var and the steps test `env.X` instead.
 on:
   push:
     branches: [main]
@@ -22,6 +25,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      STREAMLIT_PUSH_TOKEN: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -38,15 +43,15 @@ jobs:
         run: node scripts/build-embedded.js app_embedded.html
 
       - name: Check out streamlit repo (health_app.py)
-        if: ${{ secrets.STREAMLIT_PUSH_TOKEN != '' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         uses: actions/checkout@v4
         with:
           repository: richardparslow-commits/health_app.py
-          token: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
+          token: ${{ env.STREAMLIT_PUSH_TOKEN }}
           path: streamlit-app
 
       - name: Sync built app and assets into streamlit repo
-        if: ${{ secrets.STREAMLIT_PUSH_TOKEN != '' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         run: |
           cp app_embedded.html streamlit-app/
           cp index.html css/styles.css streamlit-app/
@@ -54,7 +59,7 @@ jobs:
           cp js/rules.js js/engine.js js/app.js streamlit-app/js/
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
-        if: ${{ secrets.STREAMLIT_PUSH_TOKEN != '' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
@@ -63,13 +68,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
-            echo "No changes to deploy — streamlit repo already current."
+            echo "No changes to deploy - streamlit repo already current."
           else
             git commit -m "Sync from HealthClassEstimator ${SOURCE_SHA:0:7}"
             git push
           fi
 
       - name: Warn when the deploy token is not configured
-        if: ${{ secrets.STREAMLIT_PUSH_TOKEN == '' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' }}
         run: |
           echo "::warning::STREAMLIT_PUSH_TOKEN secret is not set. The engine suite ran and the single-file HTML was built, but the streamlit repo was not updated. Create a PAT with Contents read/write on richardparslow-commits/health_app.py and add it as STREAMLIT_PUSH_TOKEN in this repo's secrets, then re-run this workflow."
