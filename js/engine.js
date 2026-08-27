@@ -1276,26 +1276,36 @@ const Engine = (() => {
        being "yes" triggers the avocation lane; all three must be explicitly
        "no" for a clean avocation reading.
        Carriers whose modeled guide publishes no avocation lane (Foresters,
-       Transamerica, Americo, Quility, Corebridge) must not silently treat a
-       disclosed hazardous activity as clean: mirror the medical fallback and
-       cap conservatively at Standard with an explicit review note. */
+       Americo, Corebridge) must not silently treat a disclosed hazardous
+       activity as clean: mirror the medical fallback and cap conservatively at
+       Standard with an explicit review note. Carriers that publish a distinct
+       aviation lane (Transamerica: private aviation may be offered with or
+       without a ratable aviation flat extra; Quility: aviation accepted with an
+       Aviation Exclusion Rider) get that published lane instead of the generic
+       fallback. */
     const hazYes = isYes(d.occupationHazardous) || isYes(d.aviation) || isYes(d.hazardousSports);
     const hazNo = isNo(d.occupationHazardous) && isNo(d.aviation) && isNo(d.hazardousSports);
+    const avOnly = isYes(d.aviation) && !isYes(d.occupationHazardous) && !isYes(d.hazardousSports);
     if (hazYes) {
       if (rules.avocation) {
-        const fe = rules.avocation.flatExtra;
+        // Aviation-only disclosures may use a distinct published lane (e.g.,
+        // Transamerica: private aviation with a ratable aviation flat extra at
+        // Preferred). Hazardous occupation/sports use the general lane.
+        const fe = (avOnly && rules.avocation.aviationFlatExtra) || rules.avocation.flatExtra;
         if (fe) {
           // Flat-extra lane: the base class is the best class available with a
-          // flat extra (e.g., F&G Preferred, MOO Standard Plus); the outcome
-          // conversion happens after the class merge below.
+          // flat extra (e.g., F&G Preferred, MOO Standard Plus, Transamerica
+          // Preferred for private aviation); the outcome conversion happens
+          // after the class merge below.
           domains.avocation = { klass: fe.baseClass, flatExtra: fe, flag: "hazardous_avocation", detail: fe.text };
         } else {
           // Carrier caps below preferred instead of offering a flat extra
-          // (e.g., National Life: Verified Standard pending underwriter review).
+          // (e.g., National Life: Verified Standard pending underwriter review;
+          // Transamerica hazardous avocation: individual consideration).
           domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
         }
       } else {
-        domains.avocation = { klass: "standard", flag: "hazardous_avocation", detail: "Hazardous occupation/avocation disclosed — this carrier's modeled guide does not publish a specific avocation lane; conservative Standard ceiling until underwriting confirms." };
+        domains.avocation = { klass: "standard", flag: "hazardous_avocation", detail: rules.avocationNoLaneText || "Hazardous occupation/avocation disclosed — this carrier's modeled guide does not publish a specific avocation lane; conservative Standard ceiling until underwriting confirms." };
       }
     } else if (hazNo) {
       if (rules.avocation) {

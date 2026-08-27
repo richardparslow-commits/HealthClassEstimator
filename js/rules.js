@@ -528,6 +528,11 @@ const CARRIER_RULES = {
       version: "506305 US (04/26)",
       note: "Final action is the decision of the Underwriter based on all circumstances; similar impairments can receive different final actions."
     },
+    /* The modeled Foresters non-medical guides publish no occupation/avocation
+       lane — the underwriting guide notes only that final action is the
+       Underwriter's decision based on all circumstances. Hazardous activities
+       are therefore reviewed case-by-case: conservative Standard ceiling. */
+    avocationNoLaneText: "Hazardous occupation/avocation disclosed — the modeled Foresters non-medical guides publish no specific avocation lane; final action is the Underwriter's decision based on all circumstances — conservative Standard ceiling pending review.",
     eligibility: {
       products: "Your Term, Advantage Plus II, SMART UL, Strong Foundation",
       issueAges: "0-80 by product (non-medical lanes)",
@@ -901,6 +906,26 @@ const CARRIER_RULES = {
     },
     bpTreatmentNote: "Preferred Plus: through age 49 without treatment; ages 50-80 with treatment if readings fit; 81+ without treatment. Preferred / Standard Plus: with or without treatment.",
 
+    /* ---- Hazardous occupation / avocation (p. 19 Lifestyle & Health
+       History table) ----
+       Two published rows: (1) Private aviation — preferred classes may be
+       offered with or without a ratable aviation flat extra; (2) Avocation
+       (hazardous) — a prohibited list (aeronautics: hang gliding, ultralight,
+       soaring, skydiving, ballooning; power racing, competitive vehicles,
+       mountain climbing, rodeos, competitive skiing; scuba/skin diving deeper
+       than 75 feet) is "individual consideration on a case-by-case basis —
+       may or may not be eligible"; preferred classes require no participation
+       in the listed activities. */
+    avocation: {
+      classCap: "standard",
+      currentHazardousText: "Hazardous avocation disclosed — Transamerica's prohibited-avocation list (aeronautics: hang gliding, ultralight, soaring, skydiving, ballooning; power racing, competitive vehicles, mountain climbing, rodeos, competitive skiing; scuba/skin diving deeper than 75 feet) is individual consideration on a case-by-case basis — may or may not be eligible; conservative Standard ceiling pending underwriter review.",
+      aviationFlatExtra: {
+        baseClass: "preferred",
+        text: "Aviation exposure disclosed — Transamerica: private aviation may be offered with or without a ratable aviation flat extra at the Preferred classes (published flat-extra lane); other hazardous avocations from the prohibited list are individual consideration."
+      },
+      cleanText: "No hazardous occupation or avocation disclosed."
+    },
+
     /* ---- Cholesterol / HDL ------------------------------------------- */
     cholesterol: {
       total: {
@@ -1206,6 +1231,7 @@ const CARRIER_RULES = {
       preferred: { name: "Preferred Nonsmoker / Preferred Plus", meaning: "No tobacco in past 2 years; meets preferred criteria (BMI 28-30; BP ≤145/85; chol ≤260; ratio ≤5.5).", color: "#1b9a7a" },
       standard_plus: { name: "Standard Plus / Preferred", meaning: "Meets Standard Plus criteria (BMI 30-32; BP ≤148/88; chol ≤300; ratio ≤6.2).", color: "#3b82b0" },
       standard: { name: "Standard Nonsmoker / Nontobacco", meaning: "Average insurable risk; no ratable impairments for the standard class requirement.", color: "#4a6fa5" },
+      flat_extra: { name: "Preferred + flat extra", meaning: "Private aviation may be offered with or without a ratable aviation flat extra at the Preferred classes (published flat-extra lane); the flat extra is added to the base class premium.", color: "#c2691b" },
       table: { name: "Table-rated (A-H)", meaning: "BMI or impairment outside Standard — Table A through H; premiums calculated from standard rates.", color: "#b8860b" },
       postpone: { name: "Postpone / pre-review", meaning: "Wait for stability, completed testing, or recovery (e.g., cancer treatment complete, heart attack 6 months, suicide attempt 2 years).", color: "#8a5fb8" },
       decline: { name: "Decline / specialist review", meaning: "Impairment listed as decline in the field guide, or outside current eligibility — carrier direction required.", color: "#b3364a" }
@@ -3026,6 +3052,11 @@ CARRIER_RULES.americo = {
     standard: null
   },
   drivingDeclineNote: "Driving history is not a published Eagle Select input.",
+  /* Eagle Select is an instant-decision health-question product — the agent
+     guides publish no occupation/avocation lane. Hazardous activities are
+     not screened by the published questions; conservative Standard ceiling
+     until underwriting/third-party data confirms. */
+  avocationNoLaneText: "Hazardous occupation/avocation disclosed — the Eagle Select agent guides publish no occupation/avocation lane (instant-decision, health-question-driven product); conservative Standard ceiling until third-party data and underwriting confirm.",
   familyHistory: {
     mapping: { none: "preferred_plus", parent: "preferred_plus", parent_sibling: "preferred_plus", multiple: "preferred_plus" },
     preferred_plus: { text: "Family history is not a published Eagle Select input (Huntington's disease is a knock-out condition — verify explicitly)." }
@@ -3184,6 +3215,19 @@ CARRIER_RULES.quility = {
     standard: { sys: 160, dia: 95 }
   },
   bpTreatmentNote: "Accepted: hypertension with 2 or fewer medications, no hospitalizations, and normal blood pressure in the past 2 years. No numeric limits are published — thresholds above are conservative placeholders for guidance only.",
+
+  /* ---- Hazardous occupation / avocation (p. 4-5 Accepted conditions) ----
+     QTP publishes two avocation acceptances: aviation (major airline pilots
+     flying in the US and Canada, or with an Aviation Exclusion Rider) and
+     certified recreational scuba to 100 feet (no wreck/salvage/ice/cave
+     diving). Both assume standard or better — QTP offers no table ratings.
+     Anything off the accepted list is not published and is capped
+     conservatively at Standard pending review. */
+  avocation: {
+    classCap: "standard",
+    currentHazardousText: "Hazardous occupation/avocation disclosed — Quility's accepted-conditions list covers aviation (major airline pilots flying in the US and Canada, or with an Aviation Exclusion Rider) and certified recreational scuba to 100 feet; other hazardous avocations are not published — conservative Standard ceiling until underwriting confirms.",
+    cleanText: "No hazardous occupation or avocation disclosed."
+  },
   cholesterol: {
     total: { preferred_plus: 260, preferred: 280, standard: 300 },
     ratio: { preferred_plus: 6, preferred: 6.5, standard: 8 },
@@ -3318,6 +3362,10 @@ CARRIER_RULES.corebridge = {
     ],
     chartNote: "Build chart (SimpliNow Legacy Max / level column): minimum and maximum weight per height. Outside the range — decline. The knockout questions separately screen a BMI below 22.5 as graded — eligible only for the graded death benefit, not a decline."
   },
+  /* SimpliNow Legacy is an instant-decision knockout-question product — no
+     occupation/avocation lane is published. Hazardous activities are not
+     screened by the knockout list; conservative Standard ceiling. */
+  avocationNoLaneText: "Hazardous occupation/avocation disclosed — the SimpliNow Legacy knockout questions publish no occupation/avocation lane (instant-decision product); conservative Standard ceiling pending the instant-decision screen.",
   nicotine: {
     classes: [
       { klass: "preferred", lookbackMonths: 24, label: "Non-Tobacco (24-month window used by the condition table for heart conditions)" }

@@ -1188,14 +1188,33 @@ cadd("Age 81 -> above maximum issue age (80) -> decline", d => { d.age = 81; }, 
 
 cadd("Organ transplant -> decline (ever)", d => { d.conditions = [{ id: "transplant", status: "current", severity: "severe" }]; }, { klass: "decline", tobacco: false });
 
-/* ---- Avocation fallback: carriers with no published avocation lane must not
-   silently treat a disclosed hazardous activity as a clean profile. The engine
-   mirrors the medical fallback: conservative Standard ceiling + review note. */
+/* ---- Avocation lanes: carriers that publish an avocation row in the modeled
+   guide get that published lane; carriers whose modeled guides publish none
+   must not silently treat a disclosed hazardous activity as a clean profile
+   (conservative Standard ceiling + review note). */
+
+/* Transamerica (Term & IUL guide p. 19): private aviation may be offered with
+   or without a ratable aviation flat extra at Preferred (published flat-extra
+   lane); prohibited-list hazardous avocations are individual consideration
+   (Standard ceiling). */
+tadd("Private aviation only -> Flat extra (Preferred base, ratable aviation lane)", d => { d.aviation = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });
+tadd("Private aviation + tobacco -> Flat extra, tobacco basis", d => { d.aviation = "yes"; d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }, { klass: "flat_extra", tobacco: true });
+tadd("Private aviation + diabetes -> Standard (medical cap wins over flat-extra lane)", d => { d.aviation = "yes"; d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", medCount: 1, onsetAge: 52, a1c: 6.9, insulin: "no", complications: "no" }]; }, { klass: "standard", tobacco: false, wantFlatExtra: false });
+tadd("Hazardous occupation disclosed -> Standard (prohibited-list avocation, individual consideration)", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false, wantFlatExtra: false });
+tadd("Hazardous sports disclosed -> Standard (prohibited-list avocation)", d => { d.hazardousSports = "yes"; }, { klass: "standard", tobacco: false, wantFlatExtra: false });
+
+/* Quility QTPLUS (p. 4): aviation accepted with an Aviation Exclusion Rider
+   (major airline pilots US/Canada) and certified scuba <= 100 ft — standard or
+   better, no tables; other hazardous avocations are not published -> Standard. */
+qadd2("Aviation exposure -> Standard (accepted with Aviation Exclusion Rider, no tables)", d => { d.aviation = "yes"; }, { klass: "standard", tobacco: false });
+qadd2("Hazardous occupation disclosed -> Standard (not on accepted list)", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+
+/* Foresters / Corebridge / Americo: modeled guides publish no avocation lane —
+   the fallback must still cap at Standard instead of treating the answer as
+   clean. */
 fadd("Hazardous occupation disclosed -> conservative Standard (no avocation lane published)", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
 fadd("Aviation exposure disclosed -> conservative Standard", d => { d.aviation = "yes"; }, { klass: "standard", tobacco: false });
 fadd("Hazardous sports disclosed -> conservative Standard", d => { d.hazardousSports = "yes"; }, { klass: "standard", tobacco: false });
-tadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
-qadd2("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
 cadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
 eadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; d.age = 55; }, { klass: "standard", tobacco: false });
 
@@ -1340,6 +1359,7 @@ const contractProbes = [
   ["Quit nicotine 30 mo", d => { d.usedNicotine = "yes"; d.nicotineLastUse = monthsAgo(30); d.nicotineProduct = "vape"; }],
   ["Parent CV death", d => { d.famCardio = "parent"; }],
   ["Hazardous occupation", d => { d.occupationHazardous = "yes"; }],
+  ["Private aviation", d => { d.aviation = "yes"; }],
   ["Depression current", d => { d.conditions = [{ id: "depression", status: "current", severity: "moderate", control: "good" }]; }],
   ["Diabetes type 2", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good" }]; }],
   ["Cancer resolved 2 yr", d => { d.conditions = [{ id: "other_cancer", status: "resolved", resolvedYears: 2, severity: "moderate", control: "good" }]; }],
