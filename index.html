@@ -14,7 +14,6 @@
      carrier has the final and absolute say on underwriting. -->
 <div class="ack-gate hidden" id="ack-gate" role="dialog" aria-modal="true" aria-labelledby="ack-title">
   <div class="ack-card">
-    <div class="ack-mark">HCE</div>
     <h2 id="ack-title">Acknowledgment required</h2>
     <p class="ack-statement">
       This tool helps <strong>estimate</strong> a person&rsquo;s health class for life-insurance
@@ -128,7 +127,7 @@
      in order when async=false, preserving the rules -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "45";
+    var HCE_VERSION = "46";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");

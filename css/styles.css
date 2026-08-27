@@ -454,15 +454,6 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   border-top: 6px solid var(--teal);
   margin: auto;
 }
-.ack-mark {
-  width: 44px; height: 44px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--teal), var(--accent));
-  color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 13px; letter-spacing: .5px;
-  margin-bottom: 14px;
-}
 .ack-card h2 { margin: 0 0 6px; font-size: 22px; color: var(--navy); }
 .ack-statement { font-size: 15px; margin: 10px 0; }
 .ack-disclaimer {
