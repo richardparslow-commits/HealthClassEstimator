@@ -419,10 +419,25 @@ const Engine = (() => {
 
     for (const c of conds) {
       const meta = (rules.medicalCeilings || []).find(m => m.id === c.id);
-      if (!meta) continue;
       const status = c.status || "current";
       const severity = c.severity || "mild";
       const control = c.control || "good";
+      /* Conditions the carrier does not publish: never silently ignore a
+         disclosed condition. Evaluate it at a conservative fallback ceiling
+         and tell the producer it needs individual review rather than
+         pretending it has no effect. (The catalog is broader than any single
+         carrier's impairment table.) Carriers that evaluate conditions through
+         their own impairment block (rules.medical, e.g. Foresters) already
+         handle them there — including their rating-worksheet design where the
+         condition does not cap the base class — so the fallback does not fire
+         for them. */
+      if (!meta) {
+        if (!rules.medical) {
+          details.push(`${(c.name || c.id).replace(/_/g, " ")}: ${status} / ${severity} / ${control} control — not individually published in this carrier's guide; review at a conservative Standard ceiling.`);
+          if (classWorseThan("standard", worst)) worst = "standard";
+        }
+        continue;
+      }
 
       if (meta.postpone) {
         // postpone applies only when explicitly indicated (recent/unstable/timing flag)
@@ -533,8 +548,86 @@ const Engine = (() => {
           } else {
             ceiling = "standard";
           }
-        } else if (meta.id === "dysplastic_nevi") {
-          ceiling = (c.count && c.count <= 3) ? "preferred" : "preferred_plus";
+        } else if (meta.id === "ptsd" || meta.id === "major_depression") {
+          // QTP publishes PTSD criteria (no self-harm/suicide, no alcohol use).
+          let base;
+          if (meta.id === "ptsd" && (c.selfHarm || c.alcoholUse)) {
+            // the carrier's own entry publishes this as a decline (e.g., QTP:
+            // "otherwise declinable") — fire it rather than silently capping.
+            if (meta.decline) {
+              decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
+              ceiling = "decline";
+            } else {
+              base = "standard";
+              details.push("PTSD with self-harm/suicide history or alcohol use — below the accepted criteria; Standard ceiling.");
+              ceiling = worstOf(base, meta.ceilings[0].klass);
+            }
+          } else if (severity === "mild" && control === "good" && (c.medCount === 0 || c.medCount === 1)) {
+            base = "preferred_plus";
+            // never exceed the carrier's published ceiling (e.g., Transamerica
+            // lists PTSD under the depression row at Standard)
+            ceiling = worstOf(base, meta.ceilings[0].klass);
+          } else {
+            base = "standard";
+            ceiling = worstOf(base, meta.ceilings[0].klass);
+          }
+        } else if (meta.id === "migraine") {
+          // AMAM: migraine fully investigated & controlled -> Standard; severe or
+          // not investigated -> Decline. Quility: full evaluation completed -> Preferred.
+          if (severity === "severe" || !c.investigated) {
+            if (meta.decline) {
+              decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
+              ceiling = "decline";
+            } else {
+              ceiling = "table";
+            }
+          } else {
+            // base is the best case when fully investigated and controlled;
+            // the carrier's published ceiling caps it where the guide is stricter.
+            ceiling = worstOf("preferred_plus", meta.ceilings[0].klass);
+          }
+        } else if (meta.id === "hypothyroidism") {
+          // QTP: controlled, diagnosed >6 months ago, no complications. Transamerica: thyroid disorder.
+          // base is the best-case when controlled; the carrier's published
+          // ceiling (worstOf) caps it where the guide is stricter.
+          const base = (control === "good" && status === "current") ? "preferred_plus" : "standard";
+          ceiling = worstOf(base, meta.ceilings[0].klass);
+        } else if (meta.id === "hypogonadism" || meta.id === "erectile_dysfunction") {
+          // Testosterone therapy / ED meds are not rateable in the modeled guides
+          // when controlled; review if associated with a cardiac event.
+          ceiling = worstOf(control === "good" ? "preferred_plus" : "standard", meta.ceilings[0].klass);
+        } else if (meta.id === "chronic_fatigue" || meta.id === "rem_sleep_disorder") {
+          // Transamerica: chronic fatigue syndrome listed as rateable; REM sleep
+          // disorder reviewed under sleep/neuro. Conservative Standard.
+          ceiling = worstOf("standard", meta.ceilings[0].klass);
+        } else if (meta.id === "pacemaker_icd" || meta.id === "heart_valve_prosthesis") {
+          // QTP: pacemaker/defibrillator implant declinable. FE Express: defibrillator
+          // ever decline. AMO simplified: pacemaker/defibrillator listed as a common
+          // impairment — may be an adjusted benefit or decline. The carrier's own
+          // published ceiling is the stable-device best case.
+          const yrs = has(c, "implantYears") ? Number(c.implantYears) : null;
+          const published = meta.ceilings[0].klass;
+          let base;
+          if (meta.id === "heart_valve_prosthesis") {
+            // Mechanical valve requires anticoagulation — table-rated or specialist review.
+            base = "table";
+          } else if (yrs !== null && yrs >= 1 && control === "good") {
+            base = published; // stable device — carrier's published ceiling
+          } else {
+            base = "table"; // recent placement or poor control — table/specialist review
+          }
+          ceiling = worstOf(base, published);
+          details.push(`${meta.name}: device present — ${ceiling} best case per this carrier's published device row.`);
+        } else if (meta.id === "intracranial_aneurysm_clip" || meta.id === "vp_shunt" || meta.id === "neurostimulator") {
+          // Surgical implants: reviewed individually; stable, long-standing devices
+          // may be standard; recent placement is table/specialist review.
+          const yrs = has(c, "implantYears") ? Number(c.implantYears) : null;
+          const base = (yrs !== null && yrs >= 2 && control === "good") ? "standard" : "table";
+          ceiling = worstOf(base, meta.ceilings[0].klass);
+        } else if (meta.id === "cochlear_implant" || meta.id === "drug_infusion_pump" || meta.id === "ocular_monitoring") {
+          // Non-cardiac devices: cochlear implant is a sensory device; infusion
+          // pumps and ocular monitoring are reviewed on the underlying condition.
+          ceiling = worstOf(control === "good" ? "standard" : "table", meta.ceilings[0].klass);
         } else {
           // generic: first ceiling
           ceiling = meta.ceilings[0].klass;

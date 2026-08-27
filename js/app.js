@@ -173,6 +173,8 @@ const App = (() => {
   const CONDITION_CATALOG = [
     { id: "anxiety", name: "Anxiety", group: "Mental health" },
     { id: "depression", name: "Depression", group: "Mental health" },
+    { id: "major_depression", name: "Major depressive disorder (MDD)", group: "Mental health" },
+    { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", group: "Mental health" },
     { id: "bipolar", name: "Bipolar disorder", group: "Mental health" },
     { id: "schizophrenia", name: "Schizophrenia", group: "Mental health" },
     { id: "substance_treatment", name: "Alcohol/drug treatment history", group: "Substance use" },
@@ -180,16 +182,27 @@ const App = (() => {
     { id: "high_cholesterol", name: "High cholesterol", group: "Cardiovascular" },
     { id: "cad", name: "Coronary artery disease / angina", group: "Cardiovascular" },
     { id: "heart_disease", name: "Heart disease (CHF, cardiomyopathy, valve, device)", group: "Cardiovascular" },
+    { id: "pacemaker_icd", name: "Cardiac pacemaker / implanted defibrillator (ICD)", group: "Cardiovascular" },
+    { id: "heart_valve_prosthesis", name: "Heart valve prosthesis (metal / mechanical valve)", group: "Cardiovascular" },
     { id: "stroke", name: "Stroke / TIA", group: "Cardiovascular" },
     { id: "asthma", name: "Asthma", group: "Respiratory" },
     { id: "copd", name: "COPD / emphysema / chronic bronchitis", group: "Respiratory" },
     { id: "sleep_apnea", name: "Sleep apnea", group: "Respiratory" },
     { id: "diabetes", name: "Diabetes", group: "Metabolic" },
+    { id: "hypothyroidism", name: "Hypothyroidism", group: "Metabolic" },
+    { id: "hypogonadism", name: "Hypogonadism / low testosterone", group: "Metabolic" },
+    { id: "erectile_dysfunction", name: "Erectile dysfunction", group: "Metabolic" },
     { id: "kidney_disease", name: "Kidney disease", group: "Other" },
     { id: "liver_disease", name: "Liver disease", group: "Other" },
     { id: "hiv", name: "HIV / AIDS", group: "Other" },
     { id: "dementia", name: "Alzheimer's / dementia", group: "Neurological" },
     { id: "seizures", name: "Seizures / epilepsy", group: "Neurological" },
+    { id: "migraine", name: "Migraine / headache", group: "Neurological" },
+    { id: "chronic_fatigue", name: "Chronic fatigue syndrome", group: "Neurological" },
+    { id: "rem_sleep_disorder", name: "REM sleep behavior disorder", group: "Neurological" },
+    { id: "intracranial_aneurysm_clip", name: "Intracranial aneurysm clip", group: "Neurological" },
+    { id: "vp_shunt", name: "VP shunt / CSF shunt", group: "Neurological" },
+    { id: "neurostimulator", name: "Neurostimulator (spinal cord stimulator, etc.)", group: "Neurological" },
     { id: "autism", name: "Autism", group: "Other" },
     { id: "skin_cancer", name: "Skin cancer (basal / squamous)", group: "Cancer" },
     { id: "other_cancer", name: "Other cancer history", group: "Cancer" },
@@ -197,6 +210,9 @@ const App = (() => {
     { id: "mvp", name: "Mitral valve prolapse", group: "Cardiovascular" },
     { id: "cimt", name: "Carotid imaging (CIMT)", group: "Cardiovascular" },
     { id: "dysplastic_nevi", name: "Dysplastic nevi", group: "Other" },
+    { id: "cochlear_implant", name: "Cochlear implant", group: "Other" },
+    { id: "drug_infusion_pump", name: "Drug infusion pump (e.g., intrathecal / insulin pump)", group: "Other" },
+    { id: "ocular_monitoring", name: "Ocular monitoring system (e.g., Sensimed Triggerfish lens)", group: "Other" },
     { id: "transplant", name: "Organ transplant", group: "Other" },
     { id: "paralysis", name: "Paralysis", group: "Other" }
   ];
@@ -206,7 +222,7 @@ const App = (() => {
   function getConditionState(id) {
     let c = state.conditions.find(x => x.id === id);
     if (!c) {
-      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false, defibrillator: false, cardiomyopathy: false };
+      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false, defibrillator: false, cardiomyopathy: false, treatment: "", implantYears: "", investigated: false, selfHarm: false, alcoholUse: false };
       state.conditions.push(c);
       saveState();
     }
@@ -269,6 +285,31 @@ const App = (() => {
       r.appendChild(field("Residual symptoms despite treatment?", checkPillKey(c, "residualSymptoms", "Yes")));
       wrap.appendChild(r);
     }
+    /* Respiratory treatment question: how is the respiratory condition treated? */
+    if (id === "asthma" || id === "copd" || id === "sleep_apnea") {
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("How is it treated?", selectInputKey(c, "treatment", [["none", "No treatment needed"], ["inhaler", "Rescue inhaler only"], ["controller", "Daily controller medication (inhaler / pill)"], ["oral_steroids", "Oral steroids"], ["cpap", "CPAP / BiPAP"], ["oxygen", "Supplemental oxygen"], ["other", "Other / multiple"]])));
+      wrap.appendChild(r);
+    }
+    if (id === "ptsd") {
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("History of self-harm or suicide attempt?", checkPillKey(c, "selfHarm", "Yes")));
+      r.appendChild(field("Alcohol use disclosed?", checkPillKey(c, "alcoholUse", "Yes")));
+      wrap.appendChild(r);
+    }
+    if (id === "migraine") {
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("Fully investigated (imaging/evaluation complete)?", checkPillKey(c, "investigated", "Yes")));
+      wrap.appendChild(r);
+    }
+    if (id === "pacemaker_icd" || id === "heart_valve_prosthesis" || id === "intracranial_aneurysm_clip" || id === "vp_shunt" || id === "neurostimulator" || id === "cochlear_implant" || id === "drug_infusion_pump" || id === "ocular_monitoring") {
+      const r = el("div", { class: "field-row" });
+      const yr = el("input", { type: "number", min: 0, step: 1, placeholder: "years ago" });
+      if (c.implantYears !== "") yr.value = c.implantYears;
+      yr.addEventListener("input", () => { c.implantYears = yr.value; saveState(); });
+      r.appendChild(field("Implanted / placed how many years ago?", yr));
+      wrap.appendChild(r);
+    }
     if (id === "other_cancer" || id === "skin_cancer") {
       const r = el("div", { class: "field-row" });
       if (id === "other_cancer") {
@@ -327,7 +368,7 @@ const App = (() => {
       const notes = [];
       if (meta.ceilings && meta.ceilings.length) {
         const best = meta.ceilings[0];
-        notes.push(`Best possible class: ${classLabel(best.klass)} — ${best.when}.`);
+        notes.push(`Best possible class: ${classLabel(best.klass)}${best.when ? " — " + best.when : "."}`);
       }
       if (meta.postpone) notes.push("Postpone trigger: " + meta.postpone);
       if (meta.decline) notes.push("Decline/specialist screen: " + meta.decline);
@@ -342,6 +383,18 @@ const App = (() => {
   }
 
   /* helpers that operate directly on a condition object */
+  function selectInputKey(condObj, key, options) {
+    const sel = el("select", {});
+    sel.appendChild(el("option", { value: "" }, "— select —"));
+    for (const [val, label] of options) {
+      const o = el("option", { value: val }, label);
+      if (String(condObj[key]) === String(val)) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", () => { condObj[key] = sel.value; saveState(); });
+    return sel;
+  }
+
   function radioPillKey(condObj, key, options) {
     const wrap = el("div", { class: "radio-group" });
     for (const [val, label] of options) {

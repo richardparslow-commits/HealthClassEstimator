@@ -973,7 +973,23 @@ const CARRIER_RULES = {
       { id: "osteoporosis", name: "Osteoporosis", ceilings: [{ klass: "preferred_plus", when: "no complications" }] },
       { id: "autism", name: "Autism", ceilings: [{ klass: "standard", when: "individual consideration" }] },
       { id: "dysplastic_nevi", name: "Dysplastic nevi", ceilings: [{ klass: "preferred_plus", when: "no melanoma history; surveillance screening may be required" }], worse: "Melanoma (less than 2, including in situ) — preferred may still be available." },
-      { id: "cimt", name: "Carotid imaging (CIMT)", ceilings: [{ klass: "preferred_plus", when: "reviewed individually" }] }
+      { id: "cimt", name: "Carotid imaging (CIMT)", ceilings: [{ klass: "preferred_plus", when: "reviewed individually" }] },
+      { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", ceilings: [{ klass: "standard", when: "PTSD — treated, stable (impairment table: depression row)" }], worse: "PTSD with self-harm/suicide or substance use — review under mental-health rules." },
+      { id: "major_depression", name: "Major depressive disorder", ceilings: [{ klass: "standard", when: "controlled with medication (depression row)" }], worse: "Standard to Table 3; single suicide attempt over 1 year $5/M flat extra." },
+      { id: "migraine", name: "Migraine / headache", ceilings: [{ klass: "standard", when: "migraine or tension headache (impairment table)" }], worse: "Migraine — Standard; severe or not investigated — Table to decline." },
+      { id: "chronic_fatigue", name: "Chronic fatigue syndrome", ceilings: [{ klass: "standard", when: "chronic fatigue syndrome (impairment table)" }] },
+      { id: "rem_sleep_disorder", name: "REM sleep behavior disorder", ceilings: [{ klass: "standard", when: "reviewed under sleep/neuro" }] },
+      { id: "hypothyroidism", name: "Thyroid disorder", ceilings: [{ klass: "preferred_plus", when: "controlled thyroid disorder (impairment table)" }], worse: "Thyroid disorder — Standard to Table 6 depending on control." },
+      { id: "hypogonadism", name: "Hypogonadism / low testosterone", ceilings: [{ klass: "preferred_plus", when: "controlled on testosterone therapy" }] },
+      { id: "erectile_dysfunction", name: "Erectile dysfunction", ceilings: [{ klass: "preferred_plus", when: "ED only, no cardiac event" }], worse: "ED with underlying cardiovascular disease — review the cardiac history." },
+      { id: "pacemaker_icd", name: "Cardiac pacemaker / ICD", ceilings: [{ klass: "table", table: 2, when: "pacemaker, no other heart disease, 3+ months, over 40 (best case Table 2)" }], worse: "Pacemaker — Table 2-4; defibrillator — decline/specialist review." },
+      { id: "heart_valve_prosthesis", name: "Heart valve prosthesis", ceilings: [{ klass: "table", table: 4, when: "heart valve surgery (impairment table)" }], worse: "Heart valve surgery — Table 4 to decline." },
+      { id: "intracranial_aneurysm_clip", name: "Intracranial aneurysm clip", ceilings: [{ klass: "table", when: "stable, long-standing clip — individual review" }] },
+      { id: "vp_shunt", name: "VP / CSF shunt", ceilings: [{ klass: "standard", when: "stable shunt, no recent revision" }] },
+      { id: "neurostimulator", name: "Neurostimulator", ceilings: [{ klass: "standard", when: "reviewed on the underlying condition" }] },
+      { id: "cochlear_implant", name: "Cochlear implant", ceilings: [{ klass: "standard", when: "sensory device — not rateable" }] },
+      { id: "drug_infusion_pump", name: "Drug infusion pump", ceilings: [{ klass: "standard", when: "reviewed on the underlying condition" }] },
+      { id: "ocular_monitoring", name: "Ocular monitoring system", ceilings: [{ klass: "standard", when: "monitoring device — reviewed on the underlying condition" }] }
     ],
 
     /* ---- Postpone triggers (shared gates, Transamerica flavor) ------- */
@@ -1403,7 +1419,23 @@ const CARRIER_RULES = {
       { id: "mvp", name: "Mitral valve prolapse", ceilings: [{ klass: "standard", when: "functional murmur, no significant insufficiency" }], worse: "Otherwise — Standard to Table 8." },
       { id: "cimt", name: "Carotid imaging (CIMT)", ceilings: [{ klass: "standard", when: "individual consideration" }] },
       { id: "transplant", name: "Organ transplant", ceilings: [{ klass: "table", table: 6, when: "single renal transplant, no complications after 1 year, over age 20 (best case Table 6)" }], worse: "Heart/lung/liver transplant or complications — carrier direction." },
-      { id: "paralysis", name: "Paralysis", ceilings: [{ klass: "table", table: 8, when: "paraplegia — individual consideration" }], decline: "Quadriplegia — decline." }
+      { id: "paralysis", name: "Paralysis", ceilings: [{ klass: "table", table: 8, when: "paraplegia — individual consideration" }], decline: "Quadriplegia — decline." },
+      { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", ceilings: [{ klass: "standard", when: "PTSD — treated, stable (impairment table: depression row)" }], worse: "PTSD with self-harm/suicide or substance use — review under mental-health rules." },
+      { id: "major_depression", name: "Major depressive disorder", ceilings: [{ klass: "standard", when: "controlled with medication (depression row)" }], worse: "Standard to Table 3; single suicide attempt over 1 year $5/M flat extra." },
+      { id: "migraine", name: "Migraine / headache", ceilings: [{ klass: "standard", when: "migraine or tension headache (impairment table)" }], worse: "Migraine — Standard; severe or not investigated — Table to decline." },
+      { id: "chronic_fatigue", name: "Chronic fatigue syndrome", ceilings: [{ klass: "standard", when: "chronic fatigue syndrome (impairment table)" }] },
+      { id: "rem_sleep_disorder", name: "REM sleep behavior disorder", ceilings: [{ klass: "standard", when: "reviewed under sleep/neuro" }] },
+      { id: "hypothyroidism", name: "Thyroid disorder", ceilings: [{ klass: "standard", when: "not on the simplified impairment list — conservative review" }] },
+      { id: "hypogonadism", name: "Hypogonadism / low testosterone", ceilings: [{ klass: "preferred_plus", when: "controlled on testosterone therapy" }] },
+      { id: "erectile_dysfunction", name: "Erectile dysfunction", ceilings: [{ klass: "preferred_plus", when: "ED only, no cardiac event" }], worse: "ED with underlying cardiovascular disease — review the cardiac history." },
+      { id: "pacemaker_icd", name: "Cardiac pacemaker / ICD", ceilings: [{ klass: "standard", when: "listed on the common-impairment list — may be an adjusted benefit or decline; stable device reviewed individually" }], worse: "Defibrillator — decline/specialist review." },
+      { id: "heart_valve_prosthesis", name: "Heart valve prosthesis", ceilings: [{ klass: "table", when: "heart surgery — reviewed under coronary/heart disease rows" }] },
+      { id: "intracranial_aneurysm_clip", name: "Intracranial aneurysm clip", ceilings: [{ klass: "standard", when: "stable, long-standing clip — individual review" }] },
+      { id: "vp_shunt", name: "VP / CSF shunt", ceilings: [{ klass: "standard", when: "stable shunt, no recent revision" }] },
+      { id: "neurostimulator", name: "Neurostimulator", ceilings: [{ klass: "standard", when: "reviewed on the underlying condition" }] },
+      { id: "cochlear_implant", name: "Cochlear implant", ceilings: [{ klass: "standard", when: "sensory device — not rateable" }] },
+      { id: "drug_infusion_pump", name: "Drug infusion pump", ceilings: [{ klass: "standard", when: "reviewed on the underlying condition" }] },
+      { id: "ocular_monitoring", name: "Ocular monitoring system", ceilings: [{ klass: "standard", when: "monitoring device — reviewed on the underlying condition" }] }
     ],
 
     /* ---- Postpone triggers (MOO flavor) ------------------------------ */
@@ -2536,7 +2568,23 @@ CARRIER_RULES.amam = {
       { id: "skin_cancer", name: "Skin cancer (basal / squamous)", ceilings: [{ klass: "standard", when: "basal or squamous cell skin carcinoma, isolated occurrence" }] },
       { id: "other_cancer", name: "Other cancer history", ceilings: [{ klass: "standard", when: "eight years since surgery, diagnosis, or last treatment, no recurrence or additional occurrence" }], decline: "All other cancer / melanoma — decline (8-year clear rule; basal or squamous isolated occurrence -> Standard).", postpone: "Cancer diagnosed/treated within the 8-year window — decline screen." },
       { id: "transplant", name: "Organ transplant", ceilings: [], decline: "Organ or bone marrow transplant recipient, or on the waiting list — decline." },
-      { id: "paralysis", name: "Paralysis", ceilings: [], decline: "Paralysis including paraplegia and quadriplegia — decline." }
+      { id: "paralysis", name: "Paralysis", ceilings: [], decline: "Paralysis including paraplegia and quadriplegia — decline." },
+      { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", ceilings: [{ klass: "standard", when: "PTSD — treated, stable, no self-harm or substance use (QTP criteria)" }], worse: "PTSD with self-harm/suicide history or alcohol use — below accepted criteria." },
+      { id: "major_depression", name: "Major depressive disorder", ceilings: [{ klass: "standard", when: "major depression — treated, no hospitalization or disability (QTP criteria)" }], worse: "Major depression with hospitalization, disability, or substance use — decline." },
+      { id: "migraine", name: "Migraine / headache", ceilings: [{ klass: "standard", when: "migraine fully investigated and controlled" }], decline: "Migraine severe or not investigated — decline (Home Certainty impairment guide)." },
+      { id: "chronic_fatigue", name: "Chronic fatigue syndrome", ceilings: [{ klass: "standard", when: "chronic fatigue syndrome — reviewed individually" }] },
+      { id: "rem_sleep_disorder", name: "REM sleep behavior disorder", ceilings: [{ klass: "standard", when: "REM sleep disorder — reviewed under sleep/neuro" }] },
+      { id: "hypothyroidism", name: "Hypothyroidism", ceilings: [{ klass: "standard", when: "hypothyroidism controlled, diagnosed >6 months ago (QTP criteria)" }] },
+      { id: "hypogonadism", name: "Hypogonadism / low testosterone", ceilings: [{ klass: "preferred_plus", when: "controlled on testosterone therapy" }] },
+      { id: "erectile_dysfunction", name: "Erectile dysfunction", ceilings: [{ klass: "preferred_plus", when: "ED only, no cardiac event" }], worse: "ED with underlying cardiovascular disease — review the cardiac history." },
+      { id: "pacemaker_icd", name: "Cardiac pacemaker / ICD", ceilings: [], decline: "Pacemaker or defibrillator implant — decline (Home Certainty impairment guide)." },
+      { id: "heart_valve_prosthesis", name: "Heart valve prosthesis", ceilings: [], decline: "Mechanical/metal heart valve — reviewed under heart disease; anticoagulation required — table/specialist review." },
+      { id: "intracranial_aneurysm_clip", name: "Intracranial aneurysm clip", ceilings: [{ klass: "table", when: "stable, long-standing clip — individual review" }] },
+      { id: "vp_shunt", name: "VP / CSF shunt", ceilings: [{ klass: "standard", when: "stable shunt, no recent revision" }] },
+      { id: "neurostimulator", name: "Neurostimulator", ceilings: [{ klass: "standard", when: "spinal cord stimulator — reviewed on the underlying condition" }] },
+      { id: "cochlear_implant", name: "Cochlear implant", ceilings: [{ klass: "standard", when: "sensory device — not rateable" }] },
+      { id: "drug_infusion_pump", name: "Drug infusion pump", ceilings: [{ klass: "standard", when: "pump — reviewed on the underlying condition" }] },
+      { id: "ocular_monitoring", name: "Ocular monitoring system", ceilings: [{ klass: "standard", when: "monitoring device — reviewed on the underlying condition" }] }
     ],
 
     /* ---- Postpone triggers ------------------------------------------- */
@@ -3177,7 +3225,23 @@ CARRIER_RULES.quility = {
     { id: "depression", name: "Depression", ceilings: [{ klass: "preferred_plus" }], decline: "Depression: up to 1 medication, no other mental/nervous condition, no substance abuse, no suicide attempts, no hospitalization, employed/no time off work." },
     { id: "sleep_apnea", name: "Sleep apnea", ceilings: [{ klass: "preferred" }], decline: "Sleep apnea with daily symptoms, non-compliance with treatment, or oxygen use — declinable." },
     { id: "lupus", name: "Lupus", decline: "Any systemic lupus — declinable." },
-    { id: "peripheral_vascular", name: "Peripheral vascular disease", decline: "Any history of peripheral vascular disease — declinable." }
+    { id: "peripheral_vascular", name: "Peripheral vascular disease", decline: "Any history of peripheral vascular disease — declinable." },
+    { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", ceilings: [{ klass: "preferred_plus" }], decline: "PTSD accepted only with no history of self-harm or suicide attempt and no alcohol use — otherwise declinable." },
+    { id: "major_depression", name: "Major depressive disorder", ceilings: [{ klass: "preferred_plus" }], decline: "Major depression: up to 1 medication, no other mental/nervous condition, no substance abuse, no suicide attempts, no hospitalization, employed/no time off work." },
+    { id: "migraine", name: "Migraine / headache", ceilings: [{ klass: "preferred" }], decline: "Migraine with full evaluation completed; not investigated or severe — declinable." },
+    { id: "hypothyroidism", name: "Hypothyroidism", ceilings: [{ klass: "preferred" }], decline: "Hypothyroidism accepted when controlled, diagnosed more than 6 months ago, no complications." },
+    { id: "hypogonadism", name: "Hypogonadism / low testosterone", ceilings: [{ klass: "preferred_plus" }] },
+    { id: "erectile_dysfunction", name: "Erectile dysfunction", ceilings: [{ klass: "preferred_plus" }] },
+    { id: "chronic_fatigue", name: "Chronic fatigue syndrome", ceilings: [{ klass: "standard" }] },
+    { id: "rem_sleep_disorder", name: "REM sleep behavior disorder", ceilings: [{ klass: "standard" }] },
+    { id: "pacemaker_icd", name: "Cardiac pacemaker / ICD", decline: "Any heart valve replacement, pacemaker, or defibrillator implant — declinable." },
+    { id: "heart_valve_prosthesis", name: "Heart valve prosthesis", decline: "Any heart valve replacement — declinable." },
+    { id: "intracranial_aneurysm_clip", name: "Intracranial aneurysm clip", ceilings: [{ klass: "standard" }] },
+    { id: "vp_shunt", name: "VP / CSF shunt", ceilings: [{ klass: "standard" }] },
+    { id: "neurostimulator", name: "Neurostimulator", ceilings: [{ klass: "standard" }] },
+    { id: "cochlear_implant", name: "Cochlear implant", ceilings: [{ klass: "standard" }] },
+    { id: "drug_infusion_pump", name: "Drug infusion pump", ceilings: [{ klass: "standard" }] },
+    { id: "ocular_monitoring", name: "Ocular monitoring system", ceilings: [{ klass: "standard" }] }
   ],
   conditionModels: {
     other_cancer: { declineWithinYears: 10, waitYears: 0, afterCeiling: "decline" }
@@ -3351,7 +3415,7 @@ CARRIER_RULES.corebridge = {
     { id: "heart_disease", name: "Heart disease", decline: "Heart attack within 6 months — decline; within 24 months & non-tobacco — level; 24 months & tobacco — graded. Chronic atrial fibrillation — graded; on daily blood thinner — level." },
     { id: "cad", name: "Coronary artery disease", decline: "CAD with angioplasty/stenting or bypass within 6 months — decline; 24 months & non-tobacco — level; 24 months & tobacco — graded." },
     { id: "copd", name: "COPD / chronic bronchitis", decline: "Hospitalized more than once in the past 24 months — decline; non-tobacco, not hospitalized — graded; tobacco user — decline." },
-    { id: "asthma", name: "Asthma", ceilings: [{ klass: "standard" }] },
+    { id: "asthma", name: "Asthma", ceilings: [{ klass: "standard", when: "not individually tiered in the guide" }] },
     { id: "other_cancer", name: "Cancer", ceilings: [{ klass: "standard" }], decline: "Most cancers within 24 months — decline; Stage I cancers within 48 months — level; Stage II within 48 months — graded; metastatic or recurrent cancer (Stage III/IV) — decline (ever)." },
     { id: "skin_cancer", name: "Melanoma (skin/mole)", ceilings: [{ klass: "standard" }], decline: "Melanoma Stage I within 48 months — level; Stage II — graded." },
     { id: "substance_treatment", name: "Substance abuse", decline: "Narcotics without a prescription (amphetamines, hallucinogens, heroin, cocaine) within 24 months — decline; substance abuse (alcohol or drugs) within 24 months — graded." },

@@ -260,6 +260,37 @@ tadd("Cholesterol-only adverse at Preferred -> NO credit (T has none)", d => {
   d.heightIn = 70; d.weightLb = 167; d.cholTotal = 240; d.cholHdl = 55;
 }, { klass: "preferred", tobacco: false, noCredit: true });
 
+/* ---- Transamerica expanded catalog: entries from the impairment table ---- */
+tadd("Chronic fatigue syndrome -> Standard (impairment table row)", d => {
+  d.heightIn = 70; d.weightLb = 167;
+  d.conditions = [{ id: "chronic_fatigue", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
+tadd("Pacemaker stable 3+ yr -> Table 2 (best case)", d => {
+  d.heightIn = 70; d.weightLb = 167; d.age = 45;
+  d.conditions = [{ id: "pacemaker_icd", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "table", tobacco: false });
+
+tadd("Hypothyroidism controlled -> Preferred Plus (T thyroid row)", d => {
+  d.heightIn = 70; d.weightLb = 167;
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "preferred_plus", tobacco: false });
+
+tadd("Hypogonadism controlled -> Preferred Plus", d => {
+  d.heightIn = 70; d.weightLb = 167;
+  d.conditions = [{ id: "hypogonadism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "preferred_plus", tobacco: false });
+
+tadd("Migraine investigated -> Standard (T migraine row)", d => {
+  d.heightIn = 70; d.weightLb = 167;
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "standard", tobacco: false });
+
+tadd("VP shunt stable 3 yr -> Standard", d => {
+  d.heightIn = 70; d.weightLb = 167;
+  d.conditions = [{ id: "vp_shunt", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "standard", tobacco: false });
+
 add("BP-only adverse at Preferred (Banner) -> credit flagged", d => { d.bpSys = 138; d.bpDia = 88; }, { klass: "preferred", tobacco: false, wantCredit: true });
 
 /* ---- Medication cross-check (Banner) ---- */
@@ -280,6 +311,47 @@ add("No medications field -> missing medication data", d => { d.medicationsText 
 add("'none' -> no matches, not missing", d => {}, { klass: "preferred_plus", tobacco: false, wantMeds: { missing: false, disclosed: 0, undisclosed: 0, aps: 0 } });
 
 add("Unknown med name -> no match, no mismatch", d => { d.medicationsText = "levothyroxine 50mcg"; }, { klass: "preferred_plus", tobacco: false, wantMeds: { disclosed: 0, undisclosed: 0, aps: 0 } });
+
+/* ---- Expanded condition catalog (mental health, neuro, endocrine, devices) ----
+   New conditions are cataloged but not individually published in Banner's
+   guide — the engine's fallback must evaluate them at a conservative Standard
+   ceiling instead of silently skipping them, and the detail must say so. */
+add("PTSD mild controlled -> Standard (generic fallback, Banner)", d => {
+  d.conditions = [{ id: "ptsd", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+add("Major depression mild controlled -> Standard (fallback)", d => {
+  d.conditions = [{ id: "major_depression", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+add("Migraine investigated controlled -> Standard (fallback)", d => {
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "standard", tobacco: false });
+add("Hypothyroidism controlled -> Standard (fallback)", d => {
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Hypogonadism controlled -> Standard (fallback)", d => {
+  d.conditions = [{ id: "hypogonadism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Erectile dysfunction controlled -> Standard (fallback)", d => {
+  d.conditions = [{ id: "erectile_dysfunction", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Chronic fatigue -> Standard (fallback)", d => {
+  d.conditions = [{ id: "chronic_fatigue", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("REM sleep disorder -> Standard (fallback)", d => {
+  d.conditions = [{ id: "rem_sleep_disorder", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Pacemaker stable -> Standard (fallback; Banner has no device entry)", d => {
+  d.conditions = [{ id: "pacemaker_icd", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "standard", tobacco: false });
+add("Cochlear implant -> Standard (fallback)", d => {
+  d.conditions = [{ id: "cochlear_implant", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("VP shunt stable -> Standard (fallback)", d => {
+  d.conditions = [{ id: "vp_shunt", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "standard", tobacco: false });
+add("Respiratory asthma with daily controller -> Standard (treatment drives ceiling)", d => {
+  d.conditions = [{ id: "asthma", status: "current", severity: "moderate", control: "fair", medCount: 2, treatment: "controller" }];
+}, { klass: "standard", tobacco: false });
 
 /* ---------- Mutual of Omaha scenarios ---------- */
 const mbase = JSON.parse(JSON.stringify(base));
@@ -418,6 +490,25 @@ madd("Age 35, face 500K -> paramed + blood/urine + Rx + MVR", d => {
 madd("Income 120K age 35 -> multiplier 25X", d => { d.faceAmount = 2500000; }, { klass: "preferred_plus", tobacco: false, wantFin: { multiplier: 25, ok: true } });
 
 madd("Income 120K age 35 face 4M -> exceeds 25X -> financial review", d => { d.faceAmount = 4000000; }, { klass: "preferred_plus", tobacco: false, wantFin: { multiplier: 25, ok: false } });
+
+/* ---- MOO expanded catalog: devices and mental-health rows from the
+   simplified underwriting guide (pacemaker/defibrillator declinable, PTSD
+   reviewed under mental-health criteria) ---- */
+madd("Pacemaker stable -> Standard (MOO device row)", d => {
+  d.conditions = [{ id: "pacemaker_icd", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "standard", tobacco: false });
+
+madd("PTSD mild controlled 1 med -> Standard (MOO mental-health row)", d => {
+  d.conditions = [{ id: "ptsd", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+
+madd("Hypothyroidism controlled -> Standard (MOO thyroid row)", d => {
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
+madd("Migraine investigated -> Standard (MOO neuro row)", d => {
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "standard", tobacco: false });
 
 /* ---------- F&G Quantum scenarios ---------- */
 const qbase = JSON.parse(JSON.stringify(base));
@@ -928,6 +1019,31 @@ aadd("Dignity band (60 / $25K) -> Dignity final-expense evidence line", d => { d
 
 aadd("Metformin undisclosed -> mismatch + APS trigger", d => { d.medicationsText = "metformin 500mg"; }, { klass: "preferred", tobacco: false, wantMeds: { disclosed: 0, undisclosed: 1, aps: 1 }, wantFlag: "undisclosed_meds" });
 
+/* ---- AMAM expanded catalog: Home Certainty impairment guide rows ---- */
+aadd("Pacemaker/ICD -> decline (Home Certainty device row)", d => {
+  d.conditions = [{ id: "pacemaker_icd", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "decline", tobacco: false });
+
+aadd("Migraine investigated -> Standard (investigated & controlled)", d => {
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Migraine severe -> decline (not investigated)", d => {
+  d.conditions = [{ id: "migraine", status: "current", severity: "severe", control: "poor", investigated: false }];
+}, { klass: "decline", tobacco: false });
+
+aadd("PTSD treated stable -> Standard (QTP criteria)", d => {
+  d.conditions = [{ id: "ptsd", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Major depression treated -> Standard (QTP criteria)", d => {
+  d.conditions = [{ id: "major_depression", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+
+aadd("Hypothyroidism controlled -> Standard (QTP criteria)", d => {
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
 /* ---- John Hancock (Simple Term with Vitality, ages 20-60) --------------- */
 const jbase = JSON.parse(JSON.stringify(base));
 jbase.carrier = "john_hancock";
@@ -1018,6 +1134,31 @@ qadd2("Felony / probation -> declinable non-medical", d => { d.criminalActive = 
 qadd2("Build 70in/250lb -> Standard Plus (5'10\" Standard Plus band 226-285)", d => { d.heightIn = 70; d.weightLb = 250; }, { klass: "standard_plus", tobacco: false });
 
 qadd2("Build 70in/340lb -> above Standard max -> decline (no tables)", d => { d.heightIn = 70; d.weightLb = 340; }, { klass: "decline", tobacco: false });
+
+/* ---- Quility expanded catalog: QTP accepted/declinable criteria ---- */
+qadd2("PTSD treated, no self-harm, 1 med -> Preferred Plus (accepted criteria)", d => {
+  d.conditions = [{ id: "ptsd", status: "current", severity: "mild", control: "good", medCount: 1, selfHarm: false, alcoholUse: false }];
+}, { klass: "preferred_plus", tobacco: false });
+
+qadd2("PTSD with self-harm history -> declinable", d => {
+  d.conditions = [{ id: "ptsd", status: "current", severity: "mild", control: "good", medCount: 1, selfHarm: true, alcoholUse: false }];
+}, { klass: "decline", tobacco: false });
+
+qadd2("Major depression mild 1 med -> Preferred Plus (accepted criteria)", d => {
+  d.conditions = [{ id: "major_depression", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "preferred_plus", tobacco: false });
+
+qadd2("Hypothyroidism controlled -> Preferred (QTP accepted criteria)", d => {
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "preferred", tobacco: false });
+
+qadd2("Migraine investigated -> Preferred (full evaluation completed)", d => {
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "preferred", tobacco: false });
+
+qadd2("Pacemaker/ICD -> declinable (device row)", d => {
+  d.conditions = [{ id: "pacemaker_icd", status: "current", severity: "mild", control: "good", implantYears: 3 }];
+}, { klass: "decline", tobacco: false });
 
 /* ---- Corebridge / AGL (SimpliNow Legacy SIWL, ages 50-80) -------------- */
 const cbase = JSON.parse(JSON.stringify(base));

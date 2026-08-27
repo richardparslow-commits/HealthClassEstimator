@@ -44,7 +44,15 @@ The wizard mirrors what a real carrier application asks, organized into 12 steps
 7. **Alcohol & substances** — alcohol, non-marijuana drugs, recovery duration, marijuana (rated separately from tobacco; daily-use declines per F&G/National Life)
 8. **Medical history** — condition picker with per-condition detail (status, severity, control, medications,
    onset, complications, stability, postpone/decline concerns), plus physician-visit frequency (frequent visits
-   with no disclosed condition → unexplained-care flag; explained by a disclosed condition → benign)
+   with no disclosed condition → unexplained-care flag; explained by a disclosed condition → benign).
+   The catalog spans mental health (PTSD, major depressive disorder, anxiety, bipolar, schizophrenia), respiratory
+   (asthma, COPD, sleep apnea — each asks how it is treated: inhaler, controller, oral steroids, CPAP, oxygen),
+   neurological (migraine, seizures, chronic fatigue, REM sleep disorder, MS, Parkinson's), cardiovascular
+   (CAD, heart disease, pacemaker/ICD, heart-valve prosthesis, intracranial aneurysm clip, stroke), endocrine
+   (diabetes, hypothyroidism, hypogonadism, erectile dysfunction), devices and implants (VP/CSF shunt,
+   neurostimulator, cochlear implant, drug infusion pump, ocular monitoring system), and the standard catalog.
+   Every disclosed condition is evaluated — a condition a carrier does not individually publish is reviewed at
+   a conservative Standard ceiling with a note, never silently ignored.
 9. **Medications & prescriptions** — current prescription list, cross-checked against disclosed conditions
    and each carrier's APS triggers
 10. **Family history** — early cardiovascular death in parents/siblings
