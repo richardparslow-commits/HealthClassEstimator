@@ -2074,6 +2074,13 @@ const App = (() => {
     loadState();
     syncFooterSpace();
     window.addEventListener("resize", syncFooterSpace);
+    /* The footer's height also changes when the vertical scrollbar appears
+       (content renders -> viewport narrows -> links wrap taller) — observe
+       the element itself so clearance tracks every real size change. */
+    const footerEl = $(".app-footer");
+    if (footerEl && typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(syncFooterSpace).observe(footerEl);
+    }
     const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[state.carrier].name;
     $("#btn-save").addEventListener("click", () => {
       saveState();
