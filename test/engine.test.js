@@ -74,6 +74,16 @@ add("Diabetes A1c 10.5 -> decline screen", d => {
   d.conditions = [{ id: "diabetes", status: "current", severity: "severe", control: "poor", medCount: 2, onsetAge: 45, a1c: 10.5, insulin: "yes", complications: "yes" }];
 }, { klass: "decline", tobacco: false });
 
+/* Unanswered A1c on a disclosed diabetes must not be read as "A1c is fine" —
+   the high-A1c decline is keyed off a valid number, so a blank A1c would
+   otherwise silently avoid a decline it can't rule out. It surfaces a
+   diabetes_a1c_missing flag (and a confidence missing item) instead of
+   silently assuming favorable control, while an explicit low A1c carries no
+   flag and a high one still declines. */
+add("Diabetes + blank A1c -> a1c_missing flag, not silent 'fine'", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: "" }]; }, { klass: "standard", tobacco: false, wantFlag: "diabetes_a1c_missing" });
+add("Diabetes + null A1c -> a1c_missing flag", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: null }]; }, { klass: "standard", tobacco: false, wantFlag: "diabetes_a1c_missing" });
+add("Diabetes + A1c 7.5 -> no a1c_missing flag", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: 7.5 }]; }, { klass: "standard", tobacco: false, wantNoFlag: "diabetes_a1c_missing" });
+
 add("Pending biopsy -> postpone", d => { d.pendingTests = "yes"; }, { klass: "postpone", tobacco: false });
 
 add("Hazardous avocation clean -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });

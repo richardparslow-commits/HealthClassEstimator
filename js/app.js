@@ -1779,7 +1779,8 @@ const App = (() => {
     va_disability: "VA disability rating — class capped pending records",
     va_treatment: "VA treatment without disclosed condition — confirm",
     hazardous_avocation: "Hazardous occupation / avocation — class capped pending review",
-    nicotine_date_suspect: "Last-use date unrecognized or in the future — confirm before trusting the class"
+    nicotine_date_suspect: "Last-use date unrecognized or in the future — confirm before trusting the class",
+    diabetes_a1c_missing: "Diabetes A1c not provided — confirm before relying on the non-declined class"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
@@ -1787,7 +1788,7 @@ const App = (() => {
     accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn",
     unexplained_care: "flag-warn", foreign_residence: "flag-warn", conflicting_disclosure: "flag-danger",
     combat_exposure: "flag-warn", va_disability: "flag-warn", va_treatment: "flag-warn",
-    nicotine_date_suspect: "flag-danger"
+    nicotine_date_suspect: "flag-danger", diabetes_a1c_missing: "flag-warn"
   };
 
   const DOMAIN_LABELS = {

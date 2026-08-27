@@ -1143,6 +1143,7 @@ const Engine = (() => {
     }
     if (flags.includes("undisclosed_meds")) missing.push("medication-condition mismatch");
     if (flags.includes("missing_material_data")) missing.push("key data");
+    if (flags.includes("diabetes_a1c_missing")) missing.push("diabetes A1c value");
     const pct = score / total;
     if (pct >= 0.9) return { level: "High", missing };
     if (pct >= 0.7) return { level: "Moderate", missing };
@@ -1581,6 +1582,15 @@ const Engine = (() => {
     // of trusting a corrected class.
     if (nic.dateKind === "future" || nic.dateKind === "invalid") flags.push("nicotine_date_suspect");
     if (d.usedNicotine === "no" && d.nicotineEver === "yes" && !isNaN(Number(d.nicotineQuitYears)) && Number(d.nicotineQuitYears) >= 0 && Number(d.nicotineQuitYears) <= 10) flags.push("conflicting_disclosure");
+    /* A disclosed diabetes with a blank/unparseable A1c must not be read as
+       "A1c is fine" — the high-A1c decline screen is keyed off a valid number,
+       so an unanswered A1c would otherwise silently avoid a decline it can't be
+       sure about. Surface it so the producer confirms the A1c before relying on
+       a non-declined diabetes class. */
+    const dmCond = (d.conditions || []).find(c => c.id === "diabetes");
+    if (dmCond && (dmCond.a1c === "" || dmCond.a1c === null || dmCond.a1c === undefined || Number.isNaN(Number(dmCond.a1c)))) {
+      flags.push("diabetes_a1c_missing");
+    }
 
     // evidence flags
     const ev = evidenceNeeded(rules, d, condIds);
