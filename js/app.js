@@ -1603,10 +1603,15 @@ const App = (() => {
     }
     sheet.innerHTML = "";
 
-    const title = el("div", { class: "print-sheet-head" });
-    title.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
-    title.appendChild(el("div", { class: "print-sheet-title" }, "Carrier comparison — same applicant profile"));
-    title.appendChild(el("div", { class: "print-sheet-meta" }, [el("span", {}, "Estimated " + new Date().toLocaleDateString()), el("span", {}, "Preliminary, non-binding — based only on disclosed information")]));
+    const title = el("div", { class: "print-sheet-head print-sheet-head-flags" });
+    title.appendChild(el("div", { class: "print-flag print-flag-left", html: usFlagSvg(60, 32) }));
+    const center = el("div", { class: "print-sheet-center" });
+    center.appendChild(el("div", { class: "print-sheet-brand" }, "HealthClassEstimator"));
+    center.appendChild(el("div", { class: "print-sheet-title" }, "Carrier comparison — same applicant profile"));
+    const meta = el("div", { class: "print-sheet-meta" }, [el("span", {}, "Estimated " + new Date().toLocaleDateString()), el("span", {}, "Preliminary, non-binding — based only on disclosed information")]);
+    center.appendChild(meta);
+    title.appendChild(center);
+    title.appendChild(el("div", { class: "print-flag print-flag-right", html: txFlagSvg(48, 32) }));
     sheet.appendChild(title);
 
     const profile = el("div", { class: "print-sheet-profile" }, profileLine());
