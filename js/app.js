@@ -63,7 +63,7 @@ const App = (() => {
       usedNicotine: "", nicotineEver: "", nicotineQuitYears: "", nicotineProduct: "cigarette", nicotineLastUse: "", nicotineAmount: "", cigarPerMonth: "", cotinineNegative: false, cigarComorbid: false,
       marijuana: "",
       heightFt: "", heightIn: "", weightLb: "", weightOneYearAgoLb: "", weightIntentional: false, weightChangeUnintentional: false,
-      bpSys: "", bpDia: "", cholTotal: "", cholHdl: "", a1c: "",
+      bpSys: "", bpDia: "", cholTotal: "", cholHdl: "",
       movingViolations3yr: "", seriousDriving: false, seriousDrivingYears: "",
       criminalActive: false, paroleCurrent: "", parolePast: "", bankruptcyActive: false,
       alcoholConcern: "", drugAbuse: "", drugAbuseYears: "",
@@ -244,7 +244,7 @@ const App = (() => {
   function getConditionState(id) {
     let c = state.conditions.find(x => x.id === id);
     if (!c) {
-      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false, defibrillator: false, cardiomyopathy: false, treatment: "", implantYears: "", investigated: false, selfHarm: false, alcoholUse: false };
+      c = { id, status: "current", severity: "mild", control: "good", resolvedYears: "", medCount: "", onsetAge: "", a1c: "", insulin: "no", complications: "no", onsetWithin1yr: false, suicide10yr: false, stableYears: "", residualSymptoms: false, recurrence: false, treatedWithin12mo: false, yearsSober: "", relapse: false, count: "", recentEvent: false, postponeTrigger: false, declineTrigger: false, defibrillator: false, cardiomyopathy: false, treatment: "", implantYears: "", investigated: false, selfHarm: false, alcoholUse: false, dialysis: "no", cirrhosis: "no" };
       state.conditions.push(c);
       saveState();
     }
@@ -371,6 +371,16 @@ const App = (() => {
     if (id === "paralysis") {
       const r = el("div", { class: "field-row" });
       r.appendChild(field("Type", radioPillKey(c, "paralysisType", [["paraplegia", "Paraplegia"], ["quadriplegia", "Quadriplegia"]])));
+      wrap.appendChild(r);
+    }
+    if (id === "kidney_disease") {
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("Dialysis or kidney failure?", radioPillKey(c, "dialysis", [["no", "No"], ["yes", "Yes"]])));
+      wrap.appendChild(r);
+    }
+    if (id === "liver_disease") {
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("Cirrhosis / confirmed liver scarring?", radioPillKey(c, "cirrhosis", [["no", "No"], ["yes", "Yes"]])));
       wrap.appendChild(r);
     }
     if (meta && meta.postpone) {
@@ -675,7 +685,6 @@ const App = (() => {
     const r2 = el("div", { class: "field-row" });
     r2.appendChild(field("Total cholesterol", numInput("cholTotal", { min: 0, max: 500 })));
     r2.appendChild(field("HDL cholesterol", numInput("cholHdl", { min: 0, max: 200 })));
-    r2.appendChild(field("Most recent A1c (if diabetic)", numInput("a1c", { min: 0, step: 0.1, max: 20 })));
     c.appendChild(r2);
 
     c.appendChild(el("div", { class: "note-box" }, "Blood-pressure and cholesterol ceilings vary by class and, for some carriers, by age band — the results page applies the selected carrier's exact thresholds. Carriers evaluate the 2-year average reading with or without treatment."));
@@ -923,7 +932,6 @@ const App = (() => {
     d.bpDia = state.bpDia === "" ? "" : Number(state.bpDia);
     d.cholTotal = state.cholTotal === "" ? "" : Number(state.cholTotal);
     d.cholHdl = state.cholHdl === "" ? "" : Number(state.cholHdl);
-    d.a1c = state.a1c === "" ? "" : Number(state.a1c);
     d.faceAmount = state.faceAmount === "" ? "" : Number(state.faceAmount);
     d.income = state.income === "" ? "" : Number(state.income);
     d.conditions = (d.conditions || []).map(c => {
@@ -949,14 +957,12 @@ const App = (() => {
     if (hd && hd.cardiomyopathy) d.cardiomyopathy = true;
     const kd = d.conditions.find(c => c.id === "kidney_disease");
     const ld = d.conditions.find(c => c.id === "liver_disease");
-    if (kd) { if (d.dialysis) d.kidneyFailure = true; }
+    if (kd && kd.dialysis === "yes") { d.dialysis = true; d.kidneyFailure = true; }
+    if (ld && ld.cirrhosis === "yes") d.cirrhosis = true;
     const pl = d.conditions.find(c => c.id === "paralysis");
     if (pl) d.paralysisType = pl.paralysisType || "paraplegia";
     const st = d.conditions.find(c => c.id === "stroke");
-    if (st) {
-      if (st.severity === "severe") d.strokeSevere = true;
-      if (st.recentEvent) d.multipleStrokes = false;
-    }
+    if (st && st.severity === "severe") d.strokeSevere = true;
     return d;
   }
 
@@ -1005,6 +1011,13 @@ const App = (() => {
 
   function compareClassName(out, rules) {
     if (out.finalClass === "manual_review") return { name: "Manual review", color: "#5b6b7b" };
+    if (out.finalClass === "flat_extra" && out.tobaccoClass && out.flatExtra) {
+      // Tobacco + hazardous avocation: the flat-extra lane sits on the base
+      // class (e.g., F&G Preferred Tobacco + flat extra) — don't let the
+      // tobacco branch collapse it to plain "Standard Tobacco".
+      const base = (rules.classInfo[out.flatExtra.baseClass] || { name: out.flatExtra.baseClass.replace(/_/g, " ") }).name;
+      return { name: base + " Tobacco + flat extra", color: "#b8860b" };
+    }
     const ci = rules.classInfo[out.finalClass] || {};
     if (out.tobaccoClass) {
       const tName = (out.finalClass === "preferred_plus" || out.finalClass === "preferred") ? "Preferred Tobacco" :
@@ -1761,7 +1774,8 @@ const App = (() => {
     conflicting_disclosure: "Nicotine history conflict — confirm",
     combat_exposure: "Combat exposure — best class capped pending records",
     va_disability: "VA disability rating — class capped pending records",
-    va_treatment: "VA treatment without disclosed condition — confirm"
+    va_treatment: "VA treatment without disclosed condition — confirm",
+    hazardous_avocation: "Hazardous occupation / avocation — class capped pending review"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",

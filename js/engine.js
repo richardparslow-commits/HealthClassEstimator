@@ -970,9 +970,6 @@ const Engine = (() => {
       }
     }
 
-    const apsList = (rules.evidence.apsConditions || []).filter(t =>
-      conditionIds.some(id => id && (t.toLowerCase().includes(id.replace(/_/g, " ").toLowerCase()) || matchesAps(conditionIds, t)))
-    );
     // condition-based APS mapping
     const apsMap = {
       cancer: "Cancer", diabetes: "Diabetes", cad: "Heart (cardiac) disease", heart_disease: "Heart (cardiac) disease",
@@ -1035,10 +1032,8 @@ const Engine = (() => {
       list.push("Final-expense lane: Dignity Solutions applies at this age/face band (ages 50-85, $2,500-$50,000) — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers and the three-plan build chart; a yes to any of the first three health questions means no coverage.");
     }
 
-    return { list, apsNeeded, apsList };
+    return { list, apsNeeded };
   }
-
-  function matchesAps(conditionIds, t) { return false; }
 
   /* ---------- confidence ---------------------------------------------- */
 
@@ -1279,11 +1274,15 @@ const Engine = (() => {
        Standard Plus allows flat extras; F&G: Preferred + flat-extra rating).
        Any of the hazardous-occupation / aviation / hazardous-sports answers
        being "yes" triggers the avocation lane; all three must be explicitly
-       "no" for a clean avocation reading. */
-    if (rules.avocation) {
-      const hazYes = isYes(d.occupationHazardous) || isYes(d.aviation) || isYes(d.hazardousSports);
-      const hazNo = isNo(d.occupationHazardous) && isNo(d.aviation) && isNo(d.hazardousSports);
-      if (hazYes) {
+       "no" for a clean avocation reading.
+       Carriers whose modeled guide publishes no avocation lane (Foresters,
+       Transamerica, Americo, Quility, Corebridge) must not silently treat a
+       disclosed hazardous activity as clean: mirror the medical fallback and
+       cap conservatively at Standard with an explicit review note. */
+    const hazYes = isYes(d.occupationHazardous) || isYes(d.aviation) || isYes(d.hazardousSports);
+    const hazNo = isNo(d.occupationHazardous) && isNo(d.aviation) && isNo(d.hazardousSports);
+    if (hazYes) {
+      if (rules.avocation) {
         const fe = rules.avocation.flatExtra;
         if (fe) {
           // Flat-extra lane: the base class is the best class available with a
@@ -1295,11 +1294,17 @@ const Engine = (() => {
           // (e.g., National Life: Verified Standard pending underwriter review).
           domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
         }
-      } else if (hazNo) {
+      } else {
+        domains.avocation = { klass: "standard", flag: "hazardous_avocation", detail: "Hazardous occupation/avocation disclosed — this carrier's modeled guide does not publish a specific avocation lane; conservative Standard ceiling until underwriting confirms." };
+      }
+    } else if (hazNo) {
+      if (rules.avocation) {
         domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
       } else {
-        domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
+        domains.avocation = { klass: "preferred_plus", detail: "No hazardous occupation/avocation disclosed." };
       }
+    } else {
+      domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
     }
 
     /* Military service / veteran status. Prior service alone is not rateable

@@ -1188,6 +1188,24 @@ cadd("Age 81 -> above maximum issue age (80) -> decline", d => { d.age = 81; }, 
 
 cadd("Organ transplant -> decline (ever)", d => { d.conditions = [{ id: "transplant", status: "current", severity: "severe" }]; }, { klass: "decline", tobacco: false });
 
+/* ---- Avocation fallback: carriers with no published avocation lane must not
+   silently treat a disclosed hazardous activity as a clean profile. The engine
+   mirrors the medical fallback: conservative Standard ceiling + review note. */
+fadd("Hazardous occupation disclosed -> conservative Standard (no avocation lane published)", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+fadd("Aviation exposure disclosed -> conservative Standard", d => { d.aviation = "yes"; }, { klass: "standard", tobacco: false });
+fadd("Hazardous sports disclosed -> conservative Standard", d => { d.hazardousSports = "yes"; }, { klass: "standard", tobacco: false });
+tadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+qadd2("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+cadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; }, { klass: "standard", tobacco: false });
+eadd("Hazardous occupation disclosed -> conservative Standard", d => { d.occupationHazardous = "yes"; d.age = 55; }, { klass: "standard", tobacco: false });
+
+/* ---- Kidney / liver severity questions reach the published decline triggers:
+   the engine's renal_failure / cirrhosis gates must fire from the condition
+   flags the detail forms now set (d.dialysis / d.cirrhosis), not just the
+   generic "decline concern" checkbox. */
+add("Kidney disease with dialysis/failure -> decline (renal failure trigger)", d => { d.conditions = [{ id: "kidney_disease", status: "current", severity: "severe", control: "poor", dialysis: "yes" }]; d.dialysis = true; }, { klass: "decline", tobacco: false });
+add("Liver disease with cirrhosis -> decline (cirrhosis trigger)", d => { d.conditions = [{ id: "liver_disease", status: "current", severity: "severe", control: "poor", cirrhosis: "yes" }]; d.cirrhosis = true; }, { klass: "decline", tobacco: false });
+
 /* ---- Lane-data integrity (Transamerica FE / Foresters PlanRight / AMAM Home Certainty) ---- */
 const LANES = context.__CARRIERS;
 let lanePass = 0, laneFail = 0;
