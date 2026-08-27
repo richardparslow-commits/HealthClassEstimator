@@ -1001,6 +1001,54 @@ add("Resolved cancer + garbage resolved years -> stays at resolved-cancer ceilin
 add("Active/unresolved cancer (status current, no resolve date) -> postpone with gate, never standard_plus", d => { d.conditions = [{ id: "other_cancer", status: "current", severity: "moderate", control: "good" }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
 add("Resolved cancer 5 yrs ago at Banner -> keeps published standard_plus ceiling (no overreach)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: 5, treatedWithin12mo: false, recurrence: false }]; }, { klass: "standard_plus", tobacco: false });
 
+/* ---- M2 audit regression: condition-recency postpone triggers. ----
+   Banner's published recency screens (cancer within 12 months / recurrence,
+   MI within 6 months, stent/bypass within 6 months, cardiomyopathy 1-3 years,
+   first seizure 3-6 months, stroke within 6 months, COPD oxygen/hospitalization
+   within a year, schizophrenia under 1 year stability) were declared in
+   postponeTriggers but never evaluated — a recent event on a disclosed
+   condition produced no postpone gate. Where Banner's own impairment row
+   already postpones (cad/stroke/seizures/copd recentEvent, cancer recency)
+   the trigger is deduped behind the condition gate; where no row fires, the
+   trigger fires. */
+add("Banner CAD recent event -> mi/stent postpone screen (condition gate, single entry)", d => { d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner CAD WITHOUT recent event -> no recency postpone (negative control)", d => { d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good" }]; }, { klass: "table", tobacco: false, wantPostponeGates: 0 });
+add("Banner cardiomyopathy -> cardiomyopathy_recent postpone gate (published 1-3 yr screen)", d => { d.conditions = [{ id: "heart_disease", status: "current", severity: "mild", control: "good", cardiomyopathy: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner stroke recent event -> stroke postpone screen (single entry)", d => { d.conditions = [{ id: "stroke", status: "current", severity: "mild", control: "good", recentEvent: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner seizures recent event -> seizure postpone screen (single entry)", d => { d.conditions = [{ id: "seizures", status: "current", severity: "mild", control: "good", recentEvent: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner COPD recent event -> single postpone gate (condition gate, copd_recent deduped)", d => { d.conditions = [{ id: "copd", status: "current", severity: "mild", control: "good", recentEvent: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner COPD on supplemental oxygen -> copd_recent postpone gate (oxygen/hospitalization screen)", d => { d.conditions = [{ id: "copd", status: "current", severity: "mild", control: "good", treatment: "oxygen" }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner cancer treated within 12 mo -> single postpone gate (cancer_recent deduped)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: 0, treatedWithin12mo: true, recurrence: false }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner cancer recurrence -> single postpone gate (cancer_recurrence deduped)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: 5, treatedWithin12mo: false, recurrence: true }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner valve replacement placed within the year -> valve_recent postpone gate (published 6-month screen)", d => { d.conditions = [{ id: "heart_valve_prosthesis", status: "current", severity: "mild", control: "good", implantYears: 0 }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner schizophrenia under 1 year stability -> schizophrenia_recent postpone gate (unknown stability counts)", d => { d.conditions = [{ id: "schizophrenia", status: "resolved", severity: "mild", control: "good", stableYears: 0, resolvedYears: 1 }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner schizophrenia stable 3+ years -> no recency postpone (published stability window met)", d => { d.conditions = [{ id: "schizophrenia", status: "resolved", severity: "mild", control: "good", stableYears: 3, resolvedYears: 5 }]; }, { klass: "standard", tobacco: false, wantPostponeGates: 0 });
+add("Banner complicated pregnancy -> pregnancy_complications postpone gate", d => { d.pregnancyComplications = true; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Transamerica CAD recent event -> mi_recent postpone gate (published 6-month screen)", d => {
+  d.carrier = "transamerica";
+  d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
+}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("National Life CAD recent event -> heart_recent postpone gate", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
+}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("National Life stroke recent event -> cva_recent postpone gate", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "stroke", status: "current", severity: "mild", control: "good", recentEvent: true }];
+}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("National Life seizures recent event -> epilepsy_recent postpone gate", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "seizures", status: "current", severity: "mild", control: "good", recentEvent: true }];
+}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("MOO complicated pregnancy -> pregnancy_complications postpone gate", d => {
+  d.carrier = "mutual_of_omaha";
+  d.pregnancyComplications = true;
+}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("MOO CAD recent event -> no recency trigger declared (negative control)", d => {
+  d.carrier = "mutual_of_omaha";
+  d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
+}, { klass: "table", tobacco: false, wantPostponeGates: 0 });
+
 /* -- H1 audit regression: Foresters' declinesMap covers 16 conditions; the
    generic fallback must no longer silently hand preferred_plus to anything
    outside it (severe migraine, implanted devices, etc. previously landed

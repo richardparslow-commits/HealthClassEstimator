@@ -1450,6 +1450,32 @@ const Engine = (() => {
        complicationsCeiling — the generic postpone trigger is suppressed. */
     if (isYes(d.diabetesComplications) && !(rules.diabetes && rules.diabetes.complicationsCeiling)) postponeHits.push("diabetes_complications");
     if (isYes(d.gastricBypassRecent)) postponeHits.push("gastric_bypass_recent");
+    if (isYes(d.pregnancyComplications)) postponeHits.push("pregnancy_complications");
+    /* M2 — condition-recency postpone triggers (Banner's published recency
+       screens: cancer within 12 months / recurrence, MI within 6 months,
+       stent or bypass within 6 months, valve replacement within 6 months,
+       cardiomyopathy 1-3 years, first seizure 3-6 months, stroke within 6
+       months, COPD oxygen/hospitalization within a year, schizophrenia under
+       1 year stability; National Life: heart_recent / cva_recent /
+       epilepsy_recent). These were declared ruleset data the engine never
+       evaluated, so a recent event on a disclosed condition produced no
+       postpone gate. Each trigger fires only when its owning condition has
+       no existing postpone/decline gate — evalMedical already postpones some
+       of these (cancer recency, COPD recency) and a decline supersedes a
+       postpone. */
+    const triggerOwningConditions = {
+      mi_recent: ["cad"], stent_bypass_recent: ["heart_disease"], valve_recent: ["heart_valve_prosthesis"],
+      cardiomyopathy_recent: ["heart_disease"], seizure_recent: ["seizures"], stroke_recent: ["stroke"],
+      copd_recent: ["copd"], cancer_recent: ["other_cancer"], cancer_recurrence: ["other_cancer"],
+      schizophrenia_recent: ["schizophrenia"], heart_recent: ["cad", "heart_disease"], cva_recent: ["stroke"],
+      epilepsy_recent: ["seizures"]
+    };
+    for (const t of rules.postponeTriggers || []) {
+      if (!conditionPostponeHit(t.id, d, condIds, med, rules)) continue;
+      const owning = triggerOwningConditions[t.id] || [];
+      const alreadyGated = owning.some(cid => [...out.gates.postpone, ...out.gates.decline].some(g => g.id === cid));
+      if (!alreadyGated) postponeHits.push(t.id);
+    }
     /* Combat deployment with a disclosed mental-health condition: the PTSD/TBI
        screening outcome can matter more than the known history — gate-first.
        Pushed directly (no carrier publishes a combat-specific trigger), so the
@@ -1849,6 +1875,49 @@ const Engine = (() => {
 
     out.summaryLines = buildSummary(out, rules);
     return out;
+  }
+
+  /* conditionPostponeHit: evaluate the published condition-recency postpone
+     triggers (M2) declared in each ruleset but previously never evaluated —
+     a recent event on a disclosed condition must surface the carrier's
+     published postpone window. Suicide-recency (suicide_attempt_recent /
+     suicide_recent) and mental-hospitalization triggers have no collected
+     field (the wizard captures multiple attempts, not the attempt date) —
+     they return false and stay documented rather than guessed. */
+  function conditionPostponeHit(id, d, condIds, med, rules) {
+    const condOf = (ids) => condIds.some(cid => ids.includes(cid));
+    const recentEventOn = (ids) => (d.conditions || []).some(c => ids.includes(c.id) && isYes(c.recentEvent));
+    switch (id) {
+      case "cancer_recent": return (d.conditions || []).some(c => c.id === "other_cancer" && isYes(c.treatedWithin12mo));
+      case "cancer_recurrence": return (d.conditions || []).some(c => c.id === "other_cancer" && isYes(c.recurrence));
+      case "mi_recent": return recentEventOn(["cad", "heart_disease"]);
+      case "stent_bypass_recent": {
+        // heart_disease is the catch-all (CHF / cardiomyopathy / valve / device);
+        // a cardiomyopathy disclosure has its own published screen, so it is not
+        // double-read as a stent/bypass event.
+        return recentEventOn(["heart_disease"]) && !(d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy));
+      }
+      case "valve_recent": {
+        const v = (d.conditions || []).find(c => c.id === "heart_valve_prosthesis");
+        if (!v || !has(v, "implantYears")) return false;
+        const yrs = Number(v.implantYears);
+        return Number.isFinite(yrs) ? yrs < 1 : true; // recent placement (or unparseable) — within the window
+      }
+      case "cardiomyopathy_recent": return (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy));
+      case "seizure_recent": return recentEventOn(["seizures"]);
+      case "stroke_recent": return recentEventOn(["stroke"]);
+      case "copd_recent": return (d.conditions || []).some(c => c.id === "copd" && (isYes(c.recentEvent) || c.treatment === "oxygen"));
+      case "schizophrenia_recent": {
+        const scz = (d.conditions || []).find(c => c.id === "schizophrenia");
+        if (!scz) return false;
+        const stable = has(scz, "stableYears") ? numOrNull(scz.stableYears) : null;
+        return stable === null || stable < 1; // unknown or under 1 year of stability
+      }
+      case "heart_recent": return recentEventOn(["cad", "heart_disease"]);
+      case "cva_recent": return recentEventOn(["stroke"]);
+      case "epilepsy_recent": return recentEventOn(["seizures"]);
+      default: return false;
+    }
   }
 
   /* conditionDeclineHit: map form flags to decline trigger ids */

@@ -72,7 +72,7 @@ const App = (() => {
       medicationsText: "",
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
       strokeSevere: false, multipleStrokes: false, suicideMultiple: false, oxygenUse: false,
-      a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false,
+      a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false, pregnancyComplications: false,
       famCardio: "",
       livingSetting: "", mobility: "", adlAssistance: "", homeHealth: false,
       pendingTests: "", recentHospitalization: "", recentSurgery: "", activeSymptom: ""
@@ -292,10 +292,15 @@ const App = (() => {
       r2.appendChild(field("Complications (kidney, eye, nerve, vascular)?", radioPillKey(c, "complications", [["no", "No"], ["yes", "Yes"]])));
       wrap.appendChild(r2);
     }
-    if (id === "bipolar") {
+    if (id === "bipolar" || id === "schizophrenia") {
       const r = el("div", { class: "field-row" });
-      r.appendChild(field("Diagnosed within last year?", checkPillKey(c, "onsetWithin1yr", "Yes")));
-      r.appendChild(field("Suicide attempt within 10 years?", checkPillKey(c, "suicide10yr", "Yes")));
+      /* Recency-heavy questions are bipolar-specific; schizophrenia shares the
+         stability field so the published "less than 1 year stability" postpone
+         trigger (Banner) can be evaluated from collected data. */
+      if (id === "bipolar") {
+        r.appendChild(field("Diagnosed within last year?", checkPillKey(c, "onsetWithin1yr", "Yes")));
+        r.appendChild(field("Suicide attempt within 10 years?", checkPillKey(c, "suicide10yr", "Yes")));
+      }
       const st = el("input", { type: "number", min: 0, step: 1, placeholder: "years stable" });
       if (c.stableYears !== "") st.value = c.stableYears;
       st.addEventListener("input", () => { c.stableYears = st.value; saveState(); });
@@ -803,6 +808,14 @@ const App = (() => {
     r.appendChild(field("Gastric bypass within 6 months?", checkPill("gastricBypassRecent", "Yes")));
     r.appendChild(field("Oxygen use?", checkPill("oxygenUse", "Yes")));
     c.appendChild(r);
+    /* Complicated-pregnancy postpone screen (Banner, Transamerica, MOO, F&G,
+       National Life publish a postpone row). Female-applicant question — the
+       flag only produces a gate for carriers that declare the trigger. */
+    if (state.sex === "female") {
+      const rp = el("div", { class: "field-row" });
+      rp.appendChild(field("Currently pregnant with complications (gestational diabetes, pre-eclampsia/eclampsia)?", checkPill("pregnancyComplications", "Yes")));
+      c.appendChild(rp);
+    }
     return c;
   }
 
