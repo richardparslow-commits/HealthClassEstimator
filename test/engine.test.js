@@ -1152,6 +1152,51 @@ jadd("Hazardous occupation -> decline (disqualifying occupations)", d => { d.occ
 
 jadd("Nicotine 3 mo ago -> tobacco risk class (base class kept per guide)", d => { d.usedNicotine = true; d.nicotineLastUse = monthsAgo(3); d.nicotineProduct = "cigarette"; }, { klass: "preferred", tobacco: true });
 
+/* JH guide page 3 publishes 'Hypertension on one medication over age 35' as a
+   Preferred acceptance criterion — a controlled single-med HTN must now cap at
+   Preferred (was the conservative 'not individually published' fallback). */
+jadd("Hypertension one medication controlled -> Preferred (published accept criterion)", d => {
+  d.conditions = [{ id: "hypertension", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "preferred", tobacco: false });
+
+/* JH guide page 4 publishes a prescription drug exclusion list — a disclosed
+   medication on the list must drive a decline independent of the disclosed
+   condition screen. */
+jadd("Warfarin in medications -> decline (Rx exclusion list)", d => {
+  d.conditions = [{ id: "hypertension", status: "current", severity: "mild", control: "good" }];
+  d.medicationsText = "warfarin 5mg daily";
+}, { klass: "decline", tobacco: false });
+
+/* The Rx-exclusion decline gate must not duplicate when the same condition is
+   separately auto-declined — dedup keeps a single list entry. */
+jadd("Methotrexate med + other_cancer -> single decline gate (rx + cancer dedup, not duplicated)", d => {
+  d.conditions = [{ id: "other_cancer", status: "current", severity: "moderate", control: "fair" }];
+  d.medicationsText = "methotrexate";
+}, { klass: "decline", tobacco: false, wantDeclineUnique: true });
+
+/* ---- F&G Quantum new per-carrier medical rows from the published accept list ---
+   The ADV5691 guide's 'Common Medical Conditions F&G may accept' table. */
+add("[F&G Quantum] Major depression controlled, no hospitalization -> Standard (accept list)", d => {
+  d.carrier = "fg_quantum";
+  d.conditions = [{ id: "major_depression", status: "current", severity: "mild", control: "good", medCount: 1 }];
+}, { klass: "standard", tobacco: false });
+
+add("[F&G Quantum] Migraine fully investigated -> Standard (accept list)", d => {
+  d.carrier = "fg_quantum";
+  d.conditions = [{ id: "migraine", status: "current", severity: "mild", control: "good", investigated: true }];
+}, { klass: "standard", tobacco: false });
+
+add("[F&G Quantum] Hypothyroidism controlled -> Standard (accept list)", d => {
+  d.carrier = "fg_quantum";
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
+/* F&G Pathsetter shares Quantum's medicalCeilings; the new rows apply there too. */
+add("[F&G Pathsetter] Hypothyroidism -> Standard (shared Quantum accept list)", d => {
+  d.carrier = "fg_pathsetter";
+  d.conditions = [{ id: "hypothyroidism", status: "current", severity: "mild", control: "good" }];
+}, { klass: "standard", tobacco: false });
+
 /* ---- Americo (Eagle Select final expense, ages 40-85) ------------------- */
 const ebase = JSON.parse(JSON.stringify(base));
 ebase.carrier = "americo";

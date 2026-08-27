@@ -1740,17 +1740,23 @@ const CARRIER_RULES = {
       { id: "anxiety", name: "Anxiety", ceilings: [{ klass: "standard", when: "controlled, no hospitalization, no time lost from work (acceptable list)" }], worse: "Controlled, well-followed, stable and no comorbid impairment." },
       { id: "depression", name: "Depression", ceilings: [{ klass: "standard", when: "other than bipolar, no hospitalization, no time lost from work (acceptable list)" }], worse: "Mental disorder requiring 2+ medications, hospitalization, or disability — decline." },
       { id: "bipolar", name: "Bipolar disorder", ceilings: [{ klass: "table", table: 4, when: "stable on limited treatment — individual consideration (decline list applies to bipolar requiring 2+ medications, hospitalization, or disability)" }], worse: "Decline list: mental disorder requiring treatment with two or more medications, hospitalization, or disability." },
+      { id: "major_depression", name: "Major depressive disorder (MDD)", ceilings: [{ klass: "standard", when: "depression other than bipolar with no hospitalization and no time lost from work (acceptable list)" }], worse: "Mental disorder requiring 2+ medications, hospitalization, or disability — decline." },
+      { id: "ptsd", name: "Post-traumatic stress disorder (PTSD)", ceilings: [{ klass: "standard", when: "PTSD without bipolar/schizophrenia features, controlled, no hospitalization or disability (under the mental-disorder accept framework)" }], worse: "Mental disorder including bipolar disorder, PTSD, or schizophrenia requiring 2+ medications, hospitalization, or disability — decline." },
       { id: "schizophrenia", name: "Schizophrenia", ceilings: [], decline: "Mental disorder including schizophrenia requiring treatment with two or more medications, hospitalization, or disability — decline." },
       { id: "substance_treatment", name: "Alcohol/drug treatment history", ceilings: [{ klass: "standard", when: "drug use more than 5 years ago; no history of alcohol or substance abuse for Preferred" }], worse: "Alcohol abuse — decline; drug use within the last 5 years — decline; chronic opioid or narcotic use — decline." },
       { id: "hypertension", name: "High blood pressure", ceilings: [{ klass: "preferred_plus", when: "readings within class limits (treatment allowed if 2-year average meets parameters)" }], note: "Hypertension other than pulmonary hypertension is on the acceptable list." },
       { id: "high_cholesterol", name: "High cholesterol", ceilings: [{ klass: "preferred_plus", when: "total and ratio within class limits (treatment allowed if 2-year average meets parameters)" }], note: "Hyperlipidemia is on the acceptable list." },
       { id: "cad", name: "Coronary artery disease / angina", ceilings: [{ klass: "table", table: 4, when: "stable older history — individual consideration" }], postpone: "Heart attack, bypass, angioplasty, or valve procedure within the last 5 years — decline screen until 5 years post-event.", worse: "Heart surgery, bypass, angioplasty, valve repair/replacement, or heart attack/MI in the last 5 years, or at any time in combination with tobacco use, diabetes, or stroke — decline." },
       { id: "heart_disease", name: "Heart disease (CHF, cardiomyopathy, valve, device)", ceilings: [{ klass: "table", table: 4, when: "stable older history — individual consideration" }], postpone: "Heart attack/surgery within the last 5 years — decline screen.", decline: "Heart surgery, bypass, angioplasty, valve repair/replacement, or MI within the last 5 years (or at any time with tobacco, diabetes, or stroke) — decline.", worse: "Aneurysm, cardiomyopathy, or CHF — decline screen." },
+      { id: "pacemaker_icd", name: "Cardiac pacemaker / ICD", ceilings: [{ klass: "table", table: 4, when: "stable older device, no recent implant, no underlying rateable cardiac disease" }], postpone: "Pacemaker/ICD implanted within the last 5 years — decline screen under the heart-surgery rule.", worse: "Device in the setting of an underlying coronary/valvular condition, or combined with tobacco, diabetes, or stroke — decline." },
+      { id: "heart_valve_prosthesis", name: "Heart valve prosthesis (metal / mechanical valve)", ceilings: [{ klass: "table", table: 4, when: "stable older valve replacement without recent event or anticoagulation complications" }], postpone: "Valve repair/replacement within the last 5 years — decline screen.", worse: "Valve surgery within the last 5 years, or at any time with tobacco, diabetes, or stroke — decline." },
       { id: "stroke", name: "Stroke / TIA", ceilings: [{ klass: "table", table: 4, when: "single TIA more than 6 months ago, age 46 and up (acceptable list)" }], postpone: "Stroke/CVA within the last 5 years, or two or more TIAs — decline screen.", worse: "Stroke or CVA within the last 5 years, or two or more TIAs — decline." },
       { id: "asthma", name: "Asthma", ceilings: [{ klass: "standard", when: "mild, well followed, controlled & stable (acceptable list)" }], worse: "Asthma in applicants under age 6 — decline; respiratory disorders (emphysema, COPD, tuberculosis, sarcoidosis) — decline." },
       { id: "copd", name: "COPD / emphysema / chronic bronchitis", ceilings: [], decline: "Respiratory disorder including emphysema, COPD, tuberculosis, or sarcoidosis — decline." },
       { id: "sleep_apnea", name: "Sleep apnea", ceilings: [{ klass: "standard", when: "treated (acceptable list)" }] },
+      { id: "migraine", name: "Migraine / headache", ceilings: [{ klass: "standard", when: "migraine with full evaluation completed (acceptable list)" }] },
       { id: "diabetes", name: "Diabetes", ceilings: [{ klass: "standard", when: "Type 2 with A1c below 7 in the last year and no complications (preferred requires no diabetes history)" }], worse: "Type 1 or Type 2 with A1c of 7 or above within the last year, or with neuropathy, retinopathy, kidney or heart disease, or stroke history — decline." },
+      { id: "hypothyroidism", name: "Hypothyroidism", ceilings: [{ klass: "standard", when: "hyperthyroidism or hypothyroidism (including controlled Graves' / Hashimoto's) — acceptable list" }] },
       { id: "kidney_disease", name: "Kidney disease", ceilings: [], decline: "Kidney disease including polycystic kidney disease, chronic kidney disease, dialysis, or kidney transplant — decline." },
       { id: "liver_disease", name: "Liver disease", ceilings: [], decline: "Liver disorder including hepatitis and cirrhosis — decline." },
       { id: "hiv", name: "HIV / AIDS", ceilings: [], decline: "HIV/AIDS — decline." },
@@ -2913,12 +2919,33 @@ CARRIER_RULES.john_hancock = {
     { id: "substance_treatment", name: "Alcohol / substance abuse treatment", decline: "History of treatment for alcohol or substance abuse, or advised to discontinue/limit use by a medical professional — not eligible." },
     { id: "anxiety", name: "Anxiety", ceilings: [{ klass: "preferred" }] },
     { id: "depression", name: "Depression", ceilings: [{ klass: "preferred" }] },
+    { id: "hypertension", name: "High blood pressure", ceilings: [{ klass: "preferred", when: "hypertension on one medication (age 35+ — a published Preferred acceptance criterion)" }], worse: "Hypertension requiring more than one medication, or on antihypertensive medication under age 35 — confirm against the simplified-issue offer." },
     { id: "asthma", name: "Asthma", ceilings: [{ klass: "preferred_plus" }], decline: "Asthma treated with one medication (excluding oral steroids) is acceptable for Preferred." },
     { id: "diabetes", name: "Diabetes", ceilings: [{ klass: "standard" }], decline: "Type I diabetics under age 40, diabetics who smoke, and diabetes with complications or serious risk factors are not eligible; Type I over 40 and Type II diagnosed after 30 without serious risk factors are accepted at Select." }
   ],
   conditionModels: {
     other_cancer: { declineWithinYears: 999, waitYears: 0, afterCeiling: "decline" }
   },
+  /* Simple Term with Vitality prescription drug exclusion list (guide page
+     4): "There is a likelihood that proposed insureds will be declined if they
+     are currently taking or have taken any of the following medications."
+     The app's generic-medication cross-check must therefore flag these as a
+     decline gate independent of the disclosed-condition screen. The engine
+     matches whole normalized words, so generic single-word names are used. */
+  rxDecline: [
+    "abacavir", "aripiprazole", "acamprosate", "alemtuzumab", "anastrozole", "apixaban", "azathioprine",
+    "benztropine", "buprenorphine", "carvedilol", "chlorambucil", "clopidogrel", "clozapine",
+    "cyclophosphamide", "cyclosporine", "dabigatran", "dalfampridine", "darbepoetin", "digoxin",
+    "disulfiram", "donepezil", "efavirenz", "elvitegravir", "enoxaparin", "epoetin", "fentanyl",
+    "galantamine", "haloperidol", "hydroxyurea", "imatinib", "indinavir", "interferon", "letrozole",
+    "levodopa", "carbidopa", "lithium", "lurasidone", "melphalan", "memantine", "mercaptopurine",
+    "methadone", "methotrexate", "morphine", "naltrexone", "natalizumab", "nelfinavir", "olanzapine",
+    "paliperidone", "pegfilgrastim", "peginterferon", "pramipexole", "pyridostigmine", "quetiapine",
+    "ranolazine", "rasagiline", "ribavirin", "risperidone", "rivaroxaban", "rivastigmine", "saquinavir",
+    "tacrine", "tacrolimus", "tamoxifen", "thioridazine", "thiothixene", "tofacitinib",
+    "trihexyphenidyl", "warfarin", "zidovudine", "ziprasidone"
+  ],
+  rxDeclineNote: "Simple Term with Vitality prescription drug exclusions (guide page 4): there is a likelihood the proposed insured will be declined if currently taking or having taken any listed medication. The list is not all-inclusive — additional medications or combinations may be added at John Hancock's discretion.",
   autoDeclineIds: ["hiv", "dementia", "copd", "parkinsons", "multiple_sclerosis", "md", "kidney_disease", "liver_disease", "transplant", "stroke", "cad", "heart_disease", "schizophrenia", "substance_treatment"],
   declineTriggers: [
     { id: "criminal_active", text: "Criminal record — not eligible for Simple Term with Vitality", reason: "Eligibility: 'History of criminal record' disqualifies." },

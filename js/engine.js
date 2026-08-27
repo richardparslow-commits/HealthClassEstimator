@@ -528,6 +528,17 @@ const Engine = (() => {
           const onset = has(c, "onsetAge") ? numOrNull(c.onsetAge) : null;
           const a1c = has(c, "a1c") ? Number(c.a1c) : null;
           const dm = rules.diabetes || null;
+          // Medication-combination control override: an insulin analog in the
+          // medication list indicates insulin-dependent (or insulin-treated)
+          // diabetes even if the "Insulin?" box was left untouched, and 3+
+          // distinct diabetes medications indicate polypharmacy more severe
+          // than "well controlled monotherapy". Both cap an overstated good-
+          // control claim conservatively rather than trusting it blindly.
+          const combo = medCombinationCheck(rules, d, "diabetes");
+          const insulinTreated = isYes(c.insulin) || combo.hasInsulin;
+          const polypharmacy = combo.count >= 3;
+          if (combo.hasInsulin && !isYes(c.insulin)) details.push(`Insulin detected in the medication list (${combo.count} diabetes med(s)) — not marked as insulin use on the form; treated as insulin-treated diabetes for severity review.`);
+          if (polypharmacy) details.push(`Combination therapy detected (${combo.count} distinct diabetes medications) — heavier than monotherapy; verify control.`);
           // Carrier may publish a stricter A1c decline threshold (e.g., F&G: A1c 7 or above within the last year)
           if (a1c !== null && (dm && dm.a1cDeclineMin !== undefined ? a1c >= dm.a1cDeclineMin : a1c > 10)) {
             decline.push({ id: c.id, text: `Diabetes A1c ${a1c} ${dm && dm.a1cDeclineMin !== undefined ? "≥ " + dm.a1cDeclineMin : "> 10"} — decline/postpone screen.` });
@@ -548,14 +559,15 @@ const Engine = (() => {
             ceiling = "decline";
           } else if (dm) {
             // carrier-published type model (e.g., MOO: Type 1 -> Table 2-8, Type 2 -> Standard-Table 8)
-            const isType1 = c.type === "type1" || (onset !== null && onset < 20);
+            const isType1 = c.type === "type1" || insulinTreated || (onset !== null && onset < 20);
             ceiling = isType1 ? (dm.type1Ceiling || "table") : (dm.type2Ceiling || "standard");
-            details.push(`Diabetes: ${isType1 ? "Type 1 (or onset before age 20)" : "Type 2"} — ${ceiling} best case per the impairment table.`);
-          } else if (onset !== null && onset >= 50 && isNo(d.usedNicotine) && control === "good") {
+            details.push(`Diabetes: ${isType1 ? "Type 1 (or onset before age 20 / medication-detected insulin)" : "Type 2"} — ${ceiling} best case per the impairment table.`);
+          } else if (onset !== null && onset >= 50 && isNo(d.usedNicotine) && control === "good" && !insulinTreated && !polypharmacy) {
             ceiling = "standard_plus";
           } else if (onset !== null && onset >= 50) {
             ceiling = "standard_plus"; // still the ceiling, but flagged
             details.push(`Diabetes: onset ${onset} — verify control; Standard Plus ceiling with good control.`);
+            if (control === "good" && (insulinTreated || polypharmacy)) ceiling = worstOf(ceiling, "standard");
           } else {
             ceiling = "standard";
             details.push(`Diabetes: onset before 50 — below the Standard Plus ceiling; review individually.`);
@@ -563,6 +575,14 @@ const Engine = (() => {
           if (c.insulin === "yes" && c.tobaccoCurrent) {
             // tobacco + insulin diabetes is heavily rated
             ceiling = worstOf(ceiling || "standard", "table");
+          }
+          // Medication-combination escalation: insclusion of insulin in the
+          // med list (or 3+ distinct diabetes drugs) caps an otherwise-claimed
+          // good control at Standard for carriers that tier good-control type 2
+          // at Standard Plus — the heavier combination never gets the monotherapy
+          // Standard Plus treatment.
+          if (polypharmacy && onset !== null && onset >= 50 && control === "good" && !insulinTreated) {
+            ceiling = worstOf(ceiling, "standard");
           }
           if (rules.id === "amam" && (isYes(c.insulin) || isYes(c.tobaccoCurrent))) {
             // American Amicable: diabetes with insulin use or tobacco use in the
@@ -917,6 +937,46 @@ const Engine = (() => {
     return { klass: null, missing: false, meds: matched, disclosed, undisclosed, apsTriggers, detail: parts.join(" ") || "Entered medications matched no reference entries." };
   }
 
+  /* Insulin is a step-change in diabetes severity vs. oral monotherapy: every
+     modeled carrier's diabetes row prices insulin-dependent disease heavier
+     (e.g. Quility requires non-insulin to accept, MOO Type 1 -> Table 2-8). If
+     insulin appears in the medication list the disclosure control claim must not
+     read as "well controlled monotherapy". The aliases are the map's insulin
+     analog generics/brands. */
+  const INSULIN_MEDS = new Set(["insulin", "lantus", "levemir", "humalog", "novolog", "humulin", "novolin", "toujeo", "tresiba", "apidra", "basaglar"]);
+
+  /**
+   * Medication-combination control check. For a disclosed condition, re-reads
+   * the entered medication list and counts how many distinct matched drugs treat
+   * that condition, and whether any is insulin. The carrier's own control
+   * criteria are monotherapy-graded ("controlled on 2 or fewer medications" for
+   * HTN, "non-insulin" for aceptable QTP diabetes), so a larger combination or
+   * insulin signals worse-than-claimed control even when the user ticked
+   * control "good". Pure advisory: it never declares a new diagnosis and only
+   * caps an overstated good-control claim (or raises a combo flag), never a
+   * blanket decline.
+   * Returns { count, hasInsulin, distinctCount }.
+   */
+  function medCombinationCheck(rules, d, conditionId) {
+    const raw = d.medicationsText;
+    if (!raw || !String(raw).trim()) return { count: 0, hasInsulin: false };
+    const tokens = String(raw).split(/[,;\n]+/).map(t => t.trim()).filter(Boolean);
+    const distinct = new Set();
+    let hasInsulin = false;
+    for (const t of tokens) {
+      const norm = normalizeMed(t);
+      if (!norm) continue;
+      const entry = MEDICATION_MAP.find(e => medMatches(norm, e));
+      if (!entry || entry.condition !== conditionId) continue;
+      // Insulin analogs indicate insulin-dependent diabetes even if the user
+      // did not tick the "Insulin? Yes" box on the detail form.
+      const words = norm.split(" ").filter(w => w.length >= 4);
+      if (words.some(w => INSULIN_MEDS.has(w))) hasInsulin = true;
+      distinct.add(norm); // distinct normalized name = distinct drug (a combo within one condition)
+    }
+    return { count: distinct.size, hasInsulin };
+  }
+
   /* ---------- functional status / ADLs -------------------------------- */
 
   function evalFunctional(d) {
@@ -1136,6 +1196,35 @@ const Engine = (() => {
 
   /* ---------- confidence ---------------------------------------------- */
 
+  /* Grade a disclosed condition's submission depth 0..4 by how much
+     disease-specific evidence the producer captured, not just that a box was
+     ticked. Detail is what actually moves a class estimate (A1c, labs,
+     medication count/names, treatment intensity, duration/stability,
+     complication flags) — so it is weighted far above a single answered form
+     field in the confidence meter. An untouched condition (all defaults) scores
+     the base disclosure only. Returns 0..4. */
+  function conditionDetailDepth(c) {
+    const hasNum = v => v !== "" && v !== undefined && v !== null && !isNaN(Number(v));
+    let depth = 0;
+    // 1) Base disclosure: status/severity/control answered (app defaults are
+    //    "current / mild / good" — treated as the claimed-control baseline).
+    if (c.severity || c.control || c.status) depth += 1;
+    // 2) Duration / stability context (onset age, years stable, resolved years,
+    //    sobriety years) — a long stable history is constructive evidence.
+    if (hasNum(c.onsetAge) || hasNum(c.stableYears) || hasNum(c.resolvedYears) || hasNum(c.yearsSober)) depth += 1;
+    // 3) Lab / quantitative marker — the single highest-signal evidence class:
+    //    A1c for diabetes, medication count, implant years, nevus count.
+    if (hasNum(c.a1c) || hasNum(c.medCount) || hasNum(c.implantYears) || hasNum(c.count)) depth += 1;
+    // 4) Treatment-intensity / complication flags actually engaged (insulin,
+    //    complications, respiratory treatment, recent event, full migraine
+    //    workup, device flags, recurrence, relapse, self-harm, etc.).
+    for (const k of ["insulin", "complications", "treatment", "recentEvent", "investigated", "defibrillator", "cardiomyopathy", "recurrence", "relapse", "residualSymptoms", "selfHarm", "alcoholUse", "treatedWithin12mo", "suicide10yr", "onsetWithin1yr", "dialysis", "cirrhosis"]) {
+      const v = c[k];
+      if (v === true || (typeof v === "string" && v !== "" && v !== "no" && v !== "none")) { depth += 1; break; }
+    }
+    return depth;
+  }
+
   function computeConfidence(d, flags) {
     let score = 0, total = 0, missing = [];
     const checks = [
@@ -1162,11 +1251,23 @@ const Engine = (() => {
         if (has(d, k)) score++; else missing.push(label);
       }
     }
+    /* Condition detail is weighted far above a single answered field: each
+       disclosed condition carries up to 10 confidence points graded by how much
+       disease-specific evidence (A1c, labs, medication count/names, treatment,
+       duration) was captured — not the number of boxes ticked. A well-documented
+       condition contributes full credit; a bare checkbox contributes only its
+       base disclosure, so two profiles with the same number of answered boxes
+       can land in different confidence bands. */
     if (d.conditions && d.conditions.length) {
-      total++;
-      const allDetailed = d.conditions.every(c => c.control && c.severity);
-      if (allDetailed) score++;
-      else missing.push("condition control details");
+      const perCondition = 10;
+      total += d.conditions.length * perCondition;
+      let condScore = 0;
+      for (const c of d.conditions) condScore += conditionDetailDepth(c) * 2.5;
+      score += condScore;
+      /* An explicitly flagged missing A1c or undisclosed-med mismatch is real
+         uncertainty, not a field-counting artifact — surfaced as a missing signal. */
+      const bare = d.conditions.some(c => conditionDetailDepth(c) <= 1);
+      if (bare) missing.push("condition-specific detail (labs, treatment, stability)");
     }
     if (flags.includes("undisclosed_meds")) missing.push("medication-condition mismatch");
     if (flags.includes("missing_material_data")) missing.push("key data");

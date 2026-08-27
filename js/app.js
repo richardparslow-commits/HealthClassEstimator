@@ -1005,6 +1005,29 @@ const App = (() => {
 
   /* ---------- cross-carrier comparison ------------------------------- */
 
+  /* Product / underwriting lane for each carrier, surfaced on the comparison
+     table so a producer sees that a "Preferred" at a simplified-issue or
+     final-expense carrier is a different product than at a fully underwritten
+     term carrier — the classes share labels but are not directly comparable. */
+  const CARRIER_LANES = {
+    banner:          { kind: "fully_underwritten", label: "Fully underwritten term",                 note: "Full medical/paramedical underwriting — comparably rated tables." },
+    mutual_of_omaha: { kind: "fully_underwritten", label: "Fully underwritten term/permanent",        note: "Tables and flat extras; Express simplified lanes are separate." },
+    transamerica:    { kind: "fully_underwritten", label: "Fully underwritten term/IUL",             note: "Tables and flat extras; Final Expense Solutions is a separate lane." },
+    fg_quantum:      { kind: "database_underwritten", label: "DB-driven term/IUL (no CD exam)",      note: "MIB/RX/MVR review; a paramedical exam won't improve the class." },
+    fg_pathsetter:   { kind: "database_underwritten", label: "DB-driven IUL (exam-free to $1M)",    note: "InstApproval / MIB / RX/MVR; no exam required through $1M." },
+    foresters:       { kind: "fully_underwritten", label: "Non-medical term/UL",                     note: "No tables in the modeled lanes; PlanRight whole life is separate." },
+    national_life:   { kind: "database_underwritten", label: "Streamlined / EZ term & IUL",          note: "MIB, RX database, MVR — no medical testing for Streamlined/EZ." },
+    amam:            { kind: "simplified_issue",      label: "Simplified-issue term (accept/reject)", note: "Standard through Table 4, issued at Standard rates; no tables." },
+    john_hancock:    { kind: "simplified_issue",      label: "Simplified-issue term (Simple Term)",    note: "Accepted Standard / Select; database checks only, no exam." },
+    quility:         { kind: "simplified_issue",      label: "Simplified-issue term (QTP)",           note: "Accept/reject; no tables; declined on many impairments that a fully underwritten carrier might still rate." },
+    corebridge:      { kind: "final_expense",        label: "Simplified-issue final expense",         note: "Knockout-question instant decision; no tables or flat extras." },
+    americo:         { kind: "final_expense",        label: "Simplified-issue final expense",         note: "Eagle Select plans; no tables; built on simple health questions." }
+  };
+
+  function carrierLane(id) {
+    return (CARRIER_LANES[id] && CARRIER_LANES[id].label) || "";
+  }
+
   /* Run the same assembled profile through every carrier ruleset and return
      { carrierId, out } rows, ordered by the carrier select list. */
   function runComparison() {
@@ -1012,42 +1035,109 @@ const App = (() => {
     return Object.keys(CARRIER_RULES).map(id => ({ id, out: Engine.run(id, d) }));
   }
 
-  function compareClassName(out, rules) {
-    if (out.finalClass === "manual_review") return { name: "Manual review", color: "#5b6b7b" };
-    if (out.finalClass === "flat_extra" && out.tobaccoClass && out.flatExtra) {
-      // Tobacco + hazardous avocation: the flat-extra lane sits on the base
-      // class (e.g., F&G Preferred Tobacco + flat extra) — don't let the
-      // tobacco branch collapse it to plain "Standard Tobacco".
-      const base = (rules.classInfo[out.flatExtra.baseClass] || { name: out.flatExtra.baseClass.replace(/_/g, " ") }).name;
-      return { name: base + " Tobacco + flat extra", color: "#b8860b" };
-    }
+  /* Issue 5 — one source of truth for the outcome name/color across every view
+     (comparison table, print sheet, expanded rows, and the results hero), so
+     the same profile never renders two different labels. Fixes three real
+     inconsistencies: Foresters Tobacco Plus showed "Tobacco Plus" in the hero
+     but "Preferred Tobacco" in the table; a tobacco flat-extra showed its base
+     + flat-extra name in the table but plain "Flat extra" in the hero; and a
+     declined tobacco row showed "Standard Tobacco" in the table because the
+     tobacco branch ran before the gate. Gates (manual/decline/postpone)
+     always come first here. */
+  function outcomeClassLabel(out, rules) {
+    if (out.finalClass === "manual_review") return { name: "Manual underwriting review", color: "#5b6b7b" };
     const ci = rules.classInfo[out.finalClass] || {};
+    if (out.finalClass === "decline" || out.finalClass === "postpone") {
+      return { name: ci.name || out.finalClass.replace(/_/g, " "), color: ci.color || (out.finalClass === "decline" ? "#b3364a" : "#8a5fb8") };
+    }
+    if (out.finalClass === "flat_extra" && out.flatExtra) {
+      if (out.tobaccoClass) {
+        // Tobacco + hazardous avocation: the flat-extra lane sits on the base
+        // class (e.g., F&G Preferred Tobacco + flat extra) — don't collapse it
+        // to plain "Standard Tobacco".
+        const base = (rules.classInfo[out.flatExtra.baseClass] || { name: out.flatExtra.baseClass.replace(/_/g, " ") }).name;
+        return { name: base + " Tobacco + flat extra", color: "#b8860b" };
+      }
+      return { name: ci.name || "Flat extra", color: ci.color || "#c2691b" };
+    }
     if (out.tobaccoClass) {
-      const tName = (out.finalClass === "preferred_plus" || out.finalClass === "preferred") ? "Preferred Tobacco" :
-        (out.finalClass === "table" ? "Table-rated (tobacco base)" : "Standard Tobacco");
-      return { name: tName, color: "#b8860b" };
+      if (rules.id === "foresters" && out.tobaccoPlus) return { name: "Tobacco Plus", color: "#b8860b" };
+      if (out.finalClass === "preferred_plus" || out.finalClass === "preferred") return { name: "Preferred Tobacco", color: "#b8860b" };
+      if (out.finalClass === "table") return { name: "Table-rated (tobacco base)", color: "#b8860b" };
+      return { name: "Standard Tobacco", color: "#8a6d1a" };
     }
     return { name: ci.name || out.finalClass.replace(/_/g, " "), color: ci.color || "#5b6b7b" };
   }
 
+  function compareClassName(out, rules) {
+    return outcomeClassLabel(out, rules);
+  }
+
+  /* Issue 6 — synthesized plain-English bottom line for the comparison table.
+     Reads the ranked rows and compresses them into one or two sentences the
+     producer can say out loud: what the best likely lane is (and who offers
+     it), whether any carriers gate the profile, and a lane-comparability
+     caveat when the best lane is simplified-issue or final-expense rather than
+     fully underwritten term. */
+  function compareBottomLine(rows) {
+    const ranked = rows.map(r => ({
+      id: r.id,
+      out: r.out,
+      lane: CARRIER_LANES[r.id],
+      rank: CLASS_INDEX[r.out.finalClass] != null ? CLASS_INDEX[r.out.finalClass] : CLASS_INDEX.decline,
+      label: outcomeClassLabel(r.out, CARRIER_RULES[r.id]).name
+    }));
+    const bestRank = Math.min(...ranked.map(x => x.rank));
+    if (bestRank >= CLASS_INDEX.manual_review) {
+      return "Every modeled carrier postpones or declines this profile — hold the case for specialist review (or an alternate product) before an estimate is reliable.";
+    }
+    const best = ranked.filter(x => x.rank === bestRank);
+    const bestNames = best.map(x => CARRIER_RULES[x.id].name);
+    const nameList = bestNames.slice(0, 3).join(", ") + (bestNames.length > 3 ? ` (and ${bestNames.length - 3} more)` : "");
+    const parts = [`Best likely outcome: ${best[0].label} at ${nameList}.`];
+    const gatedCount = ranked.filter(x => x.out.gates.decline.length || x.out.gates.postpone.length).length;
+    if (gatedCount) parts.push(`${gatedCount} carrier${gatedCount > 1 ? "s" : ""} decline or postpone this profile — see the gates column.`);
+    const bestLane = best[0].lane;
+    if (bestLane && bestLane.kind !== "fully_underwritten" && bestLane.kind !== "database_underwritten") {
+      parts.push(`The best lane is ${bestLane.label.toLowerCase()} — not directly comparable to fully underwritten term.`);
+    }
+    return parts.join(" ");
+  }
+
+  /* Issue 3 — scannable gate/evidence tags. Returns DOM nodes (el-built) so
+     the comparison columns read as colored DECLINE / POSTPONE / EVIDENCE
+     prefixes instead of a wall of text — a hard gate is instantly separable
+     from a nice-to-have evidence item, on screen and in the print sheet. */
+  const COMPARE_TAG_LABEL = { decline: "Decline", postpone: "Postpone", limit: "Factor", ev: "Evidence" };
+  function compareTag(kind) {
+    return el("span", { class: "compare-tag tag-" + kind, "aria-hidden": "true" }, (COMPARE_TAG_LABEL[kind] || kind).toUpperCase());
+  }
+  function tagItem(kind, text) {
+    return el("span", { class: "compare-item" }, [compareTag(kind), document.createTextNode(" " + text)]);
+  }
+
   function compareEvidence(out) {
     const list = (out.evidence && out.evidence.list) || [];
-    if (!list.length) return "Application only";
+    if (!list.length) return [el("span", { class: "compare-nogate" }, "Application only")];
     const shown = list.slice(0, 3);
     const more = list.length - shown.length;
-    return shown.join("; ") + (more > 0 ? ` (+${more} more)` : "");
+    const nodes = shown.map(it => tagItem("ev", it));
+    if (more > 0) nodes.push(document.createTextNode(` (+${more} more)`));
+    return nodes;
   }
 
   function compareLimiting(row) {
-    const { id, out } = row;
-    const parts = [];
-    if (out.gates.decline.length) parts.push("Decline: " + out.gates.decline.map(g => g.text || g.id).slice(0, 2).join("; "));
-    if (out.gates.postpone.length) parts.push("Postpone: " + out.gates.postpone.map(g => g.text || g.id).slice(0, 2).join("; "));
-    if (!parts.length) {
-      [...out.limitingFactors, ...(out.outsideFactors || [])].slice(0, 3).forEach(l => parts.push(DOMAIN_LABELS[l.domain] || l.domain));
+    const { out } = row;
+    const items = [];
+    out.gates.decline.slice(0, 2).forEach(g => items.push({ kind: "decline", text: g.text || g.id }));
+    out.gates.postpone.slice(0, 2).forEach(g => items.push({ kind: "postpone", text: g.text || g.id }));
+    if (!items.length) {
+      [...out.limitingFactors, ...(out.outsideFactors || [])].slice(0, 3).forEach(l => items.push({ kind: "limit", text: DOMAIN_LABELS[l.domain] || l.domain }));
     }
-    if (!parts.length) parts.push("No single cap — consistent profile");
-    return parts.join(" · ");
+    if (!items.length) return [el("span", { class: "compare-nogate" }, "No single cap — consistent profile")];
+    const nodes = items.map(it => tagItem(it.kind, it.text));
+    if (out.gates.decline.length > 2 || out.gates.postpone.length > 2) nodes.push(document.createTextNode(` (+${out.gates.decline.length + out.gates.postpone.length - 2} more)`));
+    return nodes;
   }
 
   function compareFinancial(out) {
@@ -1063,6 +1153,17 @@ const App = (() => {
     const headTxt = el("div", {});
     headTxt.appendChild(el("h2", {}, "Carrier comparison — same profile, all carriers"));
     headTxt.appendChild(el("p", { class: "card-sub" }, "The same answers run through every carrier ruleset. Classes are carrier-specific labels on a shared ladder (Preferred Plus/Elite → Standard → table-rated); a tobacco profile appears in each carrier's own tobacco class. Click a row to open that carrier's full estimate."));
+    /* Issue 7 — lane-comparability caveat lifted up from the footer note into a
+       persistent header strip, shown whenever a simplified-issue or
+       final-expense lane sits beside fully underwritten term: same ladder
+       labels, different products — a "Preferred" at Americo is not a
+       "Preferred" at Banner. */
+    const laneKinds = rows.map(r => CARRIER_LANES[r.id] && CARRIER_LANES[r.id].kind);
+    const hasSimplifiedLane = laneKinds.some(k => k === "simplified_issue" || k === "final_expense");
+    const hasFullLane = laneKinds.some(k => k === "fully_underwritten" || k === "database_underwritten");
+    if (hasSimplifiedLane && hasFullLane) {
+      headTxt.appendChild(el("div", { class: "compare-lane-caveat" }, "Lane mix: simplified-issue and final-expense carriers appear beside fully underwritten term — same ladder labels, different products. Their classes are not directly comparable; see the lane under each carrier name."));
+    }
     head.appendChild(headTxt);
     const headActions = el("div", { class: "compare-head-actions" });
     const expandAllBtn = el("button", { class: "btn btn-ghost compare-all-btn", type: "button", "aria-label": "Expand or collapse every carrier row", title: "Expand every row's full gates & evidence, or collapse them all" }, "Expand all");
@@ -1125,9 +1226,18 @@ const App = (() => {
     ]));
     tbl.appendChild(thead);
     const tbody = el("tbody", {});
+    /* Best-class highlight: the most favorable class offered across the
+       compared carriers for this profile, so the producer sees the strongest
+       lane(s) at a glance. Only a real underwriting offer (better than manual
+       review / postpone / decline) qualifies — an all-decline table marks no
+       row as "best". Ties (several carriers at the same best class) all get
+       the badge. */
+    const bestIdx = Math.min(...rows.map(r => CLASS_INDEX[r.out.finalClass] != null ? CLASS_INDEX[r.out.finalClass] : CLASS_INDEX.decline));
+    const showBest = bestIdx < CLASS_INDEX.manual_review;
     rows.forEach(row => {
       const rules = CARRIER_RULES[row.id];
       const cn = compareClassName(row.out, rules);
+      const isBest = showBest && CLASS_INDEX[row.out.finalClass] === bestIdx;
       const isCurrent = row.id === state.carrier;
       // Clicking a row switches the results page to that carrier's full estimate;
       // the chevron expands the row in place to show full gates + evidence
@@ -1148,8 +1258,15 @@ const App = (() => {
       }, "▸");
       tr.appendChild(el("td", { class: "compare-expand-cell" }, expandBtn));
       rowRefs.push({ tr, expandBtn, row });
-      tr.appendChild(el("td", { style: "font-weight:600" }, [rules.name, el("div", { class: "compare-version" }, rules.guide.version)]));
-      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
+      tr.appendChild(el("td", { style: "font-weight:600" }, [
+        rules.name,
+        el("div", { class: "compare-version" }, rules.guide.version),
+        el("div", { class: "compare-lane", title: (CARRIER_LANES[row.id] && CARRIER_LANES[row.id].note) || "" }, carrierLane(row.id))
+      ]));
+      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass" + (isBest ? " best" : ""), style: `background:${cn.color}` }, [
+        cn.name,
+        isBest ? el("span", { class: "compare-best-badge", title: "Best available class for this profile across the compared carriers" }, "Best") : null
+      ])));
       tr.appendChild(el("td", {}, compareLimiting(row)));
       tr.appendChild(el("td", {}, compareEvidence(row.out)));
       tr.appendChild(el("td", {}, compareFinancial(row.out)));
@@ -1158,9 +1275,19 @@ const App = (() => {
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
 
+    const bottomLine = el("div", { class: "compare-bottom-line" });
+    bottomLine.appendChild(el("strong", {}, "Bottom line: "));
+    bottomLine.appendChild(document.createTextNode(compareBottomLine(rows)));
+    wrap.appendChild(bottomLine);
+
     const note = el("div", { class: "note-box" });
-    note.appendChild(el("strong", {}, "How to read this: "));
-    note.appendChild(document.createTextNode("Each column is the carrier's own estimated class for the same applicant — the best match varies by product and underwriting style. Click any row to open that carrier's full estimate below; click the chevron on a row to expand its full gate list and evidence checklist in place. This is still a preliminary, non-binding estimate based only on disclosed information; evidence, records, and carrier rules can change every result."));
+    note.appendChild(el("strong", {}, "How to read this:"));
+    const noteList = el("ul", { class: "compare-read-list" });
+    noteList.appendChild(el("li", {}, "Each column is that carrier's own estimated class for the same applicant — the best match varies by product and underwriting style."));
+    noteList.appendChild(el("li", {}, [el("strong", {}, "Lanes aren't comparable: "), "simplified-issue and final-expense classes are not the same product as fully underwritten term — check the lane under each carrier name."]));
+    noteList.appendChild(el("li", {}, "Click any row to open that carrier's full estimate below; click the chevron to expand its full gates and evidence in place."));
+    noteList.appendChild(el("li", {}, "Preliminary and non-binding — evidence, records, and carrier rules can change every result."));
+    note.appendChild(noteList);
     wrap.appendChild(note);
     return wrap;
   }
@@ -1215,16 +1342,21 @@ const App = (() => {
     let heroInfo;
     if (out.finalClass === "manual_review") {
       heroInfo = { name: "Manual underwriting review", meaning: "Key evidence is missing or conflicting. Complete the intake and obtain records before estimating.", color: "#5b6b7b" };
-    } else if (out.tobaccoClass && state.carrier === "foresters" && out.tobaccoPlus) {
-      heroInfo = { name: "Tobacco Plus", meaning: "Nicotine use within the past year AND meets all Preferred Plus criteria (≤1 pack per day for cigarettes) — Foresters Tobacco Plus, subject to full evidence and carrier rules.", color: "#b8860b" };
-    } else if (out.tobaccoClass && (out.finalClass === "preferred_plus" || out.finalClass === "preferred")) {
-      heroInfo = { name: "Preferred Tobacco", meaning: "Otherwise favorable profile with nicotine use — carrier's Preferred Tobacco class, subject to full evidence and carrier rules.", color: "#b8860b" };
-    } else if (out.tobaccoClass && (out.finalClass === "standard_plus" || out.finalClass === "standard")) {
-      heroInfo = { name: "Standard Tobacco", meaning: "Average risk with nicotine use; health factors still affect the result.", color: "#8a6d1a" };
-    } else if (out.tobaccoClass && out.finalClass === "table") {
-      heroInfo = { name: "Table-rated (tobacco base)", meaning: "Substandard risk with nicotine use; tables are not available with preferred tobacco classes.", color: "#b8860b" };
+    } else if (out.tobaccoClass) {
+      /* Name/color come from the shared outcomeClassLabel so the hero and the
+         comparison table always agree (Tobacco Plus, flat-extra tobacco, etc.);
+         only the explanation text is hero-specific. */
+      const t = outcomeClassLabel(out, rules);
+      let meaning;
+      if (rules.id === "foresters" && out.tobaccoPlus) meaning = "Nicotine use within the past year AND meets all Preferred Plus criteria (≤1 pack per day for cigarettes) — Foresters Tobacco Plus, subject to full evidence and carrier rules.";
+      else if (out.finalClass === "preferred_plus" || out.finalClass === "preferred") meaning = "Otherwise favorable profile with nicotine use — carrier's Preferred Tobacco class, subject to full evidence and carrier rules.";
+      else if (out.finalClass === "table") meaning = "Substandard risk with nicotine use; tables are not available with preferred tobacco classes.";
+      else meaning = "Average risk with nicotine use; health factors still affect the result.";
+      heroInfo = { name: t.name, color: t.color, meaning };
     } else {
-      heroInfo = rules.classInfo[out.finalClass] || { name: out.finalClass.replace(/_/g, " "), meaning: "", color: "#5b6b7b" };
+      const t = outcomeClassLabel(out, rules);
+      const ci = rules.classInfo[out.finalClass] || {};
+      heroInfo = { name: t.name, color: t.color, meaning: ci.meaning || "" };
     }
 
     const hero = el("div", { class: "result-hero", style: `background:linear-gradient(135deg, ${heroInfo.color}, ${shade(heroInfo.color, -25)})` });
@@ -1233,7 +1365,16 @@ const App = (() => {
     if (heroInfo.meaning) hero.appendChild(el("div", { class: "hero-meaning" }, heroInfo.meaning));
     const meta = el("div", { class: "hero-meta" });
     meta.appendChild(el("div", { class: "meta-item" }, [el("strong", {}, rangeLabel(out.range)), "likely range"]));
-    meta.appendChild(el("div", { class: "meta-item" }, [el("strong", {}, out.confidence.level), "confidence"]));
+    /* Issue 4 — localize the confidence level: instead of a bare "Moderate",
+       state what evidence would firm it up, drawn straight from the engine's
+       missing list (A1c, last-fill dates, pending-care status, etc.). */
+    const confItem = el("div", { class: "meta-item" }, [el("strong", {}, out.confidence ? out.confidence.level : "—"), "confidence"]);
+    if (out.confidence && out.confidence.missing && out.confidence.missing.length) {
+      const top = out.confidence.missing.slice(0, 3);
+      const more = out.confidence.missing.length - top.length;
+      confItem.appendChild(el("div", { class: "hero-conf-missing" }, "Needs: " + top.join(", ") + (more > 0 ? ` (+${more} more)` : "")));
+    }
+    meta.appendChild(confItem);
     meta.appendChild(el("div", { class: "meta-item" }, [el("strong", {}, String(state.age || "—")), "age"]));
     if (out.tobaccoClass) meta.appendChild(el("div", { class: "meta-item" }, [el("strong", {}, "Tobacco"), "class basis"]));
     hero.appendChild(meta);
@@ -1640,12 +1781,17 @@ const App = (() => {
     ]));
     tbl.appendChild(thead);
     const tbody = el("tbody", {});
+    /* Same best-class ranking as the on-screen table, so the printed sheet
+       agrees with the screen version. */
+    const pBestIdx = Math.min(...rows.map(r => CLASS_INDEX[r.out.finalClass] != null ? CLASS_INDEX[r.out.finalClass] : CLASS_INDEX.decline));
+    const pShowBest = pBestIdx < CLASS_INDEX.manual_review;
     rows.forEach(row => {
       const rules = CARRIER_RULES[row.id];
       const cn = compareClassName(row.out, rules);
+      const pIsBest = pShowBest && CLASS_INDEX[row.out.finalClass] === pBestIdx;
       const tr = el("tr", { class: row.id === state.carrier ? "print-current" : "" });
-      tr.appendChild(el("td", { class: "print-carrier" }, [rules.name, el("div", { class: "print-version" }, rules.guide.version)]));
-      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass", style: `background:${cn.color}` }, cn.name)));
+      tr.appendChild(el("td", { class: "print-carrier" }, [rules.name, el("div", { class: "print-version" }, rules.guide.version), el("div", { class: "print-lane" }, carrierLane(row.id))]));
+      tr.appendChild(el("td", {}, el("span", { class: "klass-chip klass" + (pIsBest ? " best" : ""), style: `background:${cn.color}` }, [cn.name, pIsBest ? el("span", { class: "compare-best-badge" }, "Best") : null])));
       tr.appendChild(el("td", {}, compareLimiting(row)));
       tr.appendChild(el("td", {}, compareEvidence(row.out)));
       tr.appendChild(el("td", {}, compareFinancial(row.out)));
