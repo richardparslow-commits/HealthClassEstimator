@@ -934,6 +934,20 @@ add("Nicotine conflict: ever=no but 10-yr=yes -> conflict flag", d => { d.usedNi
 add("Nicotine quit 15 yrs ago -> beyond-lookback note, no flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 15; }, { klass: "preferred_plus", tobacco: false, wantNoFlag: "conflicting_disclosure", wantEvidence: ["outside every carrier's lookback"] });
 add("Nicotine quit 5 yrs ago but 10-yr=no -> conflict flag", d => { d.usedNicotine = "no"; d.nicotineEver = "yes"; d.nicotineQuitYears = 5; }, { klass: "preferred_plus", tobacco: false, wantFlag: "conflicting_disclosure" });
 
+/* ---- Lookback hardening: a malformed or negative "years ago" value on any
+   lookback field must never fan out to a larger-than-reality gap or bypass a
+   recency fence. JS Number() coerces "abc" -> NaN (every comparison false),
+   which previously let a garbage seriousDrivingYears / drugAbuseYears value
+   silently treat a recent event as clean and lift the class. yearsAgo() returns
+   null for non-finite/negative input so every caller takes its conservative
+   branch. */
+add("Drug abuse + garbage years -> still hits recent-use decline gate (no silent bypass)", d => { d.drugAbuse = "yes"; d.drugAbuseYears = "abc"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("Drug abuse + negative years -> still hits recent-use decline gate", d => { d.drugAbuse = "yes"; d.drugAbuseYears = -1; }, { klass: "decline", tobacco: false });
+add("Serious driving + garbage years -> conservative review, never treated as clean", d => { d.seriousDriving = "yes"; d.seriousDrivingYears = "abc"; }, { klass: "table", tobacco: false });
+add("Serious driving + negative years -> conservative review", d => { d.seriousDriving = "yes"; d.seriousDrivingYears = -1; }, { klass: "table", tobacco: false });
+add("Substance treatment + garbage sober years -> conservative Standard, no silent lift", d => { d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "mild", control: "good", yearsSober: "abc" }]; }, { klass: "standard", tobacco: false });
+add("Resolved cancer + garbage resolved years -> stays at resolved-cancer ceiling, no lift", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: "abc" }]; }, { klass: "standard_plus", tobacco: false });
+
 /* ---- Nicotine lookback clamp: a future-dated (or missing) last-use date
    must never fan out to a larger-than-reality month gap. Clamping negative
    counts to 0 months means a mis-keyed future date reads as active/very recent

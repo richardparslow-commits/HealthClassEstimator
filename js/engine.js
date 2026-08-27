@@ -232,6 +232,24 @@ const Engine = (() => {
   /* ---------- nicotine evaluation ------------------------------------- */
 
   /**
+   * Normalizes a "years ago" numeric value (seriousDrivingYears, drugAbuseYears,
+   * resolvedYears, yearsSober, nicotineQuitYears) to a non-negative number or
+   * null. JS's Number() silently coerces an empty string to 0 and a garbage
+   * string to NaN, and NaN comparisons are always false — so a malformed year
+   * count could quietly bypass a lookback fence (e.g. NaN < cleanYears is false,
+   * letting a recent event slip through a decline/clean-window gate). Returning
+   * null forces every caller's existing "=== null" conservative branch instead.
+   * A negative count (a mis-keyed "years ago") reads as null too, so it can
+   * never fan out to a larger-than-reality gap that lifts the class.
+   */
+  function yearsAgo(v) {
+    if (v === "" || v === null || v === undefined) return null;
+    const n = Number(v);
+    if (Number.isNaN(n) || !isFinite(n) || n < 0) return null;
+    return n;
+  }
+
+  /**
    * Strict date parsing for the nicotine last-use date. The wizard always
    * stores an ISO "YYYY-MM-DD" string (from <input type="date">), so any other
    * shape — numeric timestamp, partial string, trailing junk — is treated as
@@ -399,7 +417,7 @@ const Engine = (() => {
       return { klass: null, missing: true, detail: "Driving history not provided." };
     }
     const mv = Number(d.movingViolations3yr);
-    const serious = isYes(d.seriousDriving) ? d.seriousDrivingYears : null; // years since last DUI/reckless/suspension
+    const serious = isYes(d.seriousDriving) ? yearsAgo(d.seriousDrivingYears) : null; // years since last DUI/reckless/suspension
     let klass = null;
     const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
     for (const k of order) {
@@ -562,7 +580,7 @@ const Engine = (() => {
           ceiling = "preferred_plus";
         } else if (meta.id === "other_cancer") {
           const cm = rules.conditionModels && rules.conditionModels.other_cancer;
-          const resolvedYears = c.resolvedYears !== "" && c.resolvedYears !== null && c.resolvedYears !== undefined ? Number(c.resolvedYears) : null;
+          const resolvedYears = yearsAgo(c.resolvedYears);
           if (c.recurrence) { postpone.push({ id: c.id, text: "Cancer recurrence — contact underwriting before submitting." }); ceiling = "postpone"; }
           else if (cm && cm.declineWithinYears && resolvedYears !== null && resolvedYears < cm.declineWithinYears) {
             decline.push({ id: c.id, text: `Cancer resolved only ${resolvedYears} years ago — within the carrier's ${cm.declineWithinYears}-year decline window.` }); ceiling = "decline";
@@ -579,7 +597,7 @@ const Engine = (() => {
           else if (severity === "mild" && control === "good" && c.stableYears >= 5) ceiling = "standard_plus";
           else ceiling = "standard";
         } else if (meta.id === "substance_treatment") {
-          const years = has(c, "yearsSober") ? Number(c.yearsSober) : null;
+          const years = has(c, "yearsSober") ? yearsAgo(c.yearsSober) : null;
           const tiers = rules.substanceTiers || { declineYears: 2, tiers: [{ minYears: 10, klass: "preferred" }, { minYears: 0, klass: "standard" }] };
           if (years !== null && years < tiers.declineYears) {
             decline.push({ id: c.id, text: `Substance treatment with less than ${tiers.declineYears} years since last use.` });
@@ -684,10 +702,11 @@ const Engine = (() => {
         if (meta.decline && c.status === "current" && c.severity === "severe") {
           decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
         }
-        if (c.status === "resolved" && c.resolvedYears !== null && c.resolvedYears >= 1) {
+        const resYears = yearsAgo(c.resolvedYears);
+        if (c.status === "resolved" && resYears !== null && resYears >= 1) {
           // stable resolved history may still be acceptable; keep at standard ceiling
           ceiling = "standard";
-          details.push(`${meta.name}: resolved ${c.resolvedYears} yr ago — stable history, individual review.`);
+          details.push(`${meta.name}: resolved ${resYears} yr ago — stable history, individual review.`);
         } else if (c.status === "current") {
           ceiling = "table"; // significant current condition without a published ceiling -> table/specialist review
           details.push(`${meta.name}: current condition — table-rated or specialist review.`);
@@ -749,9 +768,9 @@ const Engine = (() => {
     let klass = "preferred_plus";
     const details = [];
     if (d.drugAbuse === "yes") {
-      const years = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
+      const years = has(d, "drugAbuseYears") ? yearsAgo(d.drugAbuseYears) : null;
       if (years === null) {
-        return { klass: "decline", detail: "Drug abuse disclosed with no recovery duration — treat as decline screen pending details." };
+        return { klass: "decline", detail: "Drug abuse disclosed with no (valid) recovery duration — treat as decline screen pending details." };
       }
       const declineYears = (rules && rules.drugDeclineYears) || 3;
       if (years < declineYears) {
@@ -1059,9 +1078,10 @@ const Engine = (() => {
     }
     if (isYes(d.nicotineEver)) {
       if (d.usedNicotine === "no") {
-        const qy = Number(d.nicotineQuitYears);
-        if (!isNaN(qy) && qy >= 0 && qy <= 10) list.push("Nicotine answers conflict: 'ever used' yes but last use within 10 years contradicts the 'no' answer — confirm the quit date.");
-        else list.push("Tobacco/nicotine use disclosed, last use more than 10 years ago — outside every carrier's lookback window; no class impact.");
+        const qy = yearsAgo(d.nicotineQuitYears); // null when missing/invalid/negative
+        if (qy !== null && qy >= 0 && qy <= 10) list.push("Nicotine answers conflict: 'ever used' yes but last use within 10 years contradicts the 'no' answer — confirm the quit date.");
+        else if (qy !== null && qy > 10) list.push("Tobacco/nicotine use disclosed, last use more than 10 years ago — outside every carrier's lookback window; no class impact.");
+        else list.push("Nicotine answers conflict: 'no' current use with a last-use date that is missing or not a valid non-negative number of years ago — confirm the quit date.");
       }
     }
 
@@ -1155,7 +1175,7 @@ const Engine = (() => {
     if (d.alcoholConcern === "active") declineHits.push("alcohol_active");
     if (d.drugAbuse === "yes") {
       const drugDeclineYears = rules.drugDeclineYears || 3;
-      const yr = has(d, "drugAbuseYears") ? Number(d.drugAbuseYears) : null;
+      const yr = has(d, "drugAbuseYears") ? yearsAgo(d.drugAbuseYears) : null;
       if (yr === null || yr < drugDeclineYears) declineHits.push("drug_use_recent");
     }
     if (isYes(d.criminalActive) || isYes(d.paroleCurrent)) declineHits.push("criminal_active");
@@ -1202,7 +1222,7 @@ const Engine = (() => {
       for (const c of conds) {
         const declineText = rules.medical.medicalDeclinesMap[c.id];
         if (!declineText) continue;
-        if (c.id === "other_cancer" && Number(c.resolvedYears || 0) >= 10) continue; // completed >10 yrs ago, no recurrence: acceptable
+        if (c.id === "other_cancer" && (yearsAgo(c.resolvedYears) ?? -1) >= 10) continue; // completed >10 yrs ago, no recurrence: acceptable
         out.gates.decline.push({ id: "foresters_" + c.id, text: declineText, reason: "Foresters non-medical impairment guide." });
       }
       const db = conds.find(c => c.id === "diabetes");
@@ -1634,7 +1654,7 @@ const Engine = (() => {
         // carrier-published drug-use decline window (e.g., Banner 3 years,
         // American Amicable 4 years)
         const dy = (rules && rules.drugDeclineYears) || 3;
-        return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || Number(d.drugAbuseYears) < dy);
+        return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || (yearsAgo(d.drugAbuseYears) ?? Infinity) < dy);
       }
       case "amam_stroke": return rules && rules.id === "amam" && condIds.includes("stroke");
       case "amam_heart": return rules && rules.id === "amam" && (condIds.includes("heart_disease") || condIds.includes("cad"));
@@ -1645,8 +1665,8 @@ const Engine = (() => {
       case "pending_test": return isYes(d.pendingTests);
       case "driving_dui_recent": {
         if (!isYes(d.seriousDriving)) return false;
-        const yrs = has(d, "seriousDrivingYears") ? Number(d.seriousDrivingYears) : null;
-        if (yrs === null) return true;
+        const yrs = has(d, "seriousDrivingYears") ? yearsAgo(d.seriousDrivingYears) : null;
+        if (yrs === null) return true; // missing/invalid/negative -> within the recent window
         const cap = rules && rules.id === "john_hancock" ? 5 : 2; // JH: 5 years; Quility / Corebridge: 2 years
         return yrs < cap;
       }
