@@ -382,7 +382,7 @@ const CARRIER_RULES = {
       { id: "gastric_bypass_recent", text: "Gastric bypass within the last 6 months", reason: "Postpone period." },
       { id: "seizure_recent", text: "First seizure within 3 months (known cause) or 6 months (unknown cause)", reason: "Postpone period." },
       { id: "stroke_recent", text: "Stroke within the last 6 months", reason: "May not be able to offer; depends on type." },
-      { id: "suicide_attempt_recent", text: "Single suicide attempt within the last 2 years", reason: "Postpone period." },
+      { id: "suicide_attempt_recent", text: "Single suicide attempt within the last 2 years", windowYears: 2, reason: "Postpone period." },
       { id: "pregnancy_complications", text: "Currently pregnant with complications (eclampsia, pre-eclampsia, gestational diabetes) — current or prior", reason: "Postpone." },
       { id: "copd_recent", text: "COPD with oxygen use or hospitalization within the last year", reason: "Postpone." },
       { id: "a1c_high", text: "Diabetes A1c above 10", reason: "Decline/postpone screen." },
@@ -1030,7 +1030,7 @@ const CARRIER_RULES = {
       { id: "active_symptom", text: "Uninvestigated active symptom under first-time evaluation", reason: "Uninvestigated symptom." },
       { id: "cancer_treatment", text: "Cancer undergoing treatment", reason: "Postpone until treatment complete." },
       { id: "mi_recent", text: "Heart attack within the last 6 months", reason: "Postpone period." },
-      { id: "suicide_attempt_recent", text: "Suicide attempt within the last 2 years", reason: "After 2 years, standard may be possible." },
+      { id: "suicide_attempt_recent", text: "Suicide attempt within the last 2 years", windowYears: 2, reason: "After 2 years, standard may be possible." },
       { id: "pregnancy_complications", text: "Current or complicated pregnancy", reason: "Postpone to 3 months postpartum." }
     ],
 
@@ -1485,7 +1485,7 @@ const CARRIER_RULES = {
       { id: "diabetes_complications", text: "Significant diabetes complications (kidney, eye, nerve, vascular)", reason: "Decline/postpone screen." },
       { id: "a1c_high", text: "Most recent A1c above 10", reason: "Poor control — decline/postpone screen." },
       { id: "pregnancy_complications", text: "Currently pregnant with gestational diabetes or complications", reason: "Postpone (gestational diabetes while pregnant — postpone)." },
-      { id: "suicide_attempt_recent", text: "Suicide attempt within the past year", reason: "Single attempt over 1 year — $5/M flat extra; over 5 years — Standard." }
+      { id: "suicide_attempt_recent", text: "Suicide attempt within the past year", windowYears: 1, reason: "Single attempt over 1 year — $5/M flat extra; over 5 years — Standard." }
     ],
 
     /* ---- Decline / specialist-review triggers ------------------------ */
@@ -2324,8 +2324,8 @@ CARRIER_RULES.national_life = {
     { id: "diabetes_complications", text: "Diabetes with complications (amputation, retinopathy, kidney or vascular disease) or with cardiac/stroke history or morbid obesity", reason: "Decline screen." },
     { id: "a1c_high", text: "Most recent A1c at or above 10 within the last year", reason: "Decline screen (National Life threshold is A1c 10+)." },
     { id: "heart_recent", text: "Heart attack, angioplasty, bypass, or heart/valve surgery within the last 6-12 months", reason: "Decline screen until stability." },
-    { id: "suicide_recent", text: "Suicide attempt within the last year (or more than one attempt within two years)", reason: "Decline screen." },
-    { id: "mental_hospitalization", text: "Mental disorder/PTSD requiring hospitalization or disability within the last year", reason: "Decline screen." },
+    { id: "suicide_recent", text: "Suicide attempt within the last year (or more than one attempt within two years)", windowYears: 1, multipleWindowYears: 2, reason: "Decline screen." },
+    { id: "mental_hospitalization", text: "Mental disorder/PTSD requiring hospitalization or disability within the last year", windowYears: 1, reason: "Decline screen." },
     { id: "pregnancy_complications", text: "Currently pregnant with gestational diabetes, toxemia, eclampsia, or pre-eclampsia", reason: "Reconsider at six weeks post partum." },
     { id: "cva_recent", text: "Stroke within the last year, or with diabetes or cardiac history", reason: "Decline screen." },
     { id: "epilepsy_recent", text: "Epilepsy/seizures diagnosed within the last year", reason: "Decline screen." }
@@ -2346,7 +2346,7 @@ CARRIER_RULES.national_life = {
     { id: "heart_surgery_recent", text: "Angioplasty/bypass/MI within 6 months, heart surgery within 6 months, valve replacement within 1 year", reason: "Uninsurable list." },
     { id: "cva_recent", text: "CVA (stroke) within one year or with diabetes/cardiac history", reason: "Uninsurable list." },
     { id: "epilepsy_recent", text: "Epilepsy/seizures diagnosed within one year", reason: "Uninsurable list." },
-    { id: "suicide_recent", text: "Suicide attempt within the last year or more than one within two years", reason: "Uninsurable list." },
+    { id: "suicide_recent", text: "Suicide attempt within the last year or more than one within two years", windowYears: 1, multipleWindowYears: 2, reason: "Uninsurable list." },
     { id: "adl_dependence", text: "Assistance needed with activities of daily living", reason: "Specialist review / decline screen." },
     { id: "facility_care", text: "Facility / hospice / home-health care or chronic wheelchair use", reason: "Strong specialist-review trigger." },
     { id: "criminal_active", text: "Charged with a felony; misdemeanor with probation/parole not released for one full year", reason: "Uninsurable list." },

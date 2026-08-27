@@ -1032,18 +1032,60 @@ add("Transamerica CAD recent event -> mi_recent postpone gate (published 6-month
   d.carrier = "transamerica";
   d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
 }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
-add("National Life CAD recent event -> heart_recent postpone gate", d => {
+/* NLG publishes these recency screens on both lists — the Uninsurable-list
+   decline copy is wired, so a recent event now declines (the postpone twin is
+   deduped behind the decline via the declineSet skip). */
+add("National Life CAD recent event -> heart_surgery_recent decline (+ heart_recent screen)", d => {
   d.carrier = "national_life";
   d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
-}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
-add("National Life stroke recent event -> cva_recent postpone gate", d => {
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 1 });
+add("National Life stroke recent event -> cva_recent decline (Uninsurable list), no postpone twin", d => {
   d.carrier = "national_life";
   d.conditions = [{ id: "stroke", status: "current", severity: "mild", control: "good", recentEvent: true }];
-}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
-add("National Life seizures recent event -> epilepsy_recent postpone gate", d => {
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 0 });
+add("National Life stroke + diabetes (no recent event) -> cva_recent decline (published comorbidity leg)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "stroke", status: "resolved", severity: "mild", control: "good", resolvedYears: 5 }, { id: "diabetes", status: "current", severity: "mild", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life stroke alone, remote -> no cva_recent (negative control)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "stroke", status: "resolved", severity: "mild", control: "good", resolvedYears: 5 }];
+}, { klass: "table", tobacco: false, wantDeclineGates: 0 });
+add("National Life seizures recent event -> epilepsy_recent decline (Uninsurable list), no postpone twin", d => {
   d.carrier = "national_life";
   d.conditions = [{ id: "seizures", status: "current", severity: "mild", control: "good", recentEvent: true }];
-}, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 0 });
+add("National Life valve replaced within the year -> heart_surgery_recent decline (1-year screen)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "heart_valve_prosthesis", status: "current", severity: "mild", control: "good", implantYears: 0 }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life age 60+ without routine care -> no_routine_care decline (Uninsurable list)", d => {
+  d.carrier = "national_life";
+  d.age = 62; d.doctorVisits = "rarely";
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life under 60 without routine care -> no no_routine_care gate (age screen)", d => {
+  d.carrier = "national_life";
+  d.age = 59; d.doctorVisits = "rarely";
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("National Life age 60+ with yearly care -> no no_routine_care gate (negative control)", d => {
+  d.carrier = "national_life";
+  d.age = 62; d.doctorVisits = "yearly";
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("National Life currently suspended license -> driving_no_license decline (Uninsurable list)", d => {
+  d.carrier = "national_life";
+  d.seriousDriving = true; d.seriousDrivingYears = "0";
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("F&G Quantum currently suspended license -> driving_no_license decline", d => {
+  d.carrier = "fg_quantum";
+  d.seriousDriving = true; d.seriousDrivingYears = "0";
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life suspension 2+ years ago -> driving domain only, no driving_no_license decline", d => {
+  d.carrier = "national_life";
+  d.seriousDriving = true; d.seriousDrivingYears = "2";
+}, { klass: "table", tobacco: false, wantDeclineGates: 0 });
+add("Banner currently suspended license -> driving domain only (trigger not declared; scoping)", d => {
+  d.seriousDriving = true; d.seriousDrivingYears = "0";
+}, { klass: "table", tobacco: false, wantDeclineGates: 0 });
 add("MOO complicated pregnancy -> pregnancy_complications postpone gate", d => {
   d.carrier = "mutual_of_omaha";
   d.pregnancyComplications = true;
@@ -1052,6 +1094,41 @@ add("MOO CAD recent event -> no recency trigger declared (negative control)", d 
   d.carrier = "mutual_of_omaha";
   d.conditions = [{ id: "cad", status: "current", severity: "mild", control: "good", recentEvent: true }];
 }, { klass: "table", tobacco: false, wantPostponeGates: 0 });
+
+/* ---- Suicide-attempt recency (wired from the wizard's years-since-attempt
+   field; previously documented-unfired). Each carrier's published window is
+   declared on the trigger row: Banner/Transamerica 2 years, MOO 1 year,
+   National Life 1 year — or more than one attempt within 2 years — as a
+   DECLINE screen. Unanswered = no attempt disclosed; a disclosed attempt
+   with a garbage/negative recency counts as within-window (gate-first). ---- */
+add("Banner single attempt 1 yr ago -> suicide_attempt_recent postpone gate (2-yr window)", d => { d.suicideAttemptYears = "1"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner attempt 0 yr ago -> within window (postpone)", d => { d.suicideAttemptYears = "0"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner attempt 2 yr ago -> at the boundary, outside the published window", d => { d.suicideAttemptYears = "2"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("Banner attempt 3 yr ago -> no gate (after 2 years, standard may be possible)", d => { d.suicideAttemptYears = "3"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("Banner attempt with garbage recency -> gate-first postpone (unknown recency never reads favorable)", d => { d.suicideAttemptYears = "abc"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner attempt with negative recency -> gate-first postpone (suspect input is conservative)", d => { d.suicideAttemptYears = "-4"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Banner multiple attempts 1 yr ago -> suicide_multiple decline + suicide_attempt_recent postpone (both published screens)", d => { d.suicideMultiple = true; d.suicideAttemptYears = "1"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 1 });
+add("Banner suicide-history flag alone, no recency -> suicide_multiple decline only (recency triggers stay unfired)", d => { d.suicideMultiple = true; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 0 });
+add("Transamerica attempt 1 yr ago -> suicide_attempt_recent postpone gate (2-yr window)", d => { d.carrier = "transamerica"; d.suicideAttemptYears = "1"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Transamerica attempt 2.5 yr ago -> outside window, no gate", d => { d.carrier = "transamerica"; d.suicideAttemptYears = "2.5"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("MOO attempt 0.5 yr ago -> suicide_attempt_recent postpone gate (1-yr window)", d => { d.carrier = "mutual_of_omaha"; d.suicideAttemptYears = "0.5"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("MOO attempt 2 yr ago -> outside the 1-yr postpone window (1-5 yr flat-extra band is not a gate)", d => { d.carrier = "mutual_of_omaha"; d.suicideAttemptYears = "2"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("National Life attempt 0.5 yr ago -> suicide_recent DECLINE gate, no duplicate postpone twin (cross-list dedup)", d => { d.carrier = "national_life"; d.suicideAttemptYears = "0.5"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 0 });
+add("National Life single attempt 1.5 yr ago -> outside both windows, no gate", d => { d.carrier = "national_life"; d.suicideAttemptYears = "1.5"; }, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0, wantPostponeGates: 0 });
+add("National Life multiple attempts 1.5 yr ago -> within the 2-yr multiple window -> decline", d => { d.carrier = "national_life"; d.suicideMultiple = true; d.suicideAttemptYears = "1.5"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life multiple attempts, recency unanswered -> flag alone never reads as recent (no gate)", d => { d.carrier = "national_life"; d.suicideMultiple = true; }, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+
+/* ---- Mental-health hospitalization recency (wired from the wizard's
+   years-since-mental-health-hospitalization field; previously the last
+   documented-unfired trigger). National Life's published 1-year screen:
+   mental disorder/PTSD hospitalization or disability within the last year. ---- */
+add("National Life mental-health hospitalization 0.5 yr ago -> mental_hospitalization postpone gate (1-yr screen)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "0.5"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("National Life mental-health hospitalization 1 yr ago -> at the boundary, outside the window", d => { d.carrier = "national_life"; d.mentalHospitalYears = "1"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("National Life mental-health hospitalization 2 yr ago -> no gate", d => { d.carrier = "national_life"; d.mentalHospitalYears = "2"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("National Life mental-health hospitalization with garbage recency -> gate-first postpone (unknown recency never reads favorable)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "abc"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("National Life mental-health hospitalization unanswered -> no gate (negative control)", d => { d.carrier = "national_life"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("Banner mental-health hospitalization 0.5 yr ago -> no gate (trigger not declared; carrier scoping)", d => { d.mentalHospitalYears = "0.5"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+add("National Life recent mental-health hospitalization + recent attempt -> decline via suicide_recent, hospitalization gate still renders (distinct published screens)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "0.5"; d.suicideAttemptYears = "0.5"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 1 });
 
 /* -- H1 audit regression: Foresters' declinesMap covers 16 conditions; the
    generic fallback must no longer silently hand preferred_plus to anything
@@ -1743,6 +1820,96 @@ for (const [age, face, expect, forbid] of gridProbes) {
     ta.genericGrid === false && ta.requirementGrids.every(g => Array.isArray(g.ages) && Array.isArray(g.rows) && g.rows.every(r => Array.isArray(r.cells) && r.cells.length === g.ages.length));
   if (gridsOk) { pass++; console.log("PASS | grid probe structure -> 3 product grids, genericGrid off"); }
   else { fail++; console.log("FAIL | grid probe structure: requirementGrids malformed or genericGrid not false"); }
+}
+
+// ---- trigger completeness probe ------------------------------------------
+// Every trigger id declared in any carrier's ruleset (postponeTriggers /
+// declineTriggers) must be wired in the engine: a case in the matching
+// hit-function switch, a direct run() push, or an entry in
+// TRIGGER_EXTERNAL_HANDLING below. A new ruleset row without an engine case
+// fails here instead of shipping silently unevaluated. Allowlist entries
+// carry a guard scenario (carrier + input + expected class) that is re-run on
+// every suite pass, so a refactor that removes the alternative mechanism
+// fails here too — the allowlist can never quietly rot.
+const TRIGGER_EXTERNAL_HANDLING = {
+  // Pending-care facts: run()'s evalPending merge postpones with a gate
+  // rendered under the pending_test id (the three declared rows describe the
+  // same 4-month screen).
+  active_symptom: { mechanism: "evalPending merge (postpone gate under pending_test)", guard: { carrier: "banner", input: { activeSymptom: "yes" }, klass: "postpone" } },
+  recent_hospitalization: { mechanism: "evalPending merge (postpone gate under pending_test)", guard: { carrier: "banner", input: { recentHospitalization: "yes" }, klass: "postpone" } },
+  recent_surgery: { mechanism: "evalPending merge (postpone gate under pending_test)", guard: { carrier: "banner", input: { recentSurgery: "yes" }, klass: "postpone" } },
+  // Active/unresolved and wait-out cancer: evaluated by the generic
+  // other_cancer branch in evalMedical — the condition-id gate renders with
+  // the same postpone/decline outcome the trigger row documents.
+  cancer_treatment: { mechanism: "generic other_cancer branch (active cancer)", guard: { carrier: "transamerica", input: { conditions: [{ id: "other_cancer", status: "current", severity: "moderate", control: "good" }] }, klass: "postpone" } },
+  cancer_waitout: { mechanism: "conditionModels.other_cancer waitYears", guard: { carrier: "mutual_of_omaha", input: { conditions: [{ id: "other_cancer", status: "resolved", resolvedYears: 3, severity: "moderate", control: "good" }] }, klass: "postpone" } },
+  // Condition facts evaluated by the generic condition machinery — the
+  // condition-id gate fires with the carrier's published outcome.
+  bipolar: { mechanism: "condition machinery (condition-id decline gate)", guard: { carrier: "transamerica", input: { conditions: [{ id: "bipolar", status: "current", severity: "mild", control: "good", stableYears: 6 }] }, klass: "decline" } },
+  schizophrenia: { mechanism: "condition machinery (condition-id decline gate)", guard: { carrier: "transamerica", input: { conditions: [{ id: "schizophrenia", status: "current", severity: "mild", control: "good", stableYears: 6 }] }, klass: "decline" } },
+  paralysis: { mechanism: "condition machinery (condition-id decline gate)", guard: { carrier: "transamerica", input: { conditions: [{ id: "paralysis", status: "current", severity: "severe", control: "poor" }] }, klass: "decline" } },
+  kidney_disease: { mechanism: "condition machinery (condition-id decline gate)", guard: { carrier: "national_life", input: { conditions: [{ id: "kidney_disease", status: "current", severity: "severe", control: "poor", dialysis: true }] }, klass: "decline" } },
+  liver_disease: { mechanism: "condition machinery (condition-id decline gate)", guard: { carrier: "national_life", input: { conditions: [{ id: "liver_disease", status: "current", severity: "severe", control: "poor", cirrhosis: true }] }, klass: "decline" } },
+  respiratory: { mechanism: "condition machinery (copd severity + oxygen_use)", guard: { carrier: "national_life", input: { oxygenUse: true, conditions: [{ id: "copd", status: "current", severity: "severe", control: "poor" }] }, klass: "decline" } },
+  // NLG's decline-list copy of the pregnancy screen: the fact is evaluated by
+  // the direct run() push as a postpone (reconsider-at-6-weeks semantics).
+  pregnancy_complications: { mechanism: "direct run() push (postpone)", guard: { carrier: "national_life", input: { pregnancyComplications: true }, klass: "postpone" } },
+  // Documented-only: no collected field can fire these today. They stay
+  // declared for producer visibility; the underlying presentations surface
+  // through other wired screens. Adding a collected field is the fix when
+  // one of these needs to fire (see mental_hospitalization precedent).
+  terminal: { mechanism: "documented-only — no collected fact; terminal presentations surface via the active-cancer postpone and facility_care/hospice decline" },
+  aneurysm: { mechanism: "documented-only — no abdominal-aortic-aneurysm condition in the catalog (the cerebral-aneurysm device is a separate wired condition)" },
+  disabled: { mechanism: "documented-only — no SSDI/medical-disability field; disability presentations surface via adl_dependence and facility_care" }
+};
+{
+  const postFnSrc = engine.slice(engine.indexOf("function conditionPostponeHit"), engine.indexOf("function conditionDeclineHit"));
+  const decFnSrc = engine.slice(engine.indexOf("function conditionDeclineHit"), engine.indexOf("return { run,"));
+  const caseIds = (src) => new Set([...src.matchAll(/case "([a-z_0-9]+)":/g)].map(m => m[1]));
+  const postCases = caseIds(postFnSrc);
+  const decCases = caseIds(decFnSrc);
+  const directPost = new Set([...engine.matchAll(/postponeHits\.push\("([a-z_0-9]+)"\)/g)].map(m => m[1]));
+  const declaredPost = new Map(), declaredDec = new Map(); // id -> carriers
+  for (const carrier of CARRIER_IDS) {
+    const crules = context.__CARRIERS[carrier];
+    for (const t of crules.postponeTriggers || []) declaredPost.set(t.id, [...(declaredPost.get(t.id) || []), carrier]);
+    for (const t of crules.declineTriggers || []) declaredDec.set(t.id, [...(declaredDec.get(t.id) || []), carrier]);
+  }
+  let unwired = 0;
+  for (const [id, carriers] of declaredPost) {
+    if (postCases.has(id) || directPost.has(id)) continue;
+    if (TRIGGER_EXTERNAL_HANDLING[id]) continue;
+    unwired++;
+    console.log("FAIL | completeness: postpone trigger '" + id + "' (" + carriers.join(",") + ") has no wired engine case");
+  }
+  for (const [id, carriers] of declaredDec) {
+    if (decCases.has(id)) continue;
+    if (TRIGGER_EXTERNAL_HANDLING[id]) continue;
+    unwired++;
+    console.log("FAIL | completeness: decline trigger '" + id + "' (" + carriers.join(",") + ") has no wired engine case");
+  }
+  if (unwired === 0) { pass++; console.log("PASS | completeness: every declared trigger id (" + (declaredPost.size + declaredDec.size) + " across " + CARRIER_IDS.length + " carriers) is wired in the engine"); }
+  // Stale-entry guard: every allowlist id must still be declared by some
+  // carrier, and every guard must still produce its expected class.
+  let stale = 0;
+  for (const [id, ext] of Object.entries(TRIGGER_EXTERNAL_HANDLING)) {
+    if (!declaredPost.has(id) && !declaredDec.has(id)) {
+      stale++;
+      console.log("FAIL | completeness: allowlist entry '" + id + "' is stale — no carrier declares it anymore");
+      continue;
+    }
+    if (!ext.guard) continue;
+    const d = JSON.parse(JSON.stringify(base));
+    d.carrier = ext.guard.carrier;
+    Object.assign(d, ext.guard.input);
+    const out = Engine.run(ext.guard.carrier, d);
+    if (out.finalClass === ext.guard.klass) pass++;
+    else {
+      stale++;
+      console.log("FAIL | completeness: allowlist guard for '" + id + "' broke — " + ext.guard.carrier + " now yields " + out.finalClass + " (expected " + ext.guard.klass + "); the documented mechanism no longer holds");
+    }
+  }
+  if (stale === 0) { pass++; console.log("PASS | completeness: " + Object.keys(TRIGGER_EXTERNAL_HANDLING).length + " external-handling allowlist entries verified (guards + no stale ids)"); }
 }
 
 for (const s of scenarios) {

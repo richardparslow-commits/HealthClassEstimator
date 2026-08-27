@@ -71,7 +71,7 @@ const App = (() => {
       conditions: [],
       medicationsText: "",
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
-      strokeSevere: false, multipleStrokes: false, suicideMultiple: false, oxygenUse: false,
+      strokeSevere: false, multipleStrokes: false, suicideMultiple: false, suicideAttemptYears: "", mentalHospitalYears: "", oxygenUse: false,
       a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false, pregnancyComplications: false,
       famCardio: "",
       livingSetting: "", mobility: "", adlAssistance: "", homeHealth: false,
@@ -743,11 +743,10 @@ const App = (() => {
 
     const r2 = el("div", { class: "field-row" });
     r2.appendChild(field("Marijuana / cannabis use", selectInput("marijuana", [["none", "None"], ["infrequent", "Infrequent recreational"], ["frequent", "Frequent / more than weekly"], ["daily", "Daily use"], ["medicinal", "Medicinal"]])));
-    r2.appendChild(field("Multiple suicide attempts?", checkPill("suicideMultiple", "Yes")));
     c.appendChild(r2);
 
     const mjNote = (CARRIER_RULES[state.carrier].nicotine && CARRIER_RULES[state.carrier].nicotine.marijuana) ? CARRIER_RULES[state.carrier].nicotine.marijuana + " " : "";
-    c.appendChild(el("div", { class: "note-box" }, mjNote + "Decline screen: current alcohol abuse or abstinence < 2 years; non-marijuana drug use within 3 years or multiple relapses. Single suicide attempt within 2 years → postpone."));
+    c.appendChild(el("div", { class: "note-box" }, mjNote + "Decline screen: current alcohol abuse or abstinence < 2 years; non-marijuana drug use within 3 years or multiple relapses. Suicide-attempt and mental-health hospitalization history are captured with the mental-health conditions on the Medical history step."));
     return c;
   }
 
@@ -755,6 +754,34 @@ const App = (() => {
     const c = el("div", { class: "card" });
     c.appendChild(el("h2", {}, "Medical history"));
     c.appendChild(el("p", { class: "card-sub" }, "Select each condition disclosed in the interview. For each, record status, severity, control, and the condition-specific details — the estimator uses control, duration, complications, and treatment intensity, not just the diagnosis label."));
+
+    /* Mental-health history cluster — the suicide-attempt and mental-health
+       hospitalization recency screens render beside the Mental health
+       condition group so a producer captures the whole history in one place.
+       The recency answers drive carrier screens: most postpone a suicide
+       attempt within the published window (1–2 years by carrier); National
+       Life treats an attempt within 1 year — or more than one within 2
+       years — as a decline screen, and a mental-health hospitalization
+       within the last year as a postpone screen. */
+    function mentalHealthHistoryBlock() {
+      const wrap = el("div", {});
+      wrap.appendChild(el("h3", {}, "Mental health history"));
+      wrap.appendChild(el("p", { class: "card-sub" }, "Attempt and hospitalization recency drive carrier screens: most carriers postpone a suicide attempt within the published window (1–2 years); National Life treats an attempt within 1 year — or more than one within 2 years — as a decline screen, and a mental-health hospitalization within the last year as a postpone screen."));
+      const row1 = el("div", { class: "field-row" });
+      row1.appendChild(field("Multiple suicide attempts?", checkPill("suicideMultiple", "Yes")));
+      const sAttemptYrs = el("input", { type: "number", min: 0, step: 1, placeholder: "years since attempt" });
+      if (state.suicideAttemptYears !== "") sAttemptYrs.value = state.suicideAttemptYears;
+      sAttemptYrs.addEventListener("input", () => { state.suicideAttemptYears = sAttemptYrs.value; saveState(); });
+      row1.appendChild(field("Years since most recent suicide attempt", sAttemptYrs));
+      wrap.appendChild(row1);
+      const row2 = el("div", { class: "field-row" });
+      const mhYrs = el("input", { type: "number", min: 0, step: 1, placeholder: "years since hospitalization" });
+      if (state.mentalHospitalYears !== "") mhYrs.value = state.mentalHospitalYears;
+      mhYrs.addEventListener("input", () => { state.mentalHospitalYears = mhYrs.value; saveState(); });
+      row2.appendChild(field("Years since most recent mental-health hospitalization", mhYrs));
+      wrap.appendChild(row2);
+      return wrap;
+    }
 
     const rDoc = el("div", { class: "field-row" });
     rDoc.appendChild(field("How often do you see a doctor?", selectInput("doctorVisits", [["rarely", "Rarely — less than once a year"], ["yearly", "Yearly checkup"], ["regular", "Regular follow-ups (known conditions)"], ["frequent", "Frequently — monthly or more"]], { onChange: () => render() })));
@@ -787,6 +814,7 @@ const App = (() => {
         grid.appendChild(item);
       }
       c.appendChild(grid);
+      if (group === "Mental health") c.appendChild(mentalHealthHistoryBlock());
     }
 
     // Condition detail forms for selected conditions

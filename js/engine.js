@@ -1430,7 +1430,7 @@ const Engine = (() => {
     }
 
     for (const t of rules.declineTriggers || []) {
-      const hit = conditionDeclineHit(t.id, d, condIds, med, rules);
+      const hit = conditionDeclineHit(t.id, d, condIds, med, rules, t);
       if (hit) declineHits.push(t.id);
     }
 
@@ -1471,7 +1471,11 @@ const Engine = (() => {
       epilepsy_recent: ["seizures"]
     };
     for (const t of rules.postponeTriggers || []) {
-      if (!conditionPostponeHit(t.id, d, condIds, med, rules)) continue;
+      /* A trigger declared in BOTH lists (National Life's suicide_recent)
+         renders once as a decline gate — the postpone twin would duplicate the
+         same published screen on the same result page. */
+      if (declineSet.has(t.id)) continue;
+      if (!conditionPostponeHit(t.id, d, condIds, med, rules, t)) continue;
       const owning = triggerOwningConditions[t.id] || [];
       const alreadyGated = owning.some(cid => [...out.gates.postpone, ...out.gates.decline].some(g => g.id === cid));
       if (!alreadyGated) postponeHits.push(t.id);
@@ -1877,14 +1881,49 @@ const Engine = (() => {
     return out;
   }
 
+  /* Suicide-attempt recency, read from the wizard's "years since most recent
+     suicide attempt" field. Nothing disclosed -> unfired (an empty field is
+     no-attempt-disclosed, mirroring drugAbuseYears). A disclosed attempt with
+     an unparseable or negative recency counts as within-window — gate-first:
+     the missing fact is exactly what the carrier's screen asks about (same
+     convention as valve_recent). Each ruleset publishes its own window via
+     windowYears / multipleWindowYears on the trigger row (Banner/Foresters 2
+     years; MOO 1 year; National Life 1 year, or more than one within 2). */
+  function suicideAttemptRecentHit(d, t) { return disclosedYearsWithin(d, "suicideAttemptYears", t, 2); }
+
+  /* Shared core for the "years since <event>" wizard recency fields. Nothing
+     disclosed -> unfired (an empty field means the fact was not disclosed,
+     mirroring drugAbuseYears). A disclosed but unparseable or negative
+     recency counts as within-window — gate-first: the missing fact is
+     exactly what the carrier's screen asks about (same convention as
+     valve_recent). Each ruleset publishes its own window via windowYears on
+     the trigger row, with a per-trigger fallback for carrier-less calls. */
+  function disclosedYearsWithin(d, key, t, fallbackYears) {
+    if (!has(d, key)) return false; // nothing disclosed
+    const yrs = numOrNull(d[key]);
+    if (yrs === null) return true; // disclosed, recency unknown — gate-first
+    return yrs < ((t && t.windowYears) || fallbackYears);
+  }
+  function suicideRecentHit(d, t) {
+    if (!has(d, "suicideAttemptYears")) return false;
+    const yrs = numOrNull(d.suicideAttemptYears);
+    if (yrs === null) return true;
+    const w = (t && t.windowYears) || 1;
+    const mw = (t && t.multipleWindowYears) || 2;
+    // The multiple-attempts leg needs a recency: the flag alone can describe
+    // decades-old history and must never read as recent by itself.
+    return yrs < w || (isYes(d.suicideMultiple) && yrs < mw);
+  }
+
   /* conditionPostponeHit: evaluate the published condition-recency postpone
      triggers (M2) declared in each ruleset but previously never evaluated —
      a recent event on a disclosed condition must surface the carrier's
-     published postpone window. Suicide-recency (suicide_attempt_recent /
-     suicide_recent) and mental-hospitalization triggers have no collected
-     field (the wizard captures multiple attempts, not the attempt date) —
-     they return false and stay documented rather than guessed. */
-  function conditionPostponeHit(id, d, condIds, med, rules) {
+     published postpone window. Suicide-recency triggers (suicide_attempt_recent
+     at Banner/Transamerica/MOO, suicide_recent at National Life) fire from the
+     wizard's years-since-attempt field via the helpers above; National Life's
+     mental_hospitalization screen fires the same way from the wizard's
+     years-since-mental-health-hospitalization field. */
+  function conditionPostponeHit(id, d, condIds, med, rules, t) {
     const condOf = (ids) => condIds.some(cid => ids.includes(cid));
     const recentEventOn = (ids) => (d.conditions || []).some(c => ids.includes(c.id) && isYes(c.recentEvent));
     switch (id) {
@@ -1919,12 +1958,16 @@ const Engine = (() => {
       case "heart_recent": return recentEventOn(["cad", "heart_disease"]);
       case "cva_recent": return recentEventOn(["stroke"]);
       case "epilepsy_recent": return recentEventOn(["seizures"]);
+      case "suicide_attempt_recent": return suicideAttemptRecentHit(d, t);
+      case "suicide_recent": return suicideRecentHit(d, t);
+      case "mental_hospitalization": return disclosedYearsWithin(d, "mentalHospitalYears", t, 1); // National Life 1-year screen
       default: return false;
     }
   }
 
   /* conditionDeclineHit: map form flags to decline trigger ids */
-  function conditionDeclineHit(id, d, condIds, med, rules) {
+  function conditionDeclineHit(id, d, condIds, med, rules, t) {
+    const recentOn = (ids) => (d.conditions || []).some(c => ids.includes(c.id) && isYes(c.recentEvent));
     switch (id) {
       case "alcohol_active": return d.alcoholConcern === "active";
       case "drug_use_recent": {
@@ -1962,6 +2005,7 @@ const Engine = (() => {
       case "quadriplegia": return condIds.includes("paralysis") && d.paralysisType === "quadriplegia";
       case "stroke_severe": return condIds.includes("stroke") && (isYes(d.strokeSevere) || isYes(d.multipleStrokes));
       case "suicide_multiple": return isYes(d.suicideMultiple);
+      case "suicide_recent": return suicideRecentHit(d, t); // National Life uninsurable list
       case "transplant": return condIds.includes("transplant");
       case "bankruptcy_active": return isYes(d.bankruptcyActive);
       case "criminal_active": return isYes(d.criminalActive);
@@ -1969,6 +2013,34 @@ const Engine = (() => {
       case "facility_care": return d.livingSetting === "nursing" || d.livingSetting === "psychiatric" || d.livingSetting === "hospice" || isYes(d.homeHealth);
       case "wheelchair": return d.mobility === "wheelchair_chronic";
       case "oxygen_use": return isYes(d.oxygenUse);
+      /* National Life publishes these recency screens on BOTH lists; the
+         decline copy (Uninsurable list) is the stricter published outcome —
+         the postpone twin is deduped behind it via the declineSet skip in
+         run()'s postpone loop. */
+      case "cva_recent": {
+        if (recentOn(["stroke"])) return true; // stroke within one year
+        // or stroke with diabetes or cardiac history (published leg)
+        return condIds.includes("stroke") && condIds.some(cid => ["diabetes", "cad", "heart_disease"].includes(cid));
+      }
+      case "epilepsy_recent": return recentOn(["seizures"]); // diagnosed within one year
+      case "heart_surgery_recent": {
+        if (recentOn(["cad", "heart_disease"])) return true; // angioplasty/bypass/MI or heart surgery within 6 months
+        const v = (d.conditions || []).find(c => c.id === "heart_valve_prosthesis");
+        if (!v || !has(v, "implantYears")) return false;
+        const yrs = Number(v.implantYears);
+        return Number.isFinite(yrs) ? yrs < 1 : true; // valve replacement within 1 year
+      }
+      /* National Life uninsurable list: age 60+ without routine health care
+         and a physical within the last 24 months. */
+      case "no_routine_care": return Number(d.age) >= 60 && d.doctorVisits === "rarely";
+      /* Currently suspended/revoked license — collected as serious driving
+         (DUI/reckless/suspension) with years-since; unanswered recency is
+         gate-first. */
+      case "driving_no_license": {
+        if (!isYes(d.seriousDriving)) return false;
+        const yrs = has(d, "seriousDrivingYears") ? yearsAgo(d.seriousDrivingYears) : null;
+        return yrs === null || yrs < 1;
+      }
       default: return false;
     }
   }
