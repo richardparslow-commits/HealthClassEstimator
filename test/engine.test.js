@@ -84,6 +84,16 @@ add("Diabetes + blank A1c -> a1c_missing flag, not silent 'fine'", d => { d.cond
 add("Diabetes + null A1c -> a1c_missing flag", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: null }]; }, { klass: "standard", tobacco: false, wantFlag: "diabetes_a1c_missing" });
 add("Diabetes + A1c 7.5 -> no a1c_missing flag", d => { d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", insulin: "no", complications: "no", a1c: 7.5 }]; }, { klass: "standard", tobacco: false, wantNoFlag: "diabetes_a1c_missing" });
 
+/* The per-condition count field (atypical-nevus count) drives Banner's
+   published dysplastic-nevi criteria: a single nevus -> Preferred Plus, up to 3
+   -> Preferred, 4+ exceeds the ceilings. An unanswered count must be
+   conservative, not silently read as the single-nevus best case. The dermatology
+   records item documents the count on the evidence checklist. */
+add("Dysplastic nevi count 1 -> Preferred Plus (published single-nevus ceiling)", d => { d.conditions = [{ id: "dysplastic_nevi", status: "current", severity: "mild", control: "good", count: "1" }]; }, { klass: "preferred_plus", tobacco: false, wantEvidence: ["Dermatology records for atypical/dysplastic nevi"] });
+add("Dysplastic nevi count 3 -> Preferred (up-to-3 ceiling)", d => { d.conditions = [{ id: "dysplastic_nevi", status: "current", severity: "mild", control: "good", count: "3" }]; }, { klass: "preferred", tobacco: false });
+add("Dysplastic nevi count 5 -> Standard (exceeds published up-to-3 ceiling)", d => { d.conditions = [{ id: "dysplastic_nevi", status: "current", severity: "mild", control: "good", count: "5" }]; }, { klass: "standard", tobacco: false });
+add("Dysplastic nevi unanswered count -> conservative Standard, never single-nevus best case", d => { d.conditions = [{ id: "dysplastic_nevi", status: "current", severity: "mild", control: "good", count: "" }]; }, { klass: "standard", tobacco: false });
+
 add("Pending biopsy -> postpone", d => { d.pendingTests = "yes"; }, { klass: "postpone", tobacco: false });
 
 add("Hazardous avocation clean -> Flat extra (Preferred base)", d => { d.occupationHazardous = "yes"; }, { klass: "flat_extra", tobacco: false, wantFlatBase: "preferred" });

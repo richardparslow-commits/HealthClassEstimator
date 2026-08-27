@@ -694,10 +694,27 @@ const Engine = (() => {
           const yrs = has(c, "implantYears") ? Number(c.implantYears) : null;
           const base = (yrs !== null && yrs >= 2 && control === "good") ? "standard" : "table";
           ceiling = worstOf(base, meta.ceilings[0].klass);
-        } else if (meta.id === "cochlear_implant" || meta.id === "drug_infusion_pump" || meta.id === "ocular_monitoring") {
-          // Non-cardiac devices: cochlear implant is a sensory device; infusion
-          // pumps and ocular monitoring are reviewed on the underlying condition.
-          ceiling = worstOf(control === "good" ? "standard" : "table", meta.ceilings[0].klass);
+        } else if (meta.id === "dysplastic_nevi") {
+          // Banner publishes count-based criteria for dysplastic nevi: a single
+          // atypical/dysplastic nevus (no personal/family melanoma history,
+          // favorable dermatology follow-up) -> Preferred Plus; up to 3 -> Preferred;
+          // 4+ exceeds the published ceilings. An unanswered count must NOT be read
+          // as a single nevus (the favorable case) — it stays conservative (missing
+          // flag) until the number is confirmed.
+          const nevusCount = numOrNull(c.count);
+          if (control !== "good" || status !== "current") {
+            ceiling = "standard";
+          } else if (nevusCount === 1) {
+            ceiling = worstOf("preferred_plus", meta.ceilings[0].klass);
+          } else if (nevusCount !== null && nevusCount >= 2 && nevusCount <= 3) {
+            ceiling = worstOf("preferred", meta.ceilings[0].klass);
+          } else if (nevusCount !== null && nevusCount >= 4) {
+            ceiling = "standard";
+            details.push(`Dysplastic nevi: ${nevusCount} atypical nevi exceeds the published Preferred ceiling (up to 3) — Standard review; dermatology surveillance records needed.`);
+          } else {
+            // unanswered / malformed count — do not assume the single-nevus best case
+            ceiling = "standard";
+          }
         } else {
           // generic: first ceiling
           ceiling = meta.ceilings[0].klass;
@@ -1051,6 +1068,16 @@ const Engine = (() => {
     const apsNeeded = [];
     conditionIds.forEach(id => { if (apsMap[id] && !apsNeeded.includes(apsMap[id])) apsNeeded.push(apsMap[id]); });
     apsNeeded.forEach(a => list.push(`APS: ${a}`));
+
+    // Dysplastic nevi: the atypical-nevus count (whether single, up to 3, or 4+)
+    // drives whether the published Preferred-class criteria are met, so the
+    // producer needs the dermatology records to confirm the count and the
+    // melanoma-history / surveillance picture.
+    if (conditionIds.includes("dysplastic_nevi")) {
+      const nevi = (d.conditions || []).find(c => c.id === "dysplastic_nevi");
+      const cnt = numOrNull(nevi && nevi.count);
+      list.push(`Dermatology records for atypical/dysplastic nevi (nevus count ${cnt === null ? "not provided" : cnt}, melanoma-history and surveillance follow-up needed) — confirms the published Preferred-class criteria.`);
+    }
 
     // Coverage-purpose financial evidence (Banner financial underwriting
     // guidance, p. 22-23 — the purpose determines what justifies the face
