@@ -70,6 +70,29 @@ add("Diabetes onset 40 (before 50) -> capped at standard", d => {
   d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", medCount: 1, onsetAge: 40, a1c: 7.2, insulin: "no", complications: "no" }];
 }, { klass: "standard", tobacco: false });
 
+/* ---- M1 audit regression: late-onset diabetes severity ordering ----
+   The `onset >= 50` fallback branch used to grant Standard Plus to EVERY
+   late-onset presentation and cap only good-control-with-insulin, so poor
+   control outranked good control on insulin. The only late-onset lane that
+   may reach Standard Plus is good control, non-tobacco, no insulin, no
+   combination therapy; every worse presentation reviews at Standard. */
+add("Banner late-onset diabetes poor control -> Standard (never outranks good control)", d => {
+  d.age = 58;
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "poor", medCount: 1, onsetAge: 55, a1c: 8.9, insulin: "no", complications: "no" }];
+}, { klass: "standard", tobacco: false });
+add("Banner late-onset diabetes poor control + insulin -> Standard (was Standard Plus)", d => {
+  d.age = 58;
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "poor", medCount: 1, onsetAge: 55, a1c: 8.9, insulin: "yes", complications: "no" }];
+}, { klass: "standard", tobacco: false });
+add("Banner late-onset diabetes fair control -> Standard", d => {
+  d.age = 58;
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "fair", medCount: 1, onsetAge: 55, a1c: 7.6, insulin: "no", complications: "no" }];
+}, { klass: "standard", tobacco: false });
+add("Banner late-onset diabetes good control + insulin -> Standard (kept)", d => {
+  d.age = 58;
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", medCount: 1, onsetAge: 55, a1c: 6.9, insulin: "yes", complications: "no" }];
+}, { klass: "standard", tobacco: false });
+
 add("Diabetes A1c 10.5 -> decline screen", d => {
   d.conditions = [{ id: "diabetes", status: "current", severity: "severe", control: "poor", medCount: 2, onsetAge: 45, a1c: 10.5, insulin: "yes", complications: "yes" }];
 }, { klass: "decline", tobacco: false });
@@ -967,6 +990,48 @@ add("Serious driving + garbage years -> conservative review, never treated as cl
 add("Serious driving + negative years -> conservative review", d => { d.seriousDriving = "yes"; d.seriousDrivingYears = -1; }, { klass: "table", tobacco: false });
 add("Substance treatment + garbage sober years -> conservative Standard, no silent lift", d => { d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "mild", control: "good", yearsSober: "abc" }]; }, { klass: "standard", tobacco: false });
 add("Resolved cancer + garbage resolved years -> stays at resolved-cancer ceiling, no lift", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: "abc" }]; }, { klass: "standard_plus", tobacco: false });
+
+/* ---- H2 audit regression: gates must win for active/unresolved cancer. ----
+   Banner publishes a postpone row for other_cancer (diagnosis/treatment within
+   12 months, recurrence) but has no conditionModel, so an actively-current or
+   unresolved cancer used to fall through to the standard_plus ceiling with NO
+   gate — a silent favorable result for an ongoing malignancy. Any
+   status !== "resolved" cancer at a model-less carrier must postpone with a
+   gate, while a confirmed-resolved history keeps its published ceiling. */
+add("Active/unresolved cancer (status current, no resolve date) -> postpone with gate, never standard_plus", d => { d.conditions = [{ id: "other_cancer", status: "current", severity: "moderate", control: "good" }]; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
+add("Resolved cancer 5 yrs ago at Banner -> keeps published standard_plus ceiling (no overreach)", d => { d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: 5, treatedWithin12mo: false, recurrence: false }]; }, { klass: "standard_plus", tobacco: false });
+
+/* -- H1 audit regression: Foresters' declinesMap covers 16 conditions; the
+   generic fallback must no longer silently hand preferred_plus to anything
+   outside it (severe migraine, implanted devices, etc. previously landed
+   unrated at the best class). The special diabetes handler keeps its own
+   published lanes — non-insulin good control stays preferred_plus. */
+add("Foresters severe migraine outside declinesMap -> conservative Standard (no unrated preferred_plus)", d => {
+  d.carrier = "foresters";
+  d.conditions = [{ id: "migraine", status: "current", severity: "severe", control: "poor" }];
+}, { klass: "standard", tobacco: false });
+add("Foresters implanted defibrillator/pacemaker -> conservative Standard, not preferred_plus", d => {
+  d.carrier = "foresters";
+  d.conditions = [{ id: "pacemaker_icd", status: "current", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Foresters active cancer -> decline gate (declinesMap applies; never silently rated)", d => {
+  d.carrier = "foresters";
+  d.conditions = [{ id: "other_cancer", status: "current", severity: "moderate", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+
+/* -- H-audit sweep finding: single-tier favorable ceilings are
+   presentation-qualified. Transamerica publishes COPD as insurable with
+   "severity reviewed" — the generic branch must hand severe/poor-control
+   presentations a conservative Standard, not the published preferred ceiling,
+   while mild/good-control keeps the published lane. */
+add("Transamerica severe/poor COPD -> conservative Standard (qualified preferred ceiling not inherited)", d => {
+  d.carrier = "transamerica";
+  d.conditions = [{ id: "copd", status: "current", severity: "severe", control: "poor" }];
+}, { klass: "standard", tobacco: false });
+add("Transamerica mild/good-control COPD -> keeps published preferred ceiling", d => {
+  d.carrier = "transamerica";
+  d.conditions = [{ id: "copd", status: "current", severity: "mild", control: "good" }];
+}, { klass: "preferred_plus", tobacco: false });
 
 /* ---- Condition count-field normalization: numOrNull() on onsetAge / medCount /
    stableYears. The single most consequential case here is medCount: the wizard

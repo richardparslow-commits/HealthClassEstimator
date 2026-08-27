@@ -497,12 +497,24 @@ const Engine = (() => {
          and tell the producer it needs individual review rather than
          pretending it has no effect. (The catalog is broader than any single
          carrier's impairment table.) Carriers that evaluate conditions through
-         their own impairment block (rules.medical, e.g. Foresters) already
-         handle them there — including their rating-worksheet design where the
-         condition does not cap the base class — so the fallback does not fire
-         for them. */
+         their own impairment block (rules.medical, e.g. Foresters) only
+         "already handle" the rows their block knows — an impairment-block
+         carrier with a TINY declinesMap (Foresters: 16 rows) must NOT leave
+         everything else unrated, or a severe disclosed condition reads as
+         Preferred Plus. So the conservative fallback fires for any condition
+         absent from BOTH the declinesMap and the acceptMap. */
       if (!meta) {
-        if (!rules.medical) {
+        const medicalBlock = rules.medical || null;
+        const inDeclineMap = medicalBlock && medicalBlock.medicalDeclinesMap && !!medicalBlock.medicalDeclinesMap[c.id];
+        const inAcceptMap = medicalBlock && medicalBlock.medicalAcceptMap && !!medicalBlock.medicalAcceptMap[c.id];
+        /* Foresters' diabetes is routed through its own special handler in
+           run() (the diabetesNonMed block), NOT the generic condition loop —
+           its non-insulin well-controlled case is a deliberate rating-worksheet
+           accept (Preferred Plus), so it must not fall into the conservative
+           fallback. Every other condition outside the impairment block's own
+           declines/accept rows gets the honest Standard fallback (H1). */
+        const ownedBySpecialHandler = rules.id === "foresters" && c.id === "diabetes";
+        if (!medicalBlock || (!inDeclineMap && !inAcceptMap && !ownedBySpecialHandler)) {
           details.push(`${(c.name || c.id).replace(/_/g, " ")}: ${status} / ${severity} / ${control} control — not individually published in this carrier's guide; review at a conservative Standard ceiling.`);
           if (classWorseThan("standard", worst)) worst = "standard";
         }
@@ -565,9 +577,19 @@ const Engine = (() => {
           } else if (onset !== null && onset >= 50 && isNo(d.usedNicotine) && control === "good" && !insulinTreated && !polypharmacy) {
             ceiling = "standard_plus";
           } else if (onset !== null && onset >= 50) {
-            ceiling = "standard_plus"; // still the ceiling, but flagged
-            details.push(`Diabetes: onset ${onset} — verify control; Standard Plus ceiling with good control.`);
-            if (control === "good" && (insulinTreated || polypharmacy)) ceiling = worstOf(ceiling, "standard");
+            // M1 audit fix: this branch used to grant Standard Plus to EVERY
+            // late-onset presentation and cap only good-control-with-insulin,
+            // so a poorly controlled diabetic outranked a well-controlled one
+            // on insulin. The only late-onset lane that may reach Standard Plus
+            // is branch above (good control, non-tobacco, no insulin, no
+            // combination therapy); everything else reviews at Standard.
+            ceiling = "standard";
+            const reasons = [];
+            if (control !== "good") reasons.push(`${control} control`);
+            if (insulinTreated) reasons.push("insulin-treated");
+            if (polypharmacy) reasons.push("combination therapy");
+            if (isYes(d.usedNicotine)) reasons.push("tobacco use");
+            details.push(`Diabetes: onset ${onset} — ${reasons.length ? reasons.join(", ") + ": " : ""}below the Standard Plus ceiling (requires good control, non-tobacco, no insulin, no combination therapy); review at Standard.`);
           } else {
             ceiling = "standard";
             details.push(`Diabetes: onset before 50 — below the Standard Plus ceiling; review individually.`);
@@ -619,6 +641,15 @@ const Engine = (() => {
           }
           else if (c.treatedWithin12mo) { postpone.push({ id: c.id, text: "Cancer diagnosed/treated within 12 months — contact underwriting before submitting." }); ceiling = "postpone"; }
           else if (cm && cm.afterCeiling) ceiling = cm.afterCeiling;
+          else if (c.status !== "resolved") {
+            // H2 third leg — actively current or unresolved cancer at a carrier
+            // without a conditionModel (e.g., Banner): never a favorable class.
+            // The favorable fallback (standard_plus) is dishonest while the
+            // condition is ongoing; the carrier's published postpone row is the
+            // honest gate.
+            postpone.push({ id: c.id, text: meta.postpone || "Cancer currently active or unresolved — postpone / pre-review until treatment completes and stability is documented." });
+            ceiling = "postpone";
+          }
           else ceiling = "standard_plus";
         } else if (meta.id === "bipolar") {
           if (c.onsetWithin1yr) { postpone.push({ id: c.id, text: "Bipolar diagnosed within the last year." }); ceiling = "postpone"; }
@@ -736,8 +767,21 @@ const Engine = (() => {
             ceiling = "standard";
           }
         } else {
-          // generic: first ceiling
+          // generic: first ceiling. A SINGLE published tier whose `when`
+          // language is presentation-qualified (e.g., Transamerica COPD
+          // "severity reviewed", MVP "no significant insufficiency",
+          // osteoporosis "no complications") must not hand the top class to
+          // every presentation: a severe / poorly-controlled disclosure reads
+          // conservatively at Standard instead of inheriting the favorable
+          // Published best case. Same rule shape as the dysplastic-nevi branch
+          // above — an adverse or unconfirmed presentation never inherits the
+          // favorable ceiling (H-audit sweep finding).
           ceiling = meta.ceilings[0].klass;
+          if (meta.ceilings.length === 1 && (ceiling === "preferred_plus" || ceiling === "preferred") &&
+              (severity === "severe" || control === "poor")) {
+            ceiling = "standard";
+            details.push(`${meta.name}: ${severity} severity / ${control} control — below the published ${meta.ceilings[0].klass} ceiling; review at a conservative Standard.`);
+          }
         }
       } else {
         // no ceiling defined (postpone/decline-only conditions like CAD, stroke, COPD)
@@ -784,7 +828,21 @@ const Engine = (() => {
         }
       }
 
-      if (ceiling && ceiling !== "postpone" && ceiling !== "decline") {
+      /* H2 — gates must win: a condition branch can resolve straight to
+         postpone/decline (e.g. other_cancer afterCeiling:"decline") WITHOUT
+         pushing a gate entry, and `worst` used to skip those classes — so an
+         active cancer honestly evaluated as a decline still surfaced as
+         Preferred. Materialize any un-gated postpone/decline ceiling from the
+         published row text, then let the aggregate absorb it. */
+      if (ceiling === "postpone" && !postpone.some(p => p.id === c.id)) {
+        postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone || "postpone / pre-review — wait for stability, records, or completed testing."}` });
+      } else if (ceiling === "decline" && !decline.some(g => g.id === c.id)) {
+        decline.push({ id: c.id, text: `${meta.name}: ${meta.decline || "decline / specialist review."}` });
+      }
+
+      if (ceiling === "postpone" || ceiling === "decline") {
+        worst = ceiling;
+      } else if (ceiling) {
         if (classWorseThan(ceiling, worst)) worst = ceiling;
       }
       const ceilingName = ceiling ? (ceiling === "decline" ? "decline screen" : ceiling === "postpone" ? "postpone" : ceiling) : "review";
