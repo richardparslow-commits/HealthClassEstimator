@@ -231,19 +231,51 @@ const Engine = (() => {
 
   /* ---------- nicotine evaluation ------------------------------------- */
 
-  function monthsSince(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return null;
-    const ms = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-    // Clamp negative counts to 0: a future-dated (or otherwise mis-keyed) last-use
-    // date must never fan out to a larger-than-reality month gap — which would let
-    // a typo quietly push the applicant past a longer lookback into a better class.
-    return Math.max(0, ms);
+  /**
+   * Strict date parsing for the nicotine last-use date. The wizard always
+   * stores an ISO "YYYY-MM-DD" string (from <input type="date">), so any other
+   * shape — numeric timestamp, partial string, trailing junk — is treated as
+   * invalid rather than let JS's permissive Date() coercion silently misread it
+   * (new Date("0") → year 2000, new Date("2024") → Jan 2024, etc.).
+   *
+   * Returns { kind: "missing"|"invalid"|"future"|"past", months } where months
+   * is the elapsed whole months (never negative; a future date clamps to 0).
+   * kind is used downstream to keep classifying honest AND to flag a suspect
+   * date to the producer. Single-day future skew (timezone-local vs UTC) is
+   * tolerated by treating up to 1 day ahead as 0 months ago rather than junk.
+   */
+  function parseLastUseDate(dateStr) {
+    if (!dateStr || dateStr === "" || dateStr === null || dateStr === undefined) {
+      return { kind: "missing", months: null };
+    }
+    if (typeof dateStr !== "string") {
+      // Defensive: only ISO date strings are expected; reject numeric timestamps
+      // and anything else rather than coerce.
+      return { kind: "invalid", months: null };
+    }
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!m) return { kind: "invalid", months: null };
+    const y = +m[1], mo = +m[2], da = +m[3];
+    // Reject impossible calendar dates (e.g. month 13, Feb 30) that JS would
+    // otherwise roll over into a nearby valid date.
+    const d = new Date(0);
+    d.setFullYear(y, mo - 1, da);
+    if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== da) {
+      return { kind: "invalid", months: null };
+    }
+    const elapsedMs = Date.now() - d.getTime();
+    // Future-dated (or same-day) use reads as 0 months ago — inside every
+    // carrier's tobacco lookback — never as a satisfied long lookback. A tiny
+    // future skew of up to 24h (local/UTC month-boundary) is treated as 0, not
+    // as an invalid date.
+    const clampedMs = Math.max(0, elapsedMs);
+    const months = Math.floor(clampedMs / (1000 * 60 * 60 * 24 * 30.44));
+    return elapsedMs < 0 ? { kind: "future", months: 0 } : { kind: "past", months };
   }
 
   /**
-   * Returns { tobacco: boolean, klass: classIndexName|null, detail }
+   * Returns { tobacco: boolean, klass: classIndexName|null, detail,
+   *            dateKind?: "missing"|"invalid"|"future" }
    */
   function evalNicotine(rules, d) {
     if (!has(d, "usedNicotine")) {
@@ -252,9 +284,9 @@ const Engine = (() => {
     if (isNo(d.usedNicotine)) {
       return { tobacco: false, klass: "preferred_plus", detail: "No nicotine use disclosed." };
     }
-    const ms = monthsSince(d.nicotineLastUse);
-    const months = ms === null ? null : Math.floor(ms);
-    const isTobacco = isYes(d.usedNicotine) && (months === null || months < rules.nicotine.tobaccoLookbackMonths);
+    const lu = parseLastUseDate(d.nicotineLastUse);
+    const months = lu.months;
+    const isTobacco = isYes(d.usedNicotine) && (lu.kind === "missing" || lu.kind === "invalid" || lu.kind === "future" || months < rules.nicotine.tobaccoLookbackMonths);
 
     // Cigar exception
     if (d.nicotineProduct === "cigar" && has(d, "cigarPerMonth")) {
@@ -264,7 +296,17 @@ const Engine = (() => {
       }
     }
 
-    if (!isTobacco && months !== null) {
+    if (lu.kind === "missing" || lu.kind === "invalid") {
+      return { tobacco: true, klass: null, missing: true, dateKind: lu.kind, detail: lu.kind === "invalid"
+        ? "Nicotine use disclosed but the last-use date is unrecognized — treat as tobacco pending verification."
+        : "Nicotine use disclosed but last-use date missing — treat as tobacco pending verification." };
+    }
+
+    if (lu.kind === "future") {
+      return { tobacco: true, klass: "tobacco", dateKind: "future", detail: "Nicotine use disclosed with a last-use date that is in the future or today — the date was clamped to 0 months (current use) and the tobacco class applies pending confirmation." };
+    }
+
+    if (!isTobacco) {
       // Non-tobacco now; find the most favorable class whose lookback is satisfied
       const withMonths = rules.nicotine.classes.map(c => ({
         klass: c.klass,
@@ -277,10 +319,7 @@ const Engine = (() => {
       }
       return { tobacco: false, klass: best, detail: `Last nicotine use ${months} months ago. Best non-tobacco class by lookback: ${best}.` };
     }
-    if (months === null) {
-      return { tobacco: true, klass: null, missing: true, detail: "Nicotine use disclosed but last-use date missing — treat as tobacco pending verification." };
-    }
-    return { tobacco: true, klass: "tobacco", detail: `Nicotine used within the last 12 months (${months} months ago) — tobacco class applies.` };
+    return { tobacco: true, klass: "tobacco", detail: `Nicotine used within the last ${rules.nicotine.tobaccoLookbackMonths} months (${months} months ago) — tobacco class applies.` };
   }
 
   /* ---------- blood pressure ------------------------------------------ */
@@ -1508,6 +1547,10 @@ const Engine = (() => {
     if (d.vaTreatment === "yes" && !(d.conditions && d.conditions.length)) flags.push("va_treatment");
     // Nicotine ever/quit-history conflicts — surface for confirmation.
     if (d.usedNicotine === "yes" && d.nicotineEver === "no") flags.push("conflicting_disclosure");
+    // A future-dated or malformed last-use date was clamped to 0 months (or
+    // treated as unverified) — surface it so the producer re-confirms instead
+    // of trusting a corrected class.
+    if (nic.dateKind === "future" || nic.dateKind === "invalid") flags.push("nicotine_date_suspect");
     if (d.usedNicotine === "no" && d.nicotineEver === "yes" && !isNaN(Number(d.nicotineQuitYears)) && Number(d.nicotineQuitYears) >= 0 && Number(d.nicotineQuitYears) <= 10) flags.push("conflicting_disclosure");
 
     // evidence flags

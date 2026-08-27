@@ -940,8 +940,23 @@ add("Nicotine quit 5 yrs ago but 10-yr=no -> conflict flag", d => { d.usedNicoti
    use (within every carrier's tobacco lookback), never as a satisfied long
    lookback that would silently lift the class. */
 add("Future-dated last use -> clamped to 0 months -> tobacco class, never a silent non-tobacco upgrade", d => {
-  d.usedNicotine = "yes"; d.nicotineLastUse = new Date(Date.now() + (180 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
-}, { klass: "preferred_plus", tobacco: true, wantTobaccoPlus: false });
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = new Date(Date.now() + (180 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}, { klass: "preferred_plus", tobacco: true, wantTobaccoPlus: false, wantFlag: "nicotine_date_suspect" });
+add("Future-dated last use -> suspect-date flag raised", d => {
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = new Date(Date.now() + (180 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}, { klass: "preferred_plus", tobacco: true, wantFlag: "nicotine_date_suspect" });
+add("Malformed last-use date (numeric timestamp) -> strict-parse rejects, tobacco pending verify", d => {
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = Date.now();
+}, { klass: "preferred_plus", tobacco: true, wantFlag: "nicotine_date_suspect" });
+add("Impossible calendar date (Feb 30) -> strict-parse rejects, no silent coercion", d => {
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = "2026-02-30";
+}, { klass: "preferred_plus", tobacco: true, wantFlag: "nicotine_date_suspect", wantNoFlag: "conflicting_disclosure" });
+add("Malformed partial year -> rejected, no JS Date coercion to a valid date", d => {
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = "2024";
+}, { klass: "preferred_plus", tobacco: true, wantFlag: "nicotine_date_suspect" });
+add("Valid past use, no violation -> non-tobacco, no suspect flag", d => {
+  d.usedNicotine = "yes"; d.nicotineEver = "yes"; d.nicotineLastUse = new Date(Date.now() - (36 * 30 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}, { klass: "preferred", tobacco: false, wantNoFlag: "nicotine_date_suspect" });
 
 /* ---- American Amicable (Express Term / Term Made Simple) ---------------- */
 const abase = JSON.parse(JSON.stringify(base));

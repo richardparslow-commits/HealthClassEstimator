@@ -1775,14 +1775,16 @@ const App = (() => {
     combat_exposure: "Combat exposure — best class capped pending records",
     va_disability: "VA disability rating — class capped pending records",
     va_treatment: "VA treatment without disclosed condition — confirm",
-    hazardous_avocation: "Hazardous occupation / avocation — class capped pending review"
+    hazardous_avocation: "Hazardous occupation / avocation — class capped pending review",
+    nicotine_date_suspect: "Last-use date unrecognized or in the future — confirm before trusting the class"
   };
   const FLAG_CLASS = {
     needs_aps: "flag-warn", needs_exam: "flag-warn", likely_table: "flag-warn",
     possible_decline: "flag-danger", manual_review: "flag-warn", missing_material_data: "flag-warn",
     accelerated_uw_possible: "flag-ok",    financial_review: "flag-warn", undisclosed_meds: "flag-warn", criminal_history: "flag-warn",
     unexplained_care: "flag-warn", foreign_residence: "flag-warn", conflicting_disclosure: "flag-danger",
-    combat_exposure: "flag-warn", va_disability: "flag-warn", va_treatment: "flag-warn"
+    combat_exposure: "flag-warn", va_disability: "flag-warn", va_treatment: "flag-warn",
+    nicotine_date_suspect: "flag-danger"
   };
 
   const DOMAIN_LABELS = {
