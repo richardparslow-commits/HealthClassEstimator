@@ -227,9 +227,31 @@ css/styles.css      Styling (screen + print)
 js/rules.js         Carrier rule data (Banner, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group), medication dictionary, sources, class metadata
 js/engine.js        Rule engine: gates, domains, least-favorable-wins, credits, confidence, flags
 js/app.js           Wizard UI, localStorage persistence, results rendering
-test/engine.test.js Engine test harness — 489 assertions (230 scenarios + gate-dedup probe + results-page contract checks + evidence/APS probe)
+test/engine.test.js Engine test harness — 973 assertions (scenarios + trigger-completeness probe + gate-dedup probe + results-page contract checks + evidence/APS probe)
 package.json        npm test wiring (no dependencies, no install needed)
 ```
+
+## Live deployment (Streamlit) — known console noise
+
+The app is also served at https://life-insurance-health-class-predictor.streamlit.app/
+(repo `health_app.py`: `health_app.py` wraps the built `app_embedded.html` in a
+Streamlit component). The Streamlit Cloud platform shell produces benign console
+messages that are NOT from this app — do not chase them in audits:
+
+- `GET /api/v2/user/details 404` and the subdomain-discovery calls
+  (`getAppStatusFromSubdomain` / `getContextFromSubdomain` /
+  `disambiguateFromSubdomain`) — the platform shell's account-header and
+  app-routing probes, all from `/-/build/assets/*` bundles. Known
+  community-cloud noise; no effect on the app, not fixable from this repo.
+- `net::ERR_BLOCKED_BY_CLIENT` on `gtm.js` / `analytics.min.js` — the viewer's
+  ad blocker blocking Streamlit's GTM/Segment trackers (platform trackers, not
+  this tool's — the estimator transmits nothing).
+- `Unrecognized feature: ...` and the `allow-scripts + allow-same-origin`
+  sandbox warning — Chrome notes on Streamlit's component-iframe
+  configuration (how `st.components.v1.html` embeds the app by design).
+
+The estimator artifact itself is a single inlined file that makes zero network
+requests — nothing in `js/` or the built `app_embedded.html` can produce a 404.
 
 ## Adding or updating rules
 

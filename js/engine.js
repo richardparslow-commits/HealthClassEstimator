@@ -507,16 +507,86 @@ const Engine = (() => {
         const medicalBlock = rules.medical || null;
         const inDeclineMap = medicalBlock && medicalBlock.medicalDeclinesMap && !!medicalBlock.medicalDeclinesMap[c.id];
         const inAcceptMap = medicalBlock && medicalBlock.medicalAcceptMap && !!medicalBlock.medicalAcceptMap[c.id];
-        /* Foresters' diabetes is routed through its own special handler in
-           run() (the diabetesNonMed block), NOT the generic condition loop —
-           its non-insulin well-controlled case is a deliberate rating-worksheet
-           accept (Preferred Plus), so it must not fall into the conservative
-           fallback. Every other condition outside the impairment block's own
-           declines/accept rows gets the honest Standard fallback (H1). */
+        /* Foresters' diabetes is routed through its own published lane below
+           (the guide's diabetesNonMed block) rather than the generic
+           condition loop. Every other condition outside the impairment
+           block's own declines/accept rows gets the honest Standard
+           fallback (H1). */
         const ownedBySpecialHandler = rules.id === "foresters" && c.id === "diabetes";
         if (!medicalBlock || (!inDeclineMap && !inAcceptMap && !ownedBySpecialHandler)) {
           details.push(`${(c.name || c.id).replace(/_/g, " ")}: ${status} / ${severity} / ${control} control — not individually published in this carrier's guide; review at a conservative Standard ceiling.`);
           if (classWorseThan("standard", worst)) worst = "standard";
+        } else if (ownedBySpecialHandler) {
+          /* Final-audit fix: Foresters' diabetes lanes come straight from the
+             published non-medical guide. Decline leg: "Type 1 or Type 2
+             treated with insulin, poor control, or complications — decline"
+             (insulin detected in the med list counts as insulin-treated, and
+             severe presentations are not the published good-control accept).
+             Accept leg: type 2, non-insulin, good control — but via a RATING
+             WORKSHEET (build + diabetes), i.e. a rated lane: Standard Plus,
+             never Preferred Plus. */
+          const combo = medCombinationCheck(rules, d, "diabetes");
+          const insulinTreated = isYes(c.insulin) || combo.hasInsulin;
+          if (insulinTreated || c.complications === "yes" || control === "poor" || control === "fair" || severity === "severe") {
+            decline.push({ id: "foresters_diabetes", text: rules.medical.diabetesNonMed.decline, reason: "Foresters impairment guide." });
+            if (classWorseThan("decline", worst)) worst = "decline";
+          } else {
+            details.push("Foresters: type 2 diabetes with good control and no insulin — accepted via rating worksheet (build + diabetes); Standard Plus ceiling.");
+            if (classWorseThan("standard_plus", worst)) worst = "standard_plus";
+          }
+        } else if (rules.id === "foresters" && inAcceptMap) {
+          /* Final-audit fix: Foresters' accept-map rows are QUALIFIED accepts
+             ("mild/moderate", "treated and controlled", "no symptoms, no
+             treatment", "after 5 years without relapse"). An unqualified
+             severe or unstable presentation used to skip rating entirely and
+             read as fully favorable (Preferred Plus). Each row now evaluates
+             against its published qualifier; failures land on the published
+             decline leg or the conservative Standard fallback. */
+          if (c.id === "asthma") {
+            if (severity === "severe") {
+              /* "Severe with hospitalization — decline." An unanswered
+                 hospitalization fact is gate-first: the decline screen
+                 can't be cleared without it. */
+              if (c.hospitalized !== "no") {
+                decline.push({ id: "foresters_asthma_severe", text: "Severe asthma" + (c.hospitalized === "yes" ? " with hospitalization" : " — hospitalization history not disclosed") + " — Foresters impairment guide decline screen." });
+                if (classWorseThan("decline", worst)) worst = "decline";
+              } else {
+                details.push("Foresters: severe asthma without hospitalization is outside the published accept (mild/moderate) — conservative Standard.");
+                if (classWorseThan("standard", worst)) worst = "standard";
+              }
+            }
+            // mild/moderate -> published accept; no ceiling contribution
+          } else if (c.id === "sleep_apnea") {
+            if (severity === "severe" || control === "poor" || c.residualSymptoms) {
+              details.push("Foresters: the sleep apnea accept requires treated and controlled — this presentation reviews at conservative Standard.");
+              if (classWorseThan("standard", worst)) worst = "standard";
+            }
+          } else if (c.id === "mvp") {
+            if (severity !== "mild" || control === "poor" || isYes(c.residualSymptoms) || (medCount !== null && medCount >= 1)) {
+              details.push("Foresters: the MVP accept requires an innocent murmur — no symptoms, no treatment. Symptomatic, treated, or higher-grade presentations review at conservative Standard.");
+              if (classWorseThan("standard", worst)) worst = "standard";
+            }
+          } else if (c.id === "substance_treatment") {
+            const ys = yearsAgo(c.yearsSober);
+            if (c.relapse) {
+              details.push("Foresters: relapse history is outside the published accept (5+ years, no relapse, no current use) — conservative Standard.");
+              if (classWorseThan("standard", worst)) worst = "standard";
+            } else if (ys === null) {
+              /* Gate-first: the "alcoholism within 5 years — decline" screen
+                 cannot be cleared without a documented sobriety duration. */
+              decline.push({ id: "foresters_substance_recent", text: "Substance/alcohol treatment with sobriety duration not disclosed — Foresters publishes decline for alcoholism within 5 years; the clean-duration must be documented." });
+              if (classWorseThan("decline", worst)) worst = "decline";
+            } else if (ys < 5) {
+              decline.push({ id: "foresters_substance_recent", text: `Substance/alcohol treatment with last use ${ys} year(s) ago — within Foresters' 5-year decline window.` });
+              if (classWorseThan("decline", worst)) worst = "decline";
+            }
+            // >= 5 years clean, no relapse -> published accept
+          } else if (c.id === "dysplastic_nevi") {
+            details.push("Foresters: dysplastic nevi are reviewed individually — conservative Standard.");
+            if (classWorseThan("standard", worst)) worst = "standard";
+          } else if (c.id === "skin_cancer") {
+            details.push("Foresters: basal/squamous cell skin cancer — accepted per the impairment guide.");
+          }
         }
         continue;
       }
@@ -628,7 +698,12 @@ const Engine = (() => {
           if ((severity === "mild" || severity === "moderate") && control === "good" && !c.residualSymptoms) ceiling = "preferred";
           else ceiling = "standard";
         } else if (meta.id === "skin_cancer") {
-          ceiling = "preferred_plus";
+          /* Final-audit fix: this branch used to hard-code Preferred Plus for
+             every carrier, overriding published rows that grant Standard
+             (NLG, AMAM, Americo, Corebridge) or Preferred (Quility). Respect
+             the carrier's own ceilings row; Preferred Plus remains the
+             default only when a row lists the condition with no class. */
+          ceiling = (meta.ceilings && meta.ceilings[0] && meta.ceilings[0].klass) || "preferred_plus";
         } else if (meta.id === "other_cancer") {
           const cm = rules.conditionModels && rules.conditionModels.other_cancer;
           const resolvedYears = yearsAgo(c.resolvedYears);
@@ -1421,12 +1496,11 @@ const Engine = (() => {
         if (c.id === "other_cancer" && (yearsAgo(c.resolvedYears) ?? -1) >= 10) continue; // completed >10 yrs ago, no recurrence: acceptable
         out.gates.decline.push({ id: "foresters_" + c.id, text: declineText, reason: "Foresters non-medical impairment guide." });
       }
-      const db = conds.find(c => c.id === "diabetes");
-      if (db) {
-        if (isYes(db.insulin) || db.complications === "yes") {
-          out.gates.decline.push({ id: "foresters_diabetes", text: rules.medical.diabetesNonMed.decline, reason: "Foresters impairment guide." });
-        }
-      }
+      /* Foresters diabetes lanes moved into evalMedical's no-meta branch
+         (final audit): the decline leg now also fires on poor control and
+         severe presentations per the published guide, and the accept leg
+         caps at Standard Plus (rating worksheet) instead of reading as
+         fully favorable. */
     }
 
     for (const t of rules.declineTriggers || []) {
@@ -1995,15 +2069,29 @@ const Engine = (() => {
       case "es_pending": return rules && rules.id === "americo" && (isYes(d.pendingTests) || isYes(d.recentHospitalization) || isYes(d.recentSurgery));
       case "q_gastric": return rules && rules.id === "quility" && isYes(d.gastricBypassRecent);
       case "cs_pending": return rules && rules.id === "corebridge" && isYes(d.pendingTests);
-      case "cs_terminal": return rules && rules.id === "corebridge" && d.activeSymptom === "severe" && (d.livingSetting === "hospice" || d.livingSetting === "nursing");
+      /* SimpliNow Legacy condition table: "Terminal illness or expected to die
+         within 12 months" — fired from the terminal-prognosis flag. (The old
+         predicate required activeSymptom === "severe", a value the wizard
+         never produces, so the trigger was dead.) */
+      case "cs_terminal": return rules && rules.id === "corebridge" && isYes(d.terminalPrognosis);
       case "dementia": return condIds.includes("dementia");
-      case "cirrhosis": return condIds.includes("liver_disease") && isYes(d.cirrhosis);
-      case "defibrillator": return condIds.includes("heart_disease") && isYes(d.defibrillator);
-      case "cardiomyopathy": return condIds.includes("heart_disease") && isYes(d.cardiomyopathy);
+      /* Final-audit convention (stroke_severe/cardiomyopathy precedent): each
+         flag-based trigger reads the projected form flag AND the condition
+         object, so direct engine callers behave identically to the wizard. */
+      case "cirrhosis": return condIds.includes("liver_disease") && (isYes(d.cirrhosis) || (d.conditions || []).some(c => c.id === "liver_disease" && c.cirrhosis === "yes"));
+      case "defibrillator": return condIds.includes("heart_disease") && (isYes(d.defibrillator) || (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.defibrillator)));
+      /* Final-audit fix: reads the projected form flag AND the condition field
+         directly (the wizard pill lives on the condition object), so the
+         Transamerica / Mutual of Omaha published decline fires from real UI
+         data instead of staying dead. */
+      case "cardiomyopathy": return condIds.includes("heart_disease") && (isYes(d.cardiomyopathy) || (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy)));
       case "hiv": return condIds.includes("hiv");
-      case "renal_failure": return condIds.includes("kidney_disease") && (isYes(d.dialysis) || isYes(d.kidneyFailure));
-      case "quadriplegia": return condIds.includes("paralysis") && d.paralysisType === "quadriplegia";
-      case "stroke_severe": return condIds.includes("stroke") && (isYes(d.strokeSevere) || isYes(d.multipleStrokes));
+      case "renal_failure": return condIds.includes("kidney_disease") && (isYes(d.dialysis) || isYes(d.kidneyFailure) || (d.conditions || []).some(c => c.id === "kidney_disease" && c.dialysis === "yes"));
+      case "quadriplegia": return condIds.includes("paralysis") && (d.paralysisType === "quadriplegia" || (d.conditions || []).some(c => c.id === "paralysis" && c.paralysisType === "quadriplegia"));
+      /* stroke_severe reads both the projected form flag (buildInput lifts the
+         condition field) and the condition object directly, so direct engine
+         callers without the projection behave identically. */
+      case "stroke_severe": return condIds.includes("stroke") && (isYes(d.strokeSevere) || isYes(d.multipleStrokes) || (d.conditions || []).some(c => c.id === "stroke" && isYes(c.multipleStrokes)));
       case "suicide_multiple": return isYes(d.suicideMultiple);
       case "suicide_recent": return suicideRecentHit(d, t); // National Life uninsurable list
       case "transplant": return condIds.includes("transplant");
@@ -2059,6 +2147,12 @@ const Engine = (() => {
       /* National Life uninsurable list: SSDI/DI disability for depression,
          PTSD, or other medical (non-musculoskeletal) impairments. */
       case "disabled": return isYes(d.disabledBenefits);
+      /* Transamerica impairment table: terminal illness — a physician's
+         prognosis of life expectancy measured in months. Fires only where
+         declared; other carriers evaluate terminal presentations through
+         their own published screens (hospice/facility care, active cancer,
+         ADL dependence). */
+      case "terminal": return isYes(d.terminalPrognosis);
       default: return false;
     }
   }

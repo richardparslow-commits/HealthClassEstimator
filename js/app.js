@@ -71,7 +71,7 @@ const App = (() => {
       conditions: [],
       medicationsText: "",
       cirrhosis: "no", defibrillator: false, cardiomyopathy: false, dialysis: false, kidneyFailure: false, paralysisType: "paraplegia",
-      strokeSevere: false, multipleStrokes: false, suicideMultiple: false, suicideAttemptYears: "", mentalHospitalYears: "", disabledBenefits: false, oxygenUse: false,
+      strokeSevere: false, multipleStrokes: false, suicideMultiple: false, suicideAttemptYears: "", mentalHospitalYears: "", disabledBenefits: false, terminalPrognosis: false, oxygenUse: false,
       a1cHigh: false, diabetesComplications: false, gastricBypassRecent: false, pregnancyComplications: false,
       famCardio: "",
       livingSetting: "", mobility: "", adlAssistance: "", homeHealth: false,
@@ -352,6 +352,15 @@ const App = (() => {
       }
       wrap.appendChild(r);
     }
+    if (id === "asthma") {
+      /* Foresters publishes a qualified accept: "mild/moderate asthma —
+         accept; severe with hospitalization — decline." The hospitalization
+         fact is what the decline screen asks about — collect it (tri-state:
+         unanswered is gate-first in the engine). */
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("Ever hospitalized for asthma?", radioPillKey(c, "hospitalized", [["no", "No"], ["yes", "Yes"]])));
+      wrap.appendChild(r);
+    }
     if (id === "substance_treatment") {
       const r = el("div", { class: "field-row" });
       const yr = el("input", { type: "number", min: 0, step: 1, placeholder: "years since last use" });
@@ -378,6 +387,13 @@ const App = (() => {
       const r = el("div", { class: "field-row" });
       r.appendChild(field("Defibrillator (AICD)?", checkPillKey(c, "defibrillator", "Yes")));
       r.appendChild(field("Cardiomyopathy / CHF?", checkPillKey(c, "cardiomyopathy", "Yes")));
+      wrap.appendChild(r);
+    }
+    if (id === "stroke") {
+      /* Multiple strokes feed the stroke_severe decline trigger (Banner: "severe
+         stroke ... or multiple strokes") alongside the severity field. */
+      const r = el("div", { class: "field-row" });
+      r.appendChild(field("More than one stroke?", checkPillKey(c, "multipleStrokes", "Yes")));
       wrap.appendChild(r);
     }
     if (id === "paralysis") {
@@ -849,6 +865,14 @@ const App = (() => {
     const rDis = el("div", { class: "field-row" });
     rDis.appendChild(field("Receiving SSDI / disability benefits for a medical (non-injury) condition?", checkPill("disabledBenefits", "Yes")));
     c.appendChild(rDis);
+    /* Terminal-illness disclosure — Transamerica's published impairment-table
+       decline. Other carriers have no terminal row: their screens catch
+       terminal presentations through what is actually published (hospice or
+       facility care, active cancer, ADL dependence), so the flag fires only
+       where declared. */
+    const rTerm = el("div", { class: "field-row" });
+    rTerm.appendChild(field("Terminal prognosis — has a physician given a life expectancy measured in months?", checkPill("terminalPrognosis", "Yes")));
+    c.appendChild(rTerm);
     /* Complicated-pregnancy postpone screen (Banner, Transamerica, MOO, F&G,
        National Life publish a postpone row). Female-applicant question — the
        flag only produces a gate for carriers that declare the trigger. */
@@ -1020,6 +1044,7 @@ const App = (() => {
     if (pl) d.paralysisType = pl.paralysisType || "paraplegia";
     const st = d.conditions.find(c => c.id === "stroke");
     if (st && st.severity === "severe") d.strokeSevere = true;
+    if (st && st.multipleStrokes) d.multipleStrokes = true;
     return d;
   }
 

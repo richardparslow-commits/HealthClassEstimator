@@ -207,9 +207,72 @@ fadd("Insulin-treated diabetes -> decline (non-med)", d => {
   d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", onsetAge: 45, a1c: 7.1, insulin: "yes", complications: "no" }];
 }, { klass: "decline", tobacco: false });
 
-fadd("Non-insulin diabetes, good control -> no gate decline (accept, rating worksheet applies)", d => {
+/* Final audit: the published accept is via a RATING WORKSHEET (build +
+   diabetes) — a rated lane, so good-control non-insulin diabetes lands
+   Standard Plus, never Preferred Plus. The decline leg (insulin, poor
+   control, complications) now also fires on poor/fair control and severe
+   presentations. */
+fadd("Non-insulin diabetes, good control -> no gate decline (accept via rating worksheet, Standard Plus)", d => {
   d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", onsetAge: 52, a1c: 6.8, insulin: "no", complications: "no" }];
+}, { klass: "standard_plus", tobacco: false });
+
+/* ---- Final full-audit pins: Foresters accept-map qualifiers, the revived
+   cardiomyopathy trigger, and skin_cancer respecting published ceilings.
+   Each pin guards a silent-favorable path the behavioral sweep exposed. ---- */
+fadd("Diabetes poor control -> decline (published decline leg now fires)", d => {
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "poor", onsetAge: 52, a1c: 9.2, insulin: "no", complications: "no" }];
+}, { klass: "decline", tobacco: false });
+fadd("Diabetes, insulin detected in med list (pill untouched) -> decline", d => {
+  d.conditions = [{ id: "diabetes", status: "current", severity: "moderate", control: "good", onsetAge: 52, a1c: 6.8, insulin: "no", complications: "no" }];
+  d.medicationsText = "insulin glargine, lispro";
+}, { klass: "decline", tobacco: false });
+fadd("Severe asthma, hospitalization undisclosed -> decline screen (gate-first)", d => {
+  d.conditions = [{ id: "asthma", status: "current", severity: "severe", control: "poor" }];
+}, { klass: "decline", tobacco: false });
+fadd("Severe asthma, never hospitalized -> conservative Standard (outside mild/moderate accept)", d => {
+  d.conditions = [{ id: "asthma", status: "current", severity: "severe", control: "poor", hospitalized: "no" }];
+}, { klass: "standard", tobacco: false });
+fadd("Mild asthma -> published accept (no silent cap)", d => {
+  d.conditions = [{ id: "asthma", status: "current", severity: "mild", control: "good" }];
 }, { klass: "preferred_plus", tobacco: false });
+fadd("Substance treatment, sobriety duration undisclosed -> decline screen (5-yr window uncleared)", d => {
+  d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "moderate", control: "good" }];
+}, { klass: "decline", tobacco: false });
+fadd("Substance treatment, 6 yrs clean no relapse -> published accept", d => {
+  d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "moderate", control: "good", yearsSober: "6" }];
+}, { klass: "preferred_plus", tobacco: false });
+fadd("Substance treatment, relapse despite 6 yrs -> conservative Standard", d => {
+  d.conditions = [{ id: "substance_treatment", status: "resolved", severity: "moderate", control: "good", yearsSober: "6", relapse: true }];
+}, { klass: "standard", tobacco: false });
+fadd("Sleep apnea poor control -> conservative Standard (accept requires treated and controlled)", d => {
+  d.conditions = [{ id: "sleep_apnea", status: "current", severity: "moderate", control: "poor" }];
+}, { klass: "standard", tobacco: false });
+fadd("MVP severe -> conservative Standard (accept requires innocent murmur)", d => {
+  d.conditions = [{ id: "mvp", status: "current", severity: "severe", control: "good" }];
+}, { klass: "standard", tobacco: false });
+fadd("Dysplastic nevi -> individual review at conservative Standard, never silent Preferred Plus", d => {
+  d.conditions = [{ id: "dysplastic_nevi", status: "current", severity: "moderate", control: "good" }];
+}, { klass: "standard", tobacco: false });
+add("Final audit: TA cardiomyopathy pill (condition-level) fires the published decline (was dead)", d => {
+  d.carrier = "transamerica";
+  d.conditions = [{ id: "heart_disease", status: "current", severity: "moderate", control: "good", cardiomyopathy: true }];
+}, { klass: "decline", tobacco: false });
+add("Final audit: MOO cardiomyopathy pill (condition-level) fires the published decline (was dead)", d => {
+  d.carrier = "mutual_of_omaha";
+  d.conditions = [{ id: "heart_disease", status: "current", severity: "moderate", control: "good", cardiomyopathy: true }];
+}, { klass: "decline", tobacco: false });
+add("Final audit: NLG skin cancer -> Standard (published row no longer overridden)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "skin_cancer", status: "resolved", severity: "mild", control: "good", resolvedYears: 3 }];
+}, { klass: "standard", tobacco: false });
+add("Final audit: Quility skin cancer -> Preferred (published row no longer overridden)", d => {
+  d.carrier = "quility";
+  d.conditions = [{ id: "skin_cancer", status: "resolved", severity: "mild", control: "good", resolvedYears: 3 }];
+}, { klass: "preferred", tobacco: false });
+add("Final audit: AMAM skin cancer -> Standard (published row no longer overridden)", d => {
+  d.carrier = "amam";
+  d.conditions = [{ id: "skin_cancer", status: "resolved", severity: "mild", control: "good", resolvedYears: 3 }];
+}, { klass: "standard", tobacco: false });
 
 fadd("Cancer completed 12 yrs ago -> accept (no gate), no class cap", d => {
   d.conditions = [{ id: "other_cancer", status: "resolved", severity: "moderate", control: "good", resolvedYears: 12, treatedWithin12mo: false, recurrence: false }];
@@ -1175,13 +1238,44 @@ add("National Life SSDI/disability alongside disclosed depression -> disabled de
   d.disabledBenefits = true;
   d.conditions = [{ id: "depression", status: "current", severity: "mild", control: "good" }];
 }, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+
+/* ---- Terminal-illness flag — wired to Transamerica's impairment-table
+   decline (the last documented-only trigger). Other carriers have no
+   terminal row: their screens catch terminal presentations through what is
+   actually published (hospice/facility care, active cancer, ADLs). ---- */
+add("Transamerica terminal prognosis -> terminal decline (impairment table)", d => {
+  d.carrier = "transamerica";
+  d.terminalPrognosis = true;
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("Transamerica no terminal prognosis -> no terminal gate (negative control)", d => {
+  d.carrier = "transamerica";
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("Banner terminal prognosis -> no terminal gate (trigger not declared; carrier scoping)", d => {
+  d.terminalPrognosis = true;
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("Transamerica terminal + hospice -> distinct published gates (terminal, facility_care, adl_dependence)", d => {
+  d.carrier = "transamerica";
+  d.terminalPrognosis = true;
+  d.livingSetting = "hospice";
+}, { klass: "decline", tobacco: false, wantDeclineGates: 3 });
+
+/* ---- Final-audit fixes: two dead triggers found by the behavioral census. ---- */
+add("Corebridge terminal prognosis -> cs_terminal decline (was dead: predicate required an impossible activeSymptom value)", d => {
+  d.carrier = "corebridge";
+  d.age = 55; // inside SimpliNow Legacy issue ages (50-80) so the eligibility gate stays out
+  d.terminalPrognosis = true;
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("Banner stroke with multiple-strokes disclosure -> stroke_severe decline (projection added; leg was dead from the UI)", d => {
+  d.conditions = [{ id: "stroke", status: "resolved", severity: "mild", control: "good", resolvedYears: 5, multipleStrokes: true }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
 add("National Life recent mental-health hospitalization + recent attempt -> decline via suicide_recent, hospitalization gate still renders (distinct published screens)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "0.5"; d.suicideAttemptYears = "0.5"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 1 });
 
 /* -- H1 audit regression: Foresters' declinesMap covers 16 conditions; the
    generic fallback must no longer silently hand preferred_plus to anything
    outside it (severe migraine, implanted devices, etc. previously landed
    unrated at the best class). The special diabetes handler keeps its own
-   published lanes — non-insulin good control stays preferred_plus. */
+   published lanes — non-insulin good control accepts via the published
+   rating worksheet, which is a rated lane (Standard Plus, final audit). */
 add("Foresters severe migraine outside declinesMap -> conservative Standard (no unrated preferred_plus)", d => {
   d.carrier = "foresters";
   d.conditions = [{ id: "migraine", status: "current", severity: "severe", control: "poor" }];
@@ -1901,12 +1995,9 @@ const TRIGGER_EXTERNAL_HANDLING = {
   // NLG's decline-list copy of the pregnancy screen: the fact is evaluated by
   // the direct run() push as a postpone (reconsider-at-6-weeks semantics).
   pregnancy_complications: { mechanism: "direct run() push (postpone)", guard: { carrier: "national_life", input: { pregnancyComplications: true }, klass: "postpone" } },
-  // Documented-only: no collected field can fire these today. They stay
-  // declared for producer visibility; the underlying presentations surface
-  // through other wired screens. Adding a collected field is the fix when
-  // one of these needs to fire (see the mental_hospitalization, aneurysm,
-  // and disabled precedents — all previously documented-only, now wired).
-  terminal: { mechanism: "documented-only — no collected fact; terminal presentations surface via the active-cancer postpone and facility_care/hospice decline" }
+  // No documented-only entries remain: every trigger id declared in every
+  // ruleset fires from collected data (mental_hospitalization, aneurysm, and
+  // disabled were all previously documented-only and are now case-wired).
 };
 {
   const postFnSrc = engine.slice(engine.indexOf("function conditionPostponeHit"), engine.indexOf("function conditionDeclineHit"));
