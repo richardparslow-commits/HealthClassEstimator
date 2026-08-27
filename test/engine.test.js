@@ -1128,6 +1128,53 @@ add("National Life mental-health hospitalization 2 yr ago -> no gate", d => { d.
 add("National Life mental-health hospitalization with garbage recency -> gate-first postpone (unknown recency never reads favorable)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "abc"; }, { klass: "postpone", tobacco: false, wantPostponeGates: 1 });
 add("National Life mental-health hospitalization unanswered -> no gate (negative control)", d => { d.carrier = "national_life"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
 add("Banner mental-health hospitalization 0.5 yr ago -> no gate (trigger not declared; carrier scoping)", d => { d.mentalHospitalYears = "0.5"; }, { klass: "preferred_plus", tobacco: false, wantPostponeGates: 0 });
+
+/* ---- Abdominal aortic aneurysm (AAA) — catalog condition wired to NLG's
+   aneurysm decline trigger (Uninsurable list: present, or surgically
+   corrected within the past 6 months). Carriers without a published row
+   take the conservative no-meta Standard fallback. ---- */
+add("National Life AAA present -> aneurysm decline (Uninsurable list)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "abdominal_aneurysm", status: "current", severity: "moderate", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life AAA repaired within 6 months -> aneurysm decline (repair-recency screen)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "abdominal_aneurysm", status: "resolved", severity: "mild", control: "good", repairedWithin6mo: true }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life AAA repaired 3 years ago -> outside the 6-month screen, conservative Standard (no gate)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "abdominal_aneurysm", status: "resolved", severity: "mild", control: "good", repairedWithin6mo: false, resolvedYears: 3 }];
+}, { klass: "standard", tobacco: false, wantDeclineGates: 0 });
+add("National Life AAA repaired, repair date unanswered -> gate-first decline (unknown recency never reads favorable)", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "abdominal_aneurysm", status: "resolved", severity: "mild", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life AAA resolved 0 years ago (years field, flag unset) -> within the 6-month window", d => {
+  d.carrier = "national_life";
+  d.conditions = [{ id: "abdominal_aneurysm", status: "resolved", severity: "mild", control: "good", resolvedYears: 0 }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("Banner AAA present -> conservative Standard fallback, no aneurysm gate (trigger not declared; scoping)", d => {
+  d.conditions = [{ id: "abdominal_aneurysm", status: "current", severity: "moderate", control: "good" }];
+}, { klass: "standard", tobacco: false, wantDeclineGates: 0 });
+
+/* ---- SSDI / medical-disability flag — wired to NLG's disabled decline
+   trigger (Uninsurable list: SSDI/DI for depression, PTSD, or other medical
+   — non-musculoskeletal — impairments). ---- */
+add("National Life SSDI/disability for a medical condition -> disabled decline (Uninsurable list)", d => {
+  d.carrier = "national_life";
+  d.disabledBenefits = true;
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
+add("National Life no disability benefits -> no disabled gate (negative control)", d => {
+  d.carrier = "national_life";
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("Banner SSDI/disability -> no disabled gate (trigger not declared; carrier scoping)", d => {
+  d.disabledBenefits = true;
+}, { klass: "preferred_plus", tobacco: false, wantDeclineGates: 0 });
+add("National Life SSDI/disability alongside disclosed depression -> disabled decline gate", d => {
+  d.carrier = "national_life";
+  d.disabledBenefits = true;
+  d.conditions = [{ id: "depression", status: "current", severity: "mild", control: "good" }];
+}, { klass: "decline", tobacco: false, wantDeclineGates: 1 });
 add("National Life recent mental-health hospitalization + recent attempt -> decline via suicide_recent, hospitalization gate still renders (distinct published screens)", d => { d.carrier = "national_life"; d.mentalHospitalYears = "0.5"; d.suicideAttemptYears = "0.5"; }, { klass: "decline", tobacco: false, wantDeclineGates: 1, wantPostponeGates: 1 });
 
 /* -- H1 audit regression: Foresters' declinesMap covers 16 conditions; the
@@ -1857,10 +1904,9 @@ const TRIGGER_EXTERNAL_HANDLING = {
   // Documented-only: no collected field can fire these today. They stay
   // declared for producer visibility; the underlying presentations surface
   // through other wired screens. Adding a collected field is the fix when
-  // one of these needs to fire (see mental_hospitalization precedent).
-  terminal: { mechanism: "documented-only — no collected fact; terminal presentations surface via the active-cancer postpone and facility_care/hospice decline" },
-  aneurysm: { mechanism: "documented-only — no abdominal-aortic-aneurysm condition in the catalog (the cerebral-aneurysm device is a separate wired condition)" },
-  disabled: { mechanism: "documented-only — no SSDI/medical-disability field; disability presentations surface via adl_dependence and facility_care" }
+  // one of these needs to fire (see the mental_hospitalization, aneurysm,
+  // and disabled precedents — all previously documented-only, now wired).
+  terminal: { mechanism: "documented-only — no collected fact; terminal presentations surface via the active-cancer postpone and facility_care/hospice decline" }
 };
 {
   const postFnSrc = engine.slice(engine.indexOf("function conditionPostponeHit"), engine.indexOf("function conditionDeclineHit"));

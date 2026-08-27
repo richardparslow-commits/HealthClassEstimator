@@ -2041,6 +2041,24 @@ const Engine = (() => {
         const yrs = has(d, "seriousDrivingYears") ? yearsAgo(d.seriousDrivingYears) : null;
         return yrs === null || yrs < 1;
       }
+      /* National Life uninsurable list: abdominal aortic aneurysm present, or
+         surgically corrected within the past 6 months. A repaired aneurysm
+         with an unanswered repair date is gate-first (unknown recency counts
+         as within-window). Other carriers take the conservative
+         no-published-row Standard fallback in evalMedical. */
+      case "aneurysm": {
+        const aaa = (d.conditions || []).find(c => c.id === "abdominal_aneurysm");
+        if (!aaa) return false;
+        if (aaa.status === "current") return true; // present
+        if (aaa.status !== "resolved") return false;
+        if (aaa.repairedWithin6mo === true) return true;
+        if (aaa.repairedWithin6mo === false) return false;
+        const yrs = has(aaa, "resolvedYears") ? yearsAgo(aaa.resolvedYears) : null;
+        return yrs === null || yrs < 0.5;
+      }
+      /* National Life uninsurable list: SSDI/DI disability for depression,
+         PTSD, or other medical (non-musculoskeletal) impairments. */
+      case "disabled": return isYes(d.disabledBenefits);
       default: return false;
     }
   }

@@ -10,17 +10,43 @@
 <body>
 
 <!-- Mandatory acknowledgment gate: the wizard stays inert behind this overlay
-     until the user accepts that the estimate is non-binding and that each
-     carrier has the final and absolute say on underwriting. -->
+     until the user accepts the full acknowledgment — the tool is only an
+     estimating aid, it is not an offer of life insurance, nothing entered is
+     collected or stored, and each carrier has the final and absolute say. -->
 <div class="ack-gate hidden" id="ack-gate" role="dialog" aria-modal="true" aria-labelledby="ack-title">
   <div class="ack-card">
-    <h2 id="ack-title">Acknowledgment required</h2>
-    <p class="ack-statement">
-      This tool helps <strong>estimate</strong> a person&rsquo;s health class for life-insurance
-      pre-underwriting and case triage. The estimate is <strong>preliminary and non-binding</strong>.
-      All carriers have the <strong>final and absolute say</strong> on the client&rsquo;s underwriting
-      and health class.
-    </p>
+    <div class="ack-brand">HealthClassEstimator</div>
+    <h2 id="ack-title">Before you continue</h2>
+    <p class="ack-sub">Acknowledgment &amp; disclaimer &mdash; please read before using this tool.</p>
+
+    <div class="ack-section">
+      <h3>What this tool is</h3>
+      <ul class="ack-list">
+        <li>A <strong>free estimating tool</strong> that helps a producer or applicant gauge a person&rsquo;s <strong>likely life-insurance health class</strong> before an application is submitted.</li>
+        <li>An <strong>estimate only</strong> &mdash; preliminary, non-binding, and based solely on the information entered.</li>
+        <li>Subject in every case to the carrier: <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</li>
+      </ul>
+    </div>
+
+    <div class="ack-section ack-not">
+      <h3>What this tool is not</h3>
+      <ul class="ack-list">
+        <li><strong>Not an offer of life insurance</strong> &mdash; not a quote, not a guarantee of coverage or price, and not an application.</li>
+        <li>It does not issue insurance, bind coverage, or take the place of a carrier underwriter&rsquo;s decision.</li>
+        <li>It is <strong>not medical advice</strong> and not a medical diagnostic tool.</li>
+        <li>A favorable estimate does not mean any carrier will offer coverage &mdash; carriers may obtain medical records, prescription history, lab results, consumer reports, and MIB information that change the outcome.</li>
+      </ul>
+    </div>
+
+    <div class="ack-section ack-privacy">
+      <h3>Your privacy &mdash; nothing is collected or stored</h3>
+      <ul class="ack-list">
+        <li><strong>We do not collect or store any data.</strong> Nothing you enter is transmitted to us or to anyone else.</li>
+        <li>Every answer stays <strong>in this browser, on this device only</strong>. The optional &ldquo;Save draft&rdquo; feature writes to your own browser&rsquo;s local storage &mdash; nowhere else.</li>
+        <li>There are no accounts and no answer tracking. Clearing your browser data removes everything permanently.</li>
+      </ul>
+    </div>
+
     <div class="ack-disclaimer">
       <strong>Legal disclaimer.</strong> This tool is not a medical diagnostic tool and does not
       issue insurance, bind coverage, or replace a carrier underwriter&rsquo;s decision. The estimate
@@ -32,10 +58,15 @@
       coverage. Temporary coverage exists only if the exact carrier receipt conditions are met, not
       because this tool gives a favorable estimate.
     </div>
+
+    <div class="ack-contact-row">
+      <a class="btn-ack-contact" id="ack-contact" href="https://lifeinsurancebrokeradvocate.com/" target="_blank" rel="noopener noreferrer">Questions? Connect with the broker &rarr;</a>
+      <span class="ack-contact-note">lifeinsurancebrokeradvocate.com</span>
+    </div>
+
     <label class="ack-check">
       <input type="checkbox" id="ack-check">
-      <span>I have read and acknowledge the above. I understand this estimate is not binding and
-      that each carrier has the final and absolute say on the client&rsquo;s underwriting and health class.</span>
+      <span>I have read and accept the acknowledgment and disclaimer above &mdash; including that this tool is <strong>only an estimating aid</strong>, that it is <strong>not an offer of life insurance</strong>, that <strong>no information I enter is collected or stored</strong>, and that <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</span>
     </label>
     <button class="btn btn-primary" id="ack-accept" type="button" disabled>I acknowledge &mdash; continue</button>
     <p class="ack-hint">You must acknowledge before entering any applicant information.</p>
@@ -127,7 +158,7 @@
      in order when async=false, preserving the rules -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "62";
+    var HCE_VERSION = "63";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");
