@@ -34,23 +34,6 @@ const App = (() => {
       '</svg>';
   }
 
-  /* The carrier lineup — shared by the applicant-step panel, the comparison
-     header, and anywhere else the carrier choice appears. */
-  const CARRIER_OPTIONS = [
-    ["banner", "Banner Life"],
-    ["foresters", "Foresters (Your Term / AP II / SMART UL)"],
-    ["transamerica", "Transamerica (Trendsetter Super / LB, IULs)"],
-    ["mutual_of_omaha", "Mutual of Omaha (United of Omaha)"],
-    ["fg_quantum", "F&G Quantum (Fidelity & Guaranty)"],
-    ["fg_pathsetter", "F&G Pathsetter (Fidelity & Guaranty)"],
-    ["national_life", "National Life Group (NL / LSW)"],
-    ["amam", "American Amicable (Express Term / Term Made Simple)"],
-    ["john_hancock", "John Hancock (Simple Term with Vitality)"],
-    ["americo", "Americo (Eagle Select final expense)"],
-    ["quility", "Quility Term Plus (Legal & General America)"],
-    ["corebridge", "Corebridge / AGL (SimpliNow Legacy SIWL)"]
-  ];
-
   let state = defaultState();
 
   function defaultState() {
@@ -85,6 +68,10 @@ const App = (() => {
       if (raw) {
         const saved = JSON.parse(raw);
         state = Object.assign(defaultState(), saved);
+        /* Carrier is fixed: Banner Life's ruleset is applied automatically
+           (there is no profile-time selector). Row-click switching in the
+           results comparison still re-targets within the session. */
+        state.carrier = "banner";
       }
     } catch (e) { /* ignore */ }
   }
@@ -488,7 +475,7 @@ const App = (() => {
   /* ---------- step renderers ------------------------------------------ */
 
   const STEPS = [
-    { id: "profile", label: "Applicant", render: renderProfile },
+    { id: "profile", label: "Profile", render: renderProfile },
     { id: "coverage", label: "Coverage & financial", render: renderCoverage },
     { id: "nicotine", label: "Tobacco & nicotine", render: renderNicotine },
     { id: "build", label: "Build", render: renderBuild },
@@ -546,17 +533,11 @@ const App = (() => {
 
   function renderProfile() {
     const c = el("div", { class: "card" });
-    c.appendChild(el("h2", {}, "Applicant profile"));
-    c.appendChild(el("p", { class: "card-sub" }, "Start with the carrier — it determines the underwriting ruleset for every estimate below."));
-
-    /* Carrier panel: the one choice that drives the entire estimate. */
-    const carrierPanel = el("div", { class: "carrier-panel" });
-    carrierPanel.appendChild(el("p", { class: "carrier-label" }, "1 · Underwriting carrier"));
-    carrierPanel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: () => { const cb = $("#carrier-badge"); if (cb) cb.textContent = CARRIER_RULES[state.carrier].name; render(); } }));
-    const cr = CARRIER_RULES[state.carrier];
-    carrierPanel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — build charts, BP/cholesterol thresholds, nicotine lookbacks, decline/postpone screens, and evidence requirements all come from this ruleset."));
-    carrierPanel.appendChild(carrierEligibility(cr));
-    c.appendChild(carrierPanel);
+    c.appendChild(el("h2", {}, "Profile Information"));
+    c.appendChild(el("p", { class: "card-sub" }, "These details drive every carrier estimate on the results page."));
+    c.appendChild(el("p", { class: "card-sub" },
+      "Banner Life's underwriting ruleset is applied automatically; after the estimate runs, the results page compares all " +
+      Object.keys(CARRIER_RULES).length + " carriers side by side, most favorable class first."));
 
     const r1 = el("div", { class: "field-row" });
     r1.appendChild(field("Age (nearest birthday)", numInput("age", { min: 0, max: 120 })));
@@ -1114,9 +1095,18 @@ const App = (() => {
 
   /* Run the same assembled profile through every carrier ruleset and return
      { carrierId, out } rows, ordered by the carrier select list. */
+  /* Every carrier on the same input, sorted most favorable → least favorable
+     (CLASS_INDEX rank; ties broken in carrier-lineup order by id) so the
+     producer reads the strongest lane first. */
   function runComparison() {
     const d = buildInput();
-    return Object.keys(CARRIER_RULES).map(id => ({ id, out: Engine.run(id, d) }));
+    return Object.keys(CARRIER_RULES)
+      .map(id => ({ id, out: Engine.run(id, d) }))
+      .sort((a, b) => {
+        const ra = CLASS_INDEX[a.out.finalClass] != null ? CLASS_INDEX[a.out.finalClass] : CLASS_INDEX.decline;
+        const rb = CLASS_INDEX[b.out.finalClass] != null ? CLASS_INDEX[b.out.finalClass] : CLASS_INDEX.decline;
+        return ra - rb || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      });
   }
 
   /* Issue 5 — one source of truth for the outcome name/color across every view
@@ -1291,15 +1281,14 @@ const App = (() => {
       syncAllLabel();
     });
 
-    /* Prominent primary-carrier panel — same treatment as the applicant step.
-       Switching here re-runs the estimate and re-renders the table with the
-       new carrier's row highlighted. */
+    /* Ruleset panel — carrier is fixed to Banner Life (no dropdown). The
+       highlighted row is the full estimate shown below; clicking any other
+       row still switches via applyCarrierSwitch, which re-renders this panel
+       with the new carrier's name and eligibility chart. */
     const cr = CARRIER_RULES[state.carrier];
-    const prevCarrier = state.carrier; // render-time value; selectInput mutates state before onChange
     const panel = el("div", { class: "carrier-panel" });
-    panel.appendChild(el("p", { class: "carrier-label" }, "Primary carrier · drives the full estimate below"));
-    panel.appendChild(selectInput("carrier", CARRIER_OPTIONS, { onChange: (v) => { if (v !== prevCarrier) applyCarrierSwitch(v); } }));
-    panel.appendChild(el("p", { class: "carrier-desc" }, (cr.guide && cr.guide.title ? cr.guide.title + " (" + (cr.guide.version || "current edition") + ")" : cr.name) + " — the highlighted row is this carrier's full estimate below; click any other row to switch."));
+    panel.appendChild(el("p", { class: "carrier-label" }, "Underwriting ruleset · " + cr.name));
+    panel.appendChild(el("p", { class: "carrier-desc" }, "The highlighted row is this carrier's full estimate below; click any other row to switch. Banner Life's published rules are applied automatically unless you switch rows."));
     panel.appendChild(carrierEligibility(cr));
     wrap.appendChild(panel);
 
@@ -1798,9 +1787,9 @@ const App = (() => {
     applyCarrierSwitch(id);
   }
 
-  /* The actual switch. The comparison panel's select drives this directly
-     because selectInput sets state.carrier before calling onChange — the guard
-     in switchCarrier would see an already-updated state and no-op. */
+  /* The actual switch. Comparison rows drive this via switchCarrier; the
+     switched carrier persists only for the session — loadState resets it to
+     Banner Life on the next boot. */
   function applyCarrierSwitch(id) {
     state.carrier = id;
     saveState();
@@ -1839,7 +1828,7 @@ const App = (() => {
     if (state.income !== "") bits.push("income $" + Number(state.income).toLocaleString());
     const conds = (state.conditions || []).map(c => c.id.replace(/_/g, " "));
     if (conds.length) bits.push(conds.length + " condition(s): " + conds.join(", "));
-    return bits.join("  ·  ") || "Applicant profile not entered";
+    return bits.join("  ·  ") || "Profile information not entered";
   }
 
   function buildPrintSheet(rows) {
@@ -1939,7 +1928,7 @@ const App = (() => {
     if (caseRef) sheet.appendChild(el("div", { class: "ack-record-ref" }, "Case reference: " + caseRef));
 
     const profLine = profileLine();
-    if (profLine !== "Applicant profile not entered") {
+    if (profLine !== "Profile information not entered") {
       sheet.appendChild(el("div", { class: "print-sheet-profile" }, "Case context — " + (CARRIER_RULES[state.carrier] ? CARRIER_RULES[state.carrier].name + "; " : "") + profLine));
     }
 

@@ -19,7 +19,7 @@ No build step, no dependencies — plain HTML/CSS/JavaScript.
 Answers are saved automatically to the browser's localStorage; **Save draft** persists the current state.
 **Run estimate** produces the case-triage page, which can be printed or saved as PDF. The app is not tied to a
 single carrier: the results page **defaults to the all-carrier comparison** — the same profile run through every
-carrier ruleset side by side, showing the client's possible health class under each carrier (class, limiting
+carrier ruleset side by side, sorted **most favorable class first** (ties in carrier-lineup order), showing the client's possible health class under each carrier (class, limiting
 factors/gates, evidence highlights, financial outcome), with the primary carrier highlighted. Clicking any row
 switches the full estimate below to that carrier; clicking a row's **chevron expands that carrier in place** to
 show its full postpone/decline gate list, limiting factors, confidence, and complete evidence checklist without
@@ -35,7 +35,7 @@ layout.
 
 The wizard mirrors what a real carrier application asks, organized into 12 steps:
 
-1. **Applicant** — carrier (Banner Life, Foresters, Transamerica, Mutual of Omaha, F&G Quantum, F&G Pathsetter, National Life Group, American Amicable, John Hancock, Americo, Quility Term Plus, or Corebridge/AGL), age, sex, state, occupation, hazardous duties, plus aviation exposure, hazardous sports, frequent foreign travel, military service (combat caps the best class at Preferred; VA disability rating 30–60% caps at Preferred, 60%+/total caps at Standard; combat with a disclosed mental-health condition postpones pending PTSD/TBI screening), and foreign-residence history (6+ months → eligibility-review flag)
+1. **Profile Information** — age, sex, state, occupation, hazardous duties, plus aviation exposure, hazardous sports, frequent foreign travel, military service (combat caps the best class at Preferred; VA disability rating 30–60% caps at Preferred, 60%+/total caps at Standard; combat with a disclosed mental-health condition postpones pending PTSD/TBI screening), and foreign-residence history (6+ months → eligibility-review flag). There is no carrier selector: Banner Life's underwriting ruleset is applied automatically, and the results page compares all 12 carriers, sorted most favorable class first
 2. **Coverage & financial** — face amount, purpose, earned income, total in-force, replacement, premium source, coverage ownership, premium payor (evaluated: income multipliers, carrier total-line caps, replacement rules, purpose-driven evidence, third-party/financed-payor review and accelerated-UW exclusion)
 3. **Tobacco & nicotine** — ever-used history (quit >10 years ago → beyond-lookback note; answers that contradict the 10-year question → conflict flag), product (cigarettes, vaping/e-cigarettes, chewing tobacco/snuff, cigars, nicotine substitutes), last-use date, frequency, per-product amount (cigarettes per day feeds Foresters Tobacco Plus ≤1 pack/day; heavier use → Standard Tobacco), cigar exception
 4. **Build** — height, weight, weight-change history (intentional vs. unexplained)
