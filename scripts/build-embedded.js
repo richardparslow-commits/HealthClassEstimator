@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* Build the self-contained single-file HTML used by the Streamlit deployment.
 
-   Inlines css/styles.css into a <style> tag and js/{rules,engine,app}.js into
-   inline <script> tags (rules -> engine -> app document order), replacing the
+   Inlines css/styles.css into a <style> tag and js/{rules,state,engine,app}.js into
+   inline <script> tags (rules -> state -> engine -> app document order), replacing the
    dynamic cache-busted script loader. Mirrors the runtime inlining in the
    health_app.py repo's health_app.py — kept in sync deliberately, because a
    relative href/script src cannot resolve inside a Streamlit component iframe.
@@ -22,7 +22,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 let index = read("index.html");
 const css = read("css/styles.css");
-const [rulesJs, engineJs, appJs] = ["js/rules.js", "js/engine.js", "js/app.js"].map(read);
+const sources = ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].map(read);
 
 // Capture the release version before the loader that defines it is stripped,
 // so the embedded build still exposes window.HCE_VERSION (the acknowledgment
@@ -44,7 +44,7 @@ index = index.split(/<link rel="stylesheet"[^>]*>/).join("<style>\n" + css + "\n
 // build fails loudly if the loader's structure changes) and inline the scripts.
 index = index.split(/<script>\s*\/\* Single cache-busting version[\s\S]*?<\/script>/).join("");
 
-const inline = versionScript + [rulesJs, engineJs, appJs].map((src) => "<script>\n" + src + "\n</script>").join("\n");
+const inline = versionScript + sources.map((src) => "<script>\n" + src + "\n</script>").join("\n");
 index = index.split("</body>").join(inline + "\n</body>");
 
 if (index.includes('href="css/') || index.includes('src="js/') || index.includes("Single cache-busting")) {

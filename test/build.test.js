@@ -1,0 +1,10 @@
+"use strict";
+const fs=require("fs"),path=require("path"),assert=require("node:assert/strict");
+const root=path.resolve(__dirname,".."),html=fs.readFileSync(path.join(root,"dist/app.html"),"utf8"),index=fs.readFileSync(path.join(root,"index.html"),"utf8");
+const version=index.match(/var HCE_VERSION = "(\d+)"/)[1];
+assert.ok(html.includes('window.HCE_VERSION = "'+version+'"'));
+assert.ok(!html.includes('src="js/')&&!html.includes('href="css/')&&!html.includes("Single cache-busting"));
+const positions=["const PRODUCT_RULES =","const InterviewState =","const Engine =","const App ="].map(marker=>html.indexOf(marker));
+assert.ok(positions.every((p,i)=>p>=0&&(!i||p>positions[i-1])),"Four scripts must execute in dependency order");
+assert.equal((html.match(/const Engine =/g)||[]).length,1,"Only the audited engine is deployed");
+console.log("Passed standalone version, asset, script-order and single-engine checks.");
