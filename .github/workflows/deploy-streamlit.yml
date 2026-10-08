@@ -56,7 +56,7 @@ jobs:
           cp app_embedded.html streamlit-app/
           cp index.html css/styles.css streamlit-app/
           mkdir -p streamlit-app/js
-          cp js/rules.js js/engine.js js/app.js streamlit-app/js/
+          cp js/rules.js js/state.js js/engine.js js/app.js streamlit-app/js/
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}

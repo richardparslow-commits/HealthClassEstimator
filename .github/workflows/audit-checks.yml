@@ -1,0 +1,19 @@
+name: Verify underwriting changes
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Source-derived underwriting checks
+        run: npm test
+      - name: Build standalone distribution
+        run: npm run build
+      - name: Validate embedded script order and version
+        run: node test/build.test.js

@@ -1,2179 +1,650 @@
-/* =========================================================================
- * HealthClassEstimator — Rule engine
- * -------------------------------------------------------------------------
- * Flow (per the build spec):
- *   1. Screen postpone / likely-decline triggers first (gates).
- *   2. Calculate the best possible class from each rule module.
- *   3. Take the worst applicable ceiling as the provisional class.
- *   4. Apply explicit carrier credits only where the guide allows them
- *      (flagged as "possible credit review", never auto-applied).
- *   5. Produce flags: needs_aps, needs_exam, likely_table, possible_decline,
- *      manual_review, missing_material_data.
- *   6. Estimate confidence from evidence completeness.
- *
- * Outputs are preliminary and non-binding; final decision is carrier
- * underwriting. This tool never says "approved" or "declined" as a fact.
- * ========================================================================= */
+/* Edition-specific screening engine. Unknown evidence withholds a final class.
+ * Dates use calendar anniversaries, never approximate "years ago" arithmetic.
+ * Every decision has source provenance; this is not a carrier offer or diagnosis.
+ */
 "use strict";
-
 const Engine = (() => {
-
-  /* ---------- helpers -------------------------------------------------- */
-
-  const has = (obj, key) => obj && Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== null && obj[key] !== undefined && obj[key] !== "";
-
-  // accept both boolean true and string "yes" for checkbox-derived flags
-  const isYes = (v) => v === true || v === "yes";
-  // explicit negative — false (legacy test-harness booleans) or the string "no"
-  const isNo = (v) => v === false || v === "no";
-
-  function classWorseThan(a, b) {
-    return CLASS_INDEX[a] > CLASS_INDEX[b];
+  const present = v => v !== "" && v != null;
+  const numeric = v => present(v) && Number.isFinite(Number(v)) ? Number(v) : null;
+  function date(v) {
+    if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+    const d = new Date(v + "T00:00:00Z");
+    return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === v ? d : null;
   }
-
-  function worstOf(a, b) {
-    return classWorseThan(a, b) ? a : b;
+  function shift(v, months) {
+    const d = date(v); if (!d) return null;
+    const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + months);
+    const last = new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+    d.setUTCDate(Math.min(day,last)); return d.toISOString().slice(0,10);
   }
-
-  /* Normalize the shared class ladder for simplified-issue carriers that do
-     not publish the full ladder (e.g., American Amicable: accept/reject
-     underwriting with no Preferred Plus, Standard Plus, or table classes). */
-  function normK(rules, k) {
-    const b = rules && rules.build && rules.build.rules;
-    if (!b) return k;
-    if (b.noPreferredPlus && k === "preferred_plus") return "preferred";
-    if (b.noStandardPlus && k === "standard_plus") return "standard";
-    if (b.noTables && k === "table") return "decline";
-    return k;
-  }
-
-  /* ---------- build evaluation ---------------------------------------- */
-
-  /**
-   * Evaluate build against the carrier's height/weight chart.
-   * Returns { klass, band, adjustedWeight, flags: [] , detail }
-   */
-  function evalBuild(rules, d) {
-    const flags = [];
-
-    /* ---- BMI-based build (Transamerica blended BMI chart) ------------ */
-    if (rules.build.type === "bmi") {
-      if (!has(d, "heightIn") || !has(d, "weightLb")) {
-        return { klass: null, missing: true, flags, detail: "Height or weight not provided." };
-      }
-      const heightIn = Number(d.heightIn);
-      const weight = Number(d.weightLb);
-      if (heightIn <= 0 || weight <= 0) {
-        return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "Invalid height or weight." };
-      }
-      const bmi = weight / (heightIn * heightIn) * 703;
-      const age = d.age ? Number(d.age) : null;
-      const groups = rules.build.bmiBands || [];
-      const group = groups.find(g => (g.ageMin === undefined || age >= g.ageMin) && (g.ageMax === undefined || age <= g.ageMax)) || groups[0];
-      if (!group) return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "No BMI chart for this age." };
-      let match = null;
-      for (const b of group.bands) {
-        if (bmi >= b.min && bmi <= b.max) { match = b; break; }
-      }
-      if (!match) match = group.bands[group.bands.length - 1];
-      const rounded = Math.round(bmi * 100) / 100;
-      const tableNote = match.table ? ` (Table ${match.table})` : "";
-      return {
-        klass: match.klass,
-        tableLetter: match.table || null,
-        bmi: rounded,
-        bandName: match.label,
-        flags: match.klass === "decline" ? [...flags, "bmi_decline"] : flags,
-        detail: `BMI ${rounded} (${heightIn}\" / ${weight} lb, ${group.label}) → ${match.label}${tableNote}. ${rules.build.rules.note}`
-      };
+  function ageAt(dob, asOf, basis = "last") {
+    if (!date(dob) || !date(asOf) || dob > asOf) return null;
+    const b = date(dob), a = date(asOf);
+    let n = a.getUTCFullYear() - b.getUTCFullYear();
+    const birthday = shift(dob,n*12);
+    if (birthday > asOf) n--;
+    if (basis === "nearest") {
+      const last = date(shift(dob,n*12)), next = date(shift(dob,(n+1)*12));
+      if (a-last >= next-a) n++;
     }
-
-    /* ---- Height/weight chart build (Banner, Foresters) -------------- */
-    const chart = rules.build.chart;
-    if (!has(d, "heightIn") || !has(d, "weightLb")) {
-      return { klass: null, missing: true, flags, detail: "Height or weight not provided." };
-    }
-    const rawHeight = Number(d.heightIn);
-    const heightIn = Math.ceil(rawHeight * 2) / 2; // keep half inches; chart lookup below rounds up
-    const lookupHeight = Math.ceil(heightIn);     // half-inch rounds up to next inch
-    if (lookupHeight < rules.build.rules.minHeightIn || lookupHeight > rules.build.rules.maxHeightIn) {
-      return { klass: "manual_review", flags: [...flags, "manual_review"], detail: `Height outside the carrier build chart (${rules.build.rules.minHeightIn}"-${rules.build.rules.maxHeightIn}"). Manual underwriting review required.` };
-    }
-    const rawBand = chart[lookupHeight];
-    if (!rawBand) {
-      return { klass: "manual_review", flags: [...flags, "manual_review"], detail: "Height not found in build chart." };
-    }
-    // Sex-specific chart shape (e.g., F&G Quantum: male/female Preferred & Standard
-    // columns plus sex-neutral adult minimum and Table D maximum weights).
-    let band = rawBand;
-    if (rawBand.male || rawBand.female) {
-      const sexKey = d.sex === "female" ? "female" : "male";
-      band = Object.assign({}, rawBand, rawBand[sexKey]);
-      band._sex = sexKey;
-    }
-    // Carrier age-based threshold adjustment (single step, e.g., F&G Quantum:
-    // ages 51-60 add 5 lb; or multiple steps, e.g., F&G Pathsetter: +5 lb at
-    // 51-65 and +10 lb at 66+).
-    const ageNow = d.age ? Number(d.age) : null;
-    const ageAddSteps = rules.build.rules.ageAddLbs;
-    const steps = Array.isArray(ageAddSteps) ? ageAddSteps : (ageAddSteps ? [ageAddSteps] : []);
-    if (ageNow !== null) {
-      for (const step of steps) {
-        if (ageNow >= step.ageMin && ageNow <= step.ageMax) {
-          ["pp", "p", "sp", "stdCredit", "std", "tableMax", "min"].forEach(k => {
-            if (band[k] !== undefined) band[k] += step.add;
-          });
-        }
-      }
-    }
-
-    let adjustedWeight = Number(d.weightLb);
-    let weightNote = "";
-    if (rules.build.rules.applyWeightLossAdjustment !== false && has(d, "weightOneYearAgoLb") && d.weightIntentional) {
-      const change = Number(d.weightOneYearAgoLb) - adjustedWeight;
-      if (change > 20) {
-        adjustedWeight = adjustedWeight + change / 2;
-        weightNote = `Intentional loss of ${change} lb in the past year: half of the loss (${(change / 2).toFixed(0)} lb) added back per the weight-loss adjustment rule. Adjusted weight: ${adjustedWeight.toFixed(0)} lb.`;
-      }
-    }
-    if (has(d, "weightChangeUnintentional") && d.weightChangeUnintentional) {
-      flags.push("manual_review");
-      weightNote += " Unintentional weight change flagged for medical/manual review; no automatic weight adjustment applied.";
-    }
-
-    // BMI screening flag
-    const bmi = adjustedWeight / (lookupHeight * lookupHeight) * 703;
-    const bmiLow = bmi < rules.build.rules.belowChartMin;
-    const br = rules.build.rules || {};
-
-    const chartMin = band.min !== undefined ? band.min : (rules.build.rules.chartMinWeight !== undefined ? rules.build.rules.chartMinWeight : 89);
-    let klass = null;
-    let bandName = "";
-    let tableRating = null;
-    if (bmiLow || adjustedWeight < chartMin) {
-      if (br.belowChartDecline) {
-        // Simplified-issue accept/reject: below the chart minimum = not eligible.
-        klass = "decline";
-        bandName = "below chart minimum — not eligible (accept/reject underwriting)";
-        flags.push("bmi_decline");
-      } else {
-        klass = "manual_review";
-        bandName = "below chart minimum";
-        flags.push("manual_review");
-      }
-    } else if (adjustedWeight <= band.pp) {
-      klass = "preferred_plus"; bandName = "Preferred Plus";
-    } else if (adjustedWeight <= band.p) {
-      klass = "preferred"; bandName = "Preferred";
-    } else if (adjustedWeight <= band.sp) {
-      klass = "standard_plus"; bandName = "Standard Plus";
-    } else if (adjustedWeight <= band.stdCredit) {
-      klass = "standard"; bandName = "Standard (possible credit)";
-    } else if (adjustedWeight <= band.std) {
-      klass = "standard"; bandName = "Standard (no build credit)";
-      flags.push("no_build_credit");
-    } else {
-      // Carrier-published substandard table bands (e.g., Mutual of Omaha
-      // build chart: Table 1 (+25 lb) through Table 12 (+300 lb))
-      const tBands = rules.build.tableBands || [];
-      let tableHit = null;
-      for (const tb of tBands) {
-        if (band[tb.key] !== undefined && adjustedWeight <= band[tb.key]) { tableHit = tb; break; }
-      }
-      if (tableHit) {
-        klass = "table";
-        bandName = tableHit.label || `Table ${tableHit.table}`;
-        tableRating = tableHit.table;
-      } else if (band.tableMax !== undefined && adjustedWeight <= band.tableMax) {
-        // Carrier publishes a substandard ceiling instead of a table ladder
-        // (e.g., F&G Quantum: Table D/200%; F&G Pathsetter: Table H/300%).
-        klass = "table";
-        bandName = rules.build.rules.tableCeilingLabel || "substandard (Table A-D / 200%)";
-        tableRating = rules.build.rules.tableCeilingRating || "A-D";
-      } else {
-        klass = "substandard_review";
-        bandName = "above the highest published weight";
-        flags.push("substandard_build", "manual_review");
-      }
-    }
-
-    /* Simplified-issue carriers (e.g., American Amicable) publish no
-       Preferred Plus / Standard Plus / table classes — accept/reject
-       underwriting through a build ceiling. Normalize the ladder and treat
-       weights outside the published chart as not eligible. */
-    if (br.noPreferredPlus && klass === "preferred_plus") { klass = "preferred"; bandName = "Preferred"; }
-    if (br.noStandardPlus && klass === "standard_plus") { klass = "standard"; bandName = "Standard"; }
-    if (br.noTables) {
-      if (klass === "table") {
-        klass = "decline";
-        bandName = "above the Standard maximum — not eligible (accept/reject underwriting)";
-        flags.push("bmi_decline");
-      } else if (klass === "substandard_review") {
-        klass = "decline";
-        bandName = "above the highest published weight — not eligible (accept/reject underwriting)";
-        flags.push("bmi_decline");
-      }
-    }
-
-    return {
-      klass,
-      bandName,
-      tableRating,
-      adjustedWeight: Math.round(adjustedWeight),
-      bmi: Math.round(bmi * 10) / 10,
-      bmiLow,
-      aboveTable2: band.stdCredit !== undefined && adjustedWeight > band.stdCredit,
-      weightNote,
-      flags,
-      detail: `${bandName} band at ${lookupHeight}" (raw height ${rawHeight}", rounded up)${band._sex ? ", " + band._sex + " chart" : ""}. ${weightNote}`
-    };
-  }
-
-  /* ---------- nicotine evaluation ------------------------------------- */
-
-  /**
-   * Normalizes a non-negative numeric field (a "years ago" count, an onset age,
-   * a medication count, a stable-years count, etc.) to a number or null. JS's
-   * Number() silently coerces an empty string to 0 and a garbage string to NaN,
-   * and NaN comparisons are always false — so a malformed count could quietly
-   * bypass a fence in either direction (NaN < cleanYears is false, letting a
-   * recent event slip clean; Number("") is 0, making an *unanswered* med-count
-   * read as "taking no medication"). Returning null forces every caller's
-   * existing "=== null" conservative branch instead, and a negative count reads
-   * as null too so it can never fan out to a larger-than-reality gap.
-   */
-  function numOrNull(v) {
-    if (v === "" || v === null || v === undefined) return null;
-    const n = Number(v);
-    if (Number.isNaN(n) || !isFinite(n) || n < 0) return null;
     return n;
   }
-  // Lookback durations and other counts share identical normalization semantics;
-  // the alias keeps the intent legible at "years ago" call sites.
-  function yearsAgo(v) { return numOrNull(v); }
-
-  /**
-   * Strict date parsing for the nicotine last-use date. The wizard always
-   * stores an ISO "YYYY-MM-DD" string (from <input type="date">), so any other
-   * shape — numeric timestamp, partial string, trailing junk — is treated as
-   * invalid rather than let JS's permissive Date() coercion silently misread it
-   * (new Date("0") → year 2000, new Date("2024") → Jan 2024, etc.).
-   *
-   * Returns { kind: "missing"|"invalid"|"future"|"past", months } where months
-   * is the elapsed whole months (never negative; a future date clamps to 0).
-   * kind is used downstream to keep classifying honest AND to flag a suspect
-   * date to the producer. Single-day future skew (timezone-local vs UTC) is
-   * tolerated by treating up to 1 day ahead as 0 months ago rather than junk.
-   */
-  function parseLastUseDate(dateStr) {
-    if (!dateStr || dateStr === "" || dateStr === null || dateStr === undefined) {
-      return { kind: "missing", months: null };
-    }
-    if (typeof dateStr !== "string") {
-      // Defensive: only ISO date strings are expected; reject numeric timestamps
-      // and anything else rather than coerce.
-      return { kind: "invalid", months: null };
-    }
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-    if (!m) return { kind: "invalid", months: null };
-    const y = +m[1], mo = +m[2], da = +m[3];
-    // Reject impossible calendar dates (e.g. month 13, Feb 30) that JS would
-    // otherwise roll over into a nearby valid date.
-    const d = new Date(0);
-    d.setFullYear(y, mo - 1, da);
-    if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== da) {
-      return { kind: "invalid", months: null };
-    }
-    const elapsedMs = Date.now() - d.getTime();
-    // Future-dated (or same-day) use reads as 0 months ago — inside every
-    // carrier's tobacco lookback — never as a satisfied long lookback. A tiny
-    // future skew of up to 24h (local/UTC month-boundary) is treated as 0, not
-    // as an invalid date.
-    const clampedMs = Math.max(0, elapsedMs);
-    const months = Math.floor(clampedMs / (1000 * 60 * 60 * 24 * 30.44));
-    return elapsedMs < 0 ? { kind: "future", months: 0 } : { kind: "past", months };
+  function within(v, months, asOf, inclusive = false) {
+    return !!date(v) && v <= asOf && (inclusive ? v >= shift(asOf,-months) : v > shift(asOf,-months));
   }
-
-  /**
-   * Returns { tobacco: boolean, klass: classIndexName|null, detail,
-   *            dateKind?: "missing"|"invalid"|"future" }
-   */
-  function evalNicotine(rules, d) {
-    if (!has(d, "usedNicotine")) {
-      return { tobacco: null, klass: null, missing: true, detail: "Nicotine use not disclosed." };
+  const band = (v,age) => Array.isArray(v) ? v.find(b => age >= (b.ageMin ?? 0) && age <= (b.ageMax ?? 200)) : v;
+  const maxOf = (v,age) => { const b = band(v,age); return typeof b === "number" ? b : b?.max; };
+  const rank = k => CLASS_ORDER.indexOf(k);
+  function source(id, pages) { return { id, pages: pages || RULE_SOURCES[id]?.pages || [], ...RULE_SOURCES[id] , ...(pages ? {pages} : {}) }; }
+  function run(productId, input = {}, options = {}) {
+    const d = input && typeof input === "object" && !Array.isArray(input) ? {...input} : {};
+    const invalidLists=[];
+    for(const key of ["travels","driving","criminal","family","conditions","hospitals","surgeries","nicotine","medications"]) {
+      if(!Array.isArray(d[key])) {if(present(d[key]))invalidLists.push(key);d[key]=[];}
+      else {if(d[key].some(r=>!r||typeof r!=="object"||Array.isArray(r)))invalidLists.push(key);d[key]=d[key].filter(r=>r&&typeof r === "object"&&!Array.isArray(r));}
     }
-    if (isNo(d.usedNicotine)) {
-      return { tobacco: false, klass: "preferred_plus", detail: "No nicotine use disclosed." };
-    }
-    const lu = parseLastUseDate(d.nicotineLastUse);
-    const months = lu.months;
-    const isTobacco = isYes(d.usedNicotine) && (lu.kind === "missing" || lu.kind === "invalid" || lu.kind === "future" || months < rules.nicotine.tobaccoLookbackMonths);
-
-    // Cigar exception
-    if (d.nicotineProduct === "cigar" && has(d, "cigarPerMonth")) {
-      const perMonth = Number(d.cigarPerMonth);
-      if (perMonth <= rules.nicotine.cigarException.maxPerMonth && d.cotinineNegative && !d.cigarComorbid) {
-        return { tobacco: false, klass: "preferred_plus", cigarException: true, detail: "Occasional cigar exception applies (≤1/month, negative cotinine, no comorbid diabetes/asthma)." };
-      }
-    }
-
-    if (lu.kind === "missing" || lu.kind === "invalid") {
-      return { tobacco: true, klass: null, missing: true, dateKind: lu.kind, detail: lu.kind === "invalid"
-        ? "Nicotine use disclosed but the last-use date is unrecognized — treat as tobacco pending verification."
-        : "Nicotine use disclosed but last-use date missing — treat as tobacco pending verification." };
-    }
-
-    if (lu.kind === "future") {
-      return { tobacco: true, klass: "tobacco", dateKind: "future", detail: "Nicotine use disclosed with a last-use date that is in the future or today — the date was clamped to 0 months (current use) and the tobacco class applies pending confirmation." };
-    }
-
-    if (!isTobacco) {
-      // Non-tobacco now; find the most favorable class whose lookback is satisfied
-      const withMonths = rules.nicotine.classes.map(c => ({
-        klass: c.klass,
-        lookbackMonths: c.lookbackMonths !== undefined ? c.lookbackMonths : (c.lookbackYears !== undefined ? c.lookbackYears * 12 : 12)
-      }));
-      const sorted = [...withMonths].sort((a, b) => b.lookbackMonths - a.lookbackMonths);
-      let best = "standard"; // default
-      for (const c of sorted) {
-        if (months >= c.lookbackMonths) { best = c.klass; break; }
-      }
-      return { tobacco: false, klass: best, detail: `Last nicotine use ${months} months ago. Best non-tobacco class by lookback: ${best}.` };
-    }
-    return { tobacco: true, klass: "tobacco", detail: `Nicotine used within the last ${rules.nicotine.tobaccoLookbackMonths} months (${months} months ago) — tobacco class applies.` };
-  }
-
-  /* ---------- blood pressure ------------------------------------------ */
-
-  /* Carrier rules may express a threshold as a plain object or as age-band arrays (Foresters). */
-  function ageBand(bands, age) {
-    if (Array.isArray(bands)) {
-      if (age === null || age === undefined) return null;
-      return bands.find(b => age >= b.ageMin && age <= b.ageMax) || null;
-    }
-    return bands;
-  }
-
-  function evalBP(rules, d) {
-    if (!has(d, "bpSys") || !has(d, "bpDia")) {
-      return { klass: null, missing: true, detail: "Blood pressure not provided." };
-    }
-    const sys = Number(d.bpSys), dia = Number(d.bpDia);
-    const age = d.age ? Number(d.age) : null;
-    let klass = null;
-    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
-    for (const k of order) {
-      const t = ageBand(rules.bp[k], age);
-      if (t && sys <= t.sys && dia <= t.dia) { klass = k; break; }
-    }
-    if (!klass) {
-      const st = ageBand(rules.bp.standard, age);
-      const stdText = st ? `${st.sys}/${st.dia}` : "standard limits";
-      return { klass: "bp_outside", detail: `BP ${sys}/${dia} exceeds Standard maximum (${stdText}) — substandard/cardiovascular review.` };
-    }
-    return { klass, detail: `BP ${sys}/${dia} supports ${klass}.` };
-  }
-
-  /* ---------- cholesterol --------------------------------------------- */
-
-  function evalCholesterol(rules, d) {
-    if (!has(d, "cholTotal") && !has(d, "cholHdl")) {
-      return { klass: null, missing: true, detail: "Cholesterol not provided." };
-    }
-    const total = has(d, "cholTotal") ? Number(d.cholTotal) : null;
-    const hdl = has(d, "cholHdl") ? Number(d.cholHdl) : null;
-    const ratio = (total !== null && hdl) ? total / hdl : null;
-    const age = d.age ? Number(d.age) : null;
-    const totalMin = rules.cholesterol.totalMin !== undefined ? rules.cholesterol.totalMin : (rules.cholesterol.minUntreated || null);
-    const totalMaxGlobal = rules.cholesterol.totalMax !== undefined ? rules.cholesterol.totalMax : null;
-    let klass = null;
-    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
-    for (const k of order) {
-      // Skip classes the carrier does not publish (a missing class must not
-      // pass through as if it had no thresholds)
-      const hasTotalBand = rules.cholesterol.total ? rules.cholesterol.total[k] !== undefined : false;
-      const hasRatioBand = rules.cholesterol.ratio ? rules.cholesterol.ratio[k] !== undefined : false;
-      if (!hasTotalBand && !hasRatioBand) continue;
-      let ok = true;
-      const totalBand = ageBand(rules.cholesterol.total ? rules.cholesterol.total[k] : null, age);
-      // totalBand may be a plain number (Banner/Transamerica) or {max} (Foresters band)
-      const totalMax = totalMaxGlobal !== null ? totalMaxGlobal : (typeof totalBand === "number" ? totalBand : (totalBand ? totalBand.max : null));
-      if (total !== null) {
-        if (totalMin !== null && total < totalMin) ok = false;
-        if (totalMax !== null && total > totalMax) ok = false;
-      }
-      const ratioBand = ageBand(rules.cholesterol.ratio ? rules.cholesterol.ratio[k] : null, age);
-      const ratioMax = ratioBand ? (typeof ratioBand === "number" ? ratioBand : ratioBand.max) : (rules.cholesterol.ratio && rules.cholesterol.ratio[k] !== undefined && !Array.isArray(rules.cholesterol.ratio[k]) && typeof rules.cholesterol.ratio[k] === "number" ? rules.cholesterol.ratio[k] : null);
-      if (ratio !== null && ratioMax !== null && ratio > ratioMax) ok = false;
-      if (ok) { klass = k; break; }
-    }
-    if (!klass) {
-      return { klass: "lipids_outside", detail: `Cholesterol ${total || "n/a"} / HDL ${hdl || "n/a"} (ratio ${ratio === null ? "n/a" : ratio.toFixed(1)}) exceeds Standard limits.` };
-    }
-    return { klass, detail: `Cholesterol ${total || "n/a"} / HDL ${hdl || "n/a"} (ratio ${ratio === null ? "n/a" : ratio.toFixed(1)}) supports ${klass}.` };
-  }
-
-  /* ---------- driving -------------------------------------------------- */
-
-  function evalDriving(rules, d) {
-    if (!has(d, "movingViolations3yr")) {
-      return { klass: null, missing: true, detail: "Driving history not provided." };
-    }
-    const mv = Number(d.movingViolations3yr);
-    const serious = isYes(d.seriousDriving) ? yearsAgo(d.seriousDrivingYears) : null; // years since last DUI/reckless/suspension
-    let klass = null;
-    const order = ["preferred_plus", "preferred", "standard_plus", "standard"];
-    for (const k of order) {
-      const t = rules.driving[k];
-      if (!t) continue;
-      let ok = true;
-      if (t.maxViolations3yr !== undefined) {
-        // Banner shape
-        if (mv > t.maxViolations3yr) ok = false;
-        if (isYes(d.seriousDriving) && (serious === null || serious < t.cleanYears)) ok = false;
-      } else {
-        // Foresters shape: duiCleanYears + maxViolations over violationsYears
-        if (isYes(d.seriousDriving) && (serious === null || serious < t.duiCleanYears)) ok = false;
-        if (t.violationsYears >= 3 && mv > t.maxViolations) ok = false;
-      }
-      if (ok) { klass = k; break; }
-    }
-    if (!klass) {
-      return { klass: "driving_outside", detail: `Driving history (${mv} moving violations; serious violation within ${serious === null ? "unknown" : serious + " yr"}) exceeds Standard limits.` };
-    }
-    return { klass, detail: `Driving history supports ${klass}.` };
-  }
-
-  /* ---------- family history ------------------------------------------ */
-
-  function evalFamilyHistory(rules, d) {
-    if (!has(d, "famCardio")) {
-      return { klass: null, missing: true, detail: "Family history not provided." };
-    }
-    const f = d.famCardio; // "none" | "parent" | "parent_sibling" | "multiple"
-    const age = d.age ? Number(d.age) : null;
-    const tobacco = isNo(d.usedNicotine);
-    // Over-70 non-tobacco: CAD family history disregarded (Banner rule)
-    const disregardBanner = rules.id === "banner" && age !== null && age > 70 && tobacco;
-    // Carrier-published age at which family history stops applying (e.g., MOO: age 60+)
-    const disregardAge = rules.familyHistory && rules.familyHistory.disregardAge;
-    const disregardCarrier = disregardAge && age !== null && age >= disregardAge;
-    if (disregardBanner) {
-      return { klass: "preferred_plus", detail: "Family CAD history disregarded (applicant over 70, non-tobacco)." };
-    }
-    if (disregardCarrier) {
-      return { klass: "preferred_plus", detail: `Family history disregarded (applicant age ${age}, at or above the carrier's ${disregardAge}+ threshold).` };
-    }
-    const mapping = (rules.familyHistory && rules.familyHistory.mapping) || { none: "preferred_plus", parent: "preferred", parent_sibling: "standard_plus", multiple: "standard" };
-    const klass = mapping[f] || "standard";
-    return { klass, detail: `Family history (${f}) supports ${klass}.` };
-  }
-
-  /* ---------- medical history ----------------------------------------- */
-
-  function evalMedical(rules, d) {
-    const conds = d.conditions || [];
-    if (!conds.length) {
-      return { klass: "preferred_plus", details: ["No medical conditions disclosed."] };
-    }
-    const details = [];
-    let worst = "preferred_plus";
-    let postpone = [];
-    let decline = [];
-
-    for (const c of conds) {
-      const meta = (rules.medicalCeilings || []).find(m => m.id === c.id);
-      const status = c.status || "current";
-      const severity = c.severity || "mild";
-      const control = c.control || "good";
-      /* Normalize the count fields once per condition. An unanswered medication
-         count must not read as "on zero meds" (a favorable lift), and a garbage
-         stable-years value must not tip the stability branch — both fall back to
-         null -> the conservative Standard path below. */
-      const medCount = numOrNull(c.medCount);
-      const stableYears = numOrNull(c.stableYears);
-      /* Conditions the carrier does not publish: never silently ignore a
-         disclosed condition. Evaluate it at a conservative fallback ceiling
-         and tell the producer it needs individual review rather than
-         pretending it has no effect. (The catalog is broader than any single
-         carrier's impairment table.) Carriers that evaluate conditions through
-         their own impairment block (rules.medical, e.g. Foresters) only
-         "already handle" the rows their block knows — an impairment-block
-         carrier with a TINY declinesMap (Foresters: 16 rows) must NOT leave
-         everything else unrated, or a severe disclosed condition reads as
-         Preferred Plus. So the conservative fallback fires for any condition
-         absent from BOTH the declinesMap and the acceptMap. */
-      if (!meta) {
-        const medicalBlock = rules.medical || null;
-        const inDeclineMap = medicalBlock && medicalBlock.medicalDeclinesMap && !!medicalBlock.medicalDeclinesMap[c.id];
-        const inAcceptMap = medicalBlock && medicalBlock.medicalAcceptMap && !!medicalBlock.medicalAcceptMap[c.id];
-        /* Foresters' diabetes is routed through its own published lane below
-           (the guide's diabetesNonMed block) rather than the generic
-           condition loop. Every other condition outside the impairment
-           block's own declines/accept rows gets the honest Standard
-           fallback (H1). */
-        const ownedBySpecialHandler = rules.id === "foresters" && c.id === "diabetes";
-        if (!medicalBlock || (!inDeclineMap && !inAcceptMap && !ownedBySpecialHandler)) {
-          details.push(`${(c.name || c.id).replace(/_/g, " ")}: ${status} / ${severity} / ${control} control — not individually published in this carrier's guide; review at a conservative Standard ceiling.`);
-          if (classWorseThan("standard", worst)) worst = "standard";
-        } else if (ownedBySpecialHandler) {
-          /* Final-audit fix: Foresters' diabetes lanes come straight from the
-             published non-medical guide. Decline leg: "Type 1 or Type 2
-             treated with insulin, poor control, or complications — decline"
-             (insulin detected in the med list counts as insulin-treated, and
-             severe presentations are not the published good-control accept).
-             Accept leg: type 2, non-insulin, good control — but via a RATING
-             WORKSHEET (build + diabetes), i.e. a rated lane: Standard Plus,
-             never Preferred Plus. */
-          const combo = medCombinationCheck(rules, d, "diabetes");
-          const insulinTreated = isYes(c.insulin) || combo.hasInsulin;
-          if (insulinTreated || c.complications === "yes" || control === "poor" || control === "fair" || severity === "severe") {
-            decline.push({ id: "foresters_diabetes", text: rules.medical.diabetesNonMed.decline, reason: "Foresters impairment guide." });
-            if (classWorseThan("decline", worst)) worst = "decline";
-          } else {
-            details.push("Foresters: type 2 diabetes with good control and no insulin — accepted via rating worksheet (build + diabetes); Standard Plus ceiling.");
-            if (classWorseThan("standard_plus", worst)) worst = "standard_plus";
-          }
-        } else if (rules.id === "foresters" && inAcceptMap) {
-          /* Final-audit fix: Foresters' accept-map rows are QUALIFIED accepts
-             ("mild/moderate", "treated and controlled", "no symptoms, no
-             treatment", "after 5 years without relapse"). An unqualified
-             severe or unstable presentation used to skip rating entirely and
-             read as fully favorable (Preferred Plus). Each row now evaluates
-             against its published qualifier; failures land on the published
-             decline leg or the conservative Standard fallback. */
-          if (c.id === "asthma") {
-            if (severity === "severe") {
-              /* "Severe with hospitalization — decline." An unanswered
-                 hospitalization fact is gate-first: the decline screen
-                 can't be cleared without it. */
-              if (c.hospitalized !== "no") {
-                decline.push({ id: "foresters_asthma_severe", text: "Severe asthma" + (c.hospitalized === "yes" ? " with hospitalization" : " — hospitalization history not disclosed") + " — Foresters impairment guide decline screen." });
-                if (classWorseThan("decline", worst)) worst = "decline";
-              } else {
-                details.push("Foresters: severe asthma without hospitalization is outside the published accept (mild/moderate) — conservative Standard.");
-                if (classWorseThan("standard", worst)) worst = "standard";
-              }
-            }
-            // mild/moderate -> published accept; no ceiling contribution
-          } else if (c.id === "sleep_apnea") {
-            if (severity === "severe" || control === "poor" || c.residualSymptoms) {
-              details.push("Foresters: the sleep apnea accept requires treated and controlled — this presentation reviews at conservative Standard.");
-              if (classWorseThan("standard", worst)) worst = "standard";
-            }
-          } else if (c.id === "mvp") {
-            if (severity !== "mild" || control === "poor" || isYes(c.residualSymptoms) || (medCount !== null && medCount >= 1)) {
-              details.push("Foresters: the MVP accept requires an innocent murmur — no symptoms, no treatment. Symptomatic, treated, or higher-grade presentations review at conservative Standard.");
-              if (classWorseThan("standard", worst)) worst = "standard";
-            }
-          } else if (c.id === "substance_treatment") {
-            const ys = yearsAgo(c.yearsSober);
-            if (c.relapse) {
-              details.push("Foresters: relapse history is outside the published accept (5+ years, no relapse, no current use) — conservative Standard.");
-              if (classWorseThan("standard", worst)) worst = "standard";
-            } else if (ys === null) {
-              /* Gate-first: the "alcoholism within 5 years — decline" screen
-                 cannot be cleared without a documented sobriety duration. */
-              decline.push({ id: "foresters_substance_recent", text: "Substance/alcohol treatment with sobriety duration not disclosed — Foresters publishes decline for alcoholism within 5 years; the clean-duration must be documented." });
-              if (classWorseThan("decline", worst)) worst = "decline";
-            } else if (ys < 5) {
-              decline.push({ id: "foresters_substance_recent", text: `Substance/alcohol treatment with last use ${ys} year(s) ago — within Foresters' 5-year decline window.` });
-              if (classWorseThan("decline", worst)) worst = "decline";
-            }
-            // >= 5 years clean, no relapse -> published accept
-          } else if (c.id === "dysplastic_nevi") {
-            details.push("Foresters: dysplastic nevi are reviewed individually — conservative Standard.");
-            if (classWorseThan("standard", worst)) worst = "standard";
-          } else if (c.id === "skin_cancer") {
-            details.push("Foresters: basal/squamous cell skin cancer — accepted per the impairment guide.");
-          }
-        }
-        continue;
-      }
-
-      if (meta.postpone) {
-        // postpone applies only when explicitly indicated (recent/unstable/timing flag)
-        if (isYes(c.postponeTrigger)) {
-          postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone}` });
-        }
-      }
-      if (meta.decline) {
-        if (isYes(c.declineTrigger)) {
-          decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
-        }
-      }
-
-      // Determine ceiling for this condition
-      let ceiling = null;
-      if (meta.ceilings && meta.ceilings.length) {
-        if (meta.id === "diabetes") {
-          const onset = has(c, "onsetAge") ? numOrNull(c.onsetAge) : null;
-          const a1c = has(c, "a1c") ? Number(c.a1c) : null;
-          const dm = rules.diabetes || null;
-          // Medication-combination control override: an insulin analog in the
-          // medication list indicates insulin-dependent (or insulin-treated)
-          // diabetes even if the "Insulin?" box was left untouched, and 3+
-          // distinct diabetes medications indicate polypharmacy more severe
-          // than "well controlled monotherapy". Both cap an overstated good-
-          // control claim conservatively rather than trusting it blindly.
-          const combo = medCombinationCheck(rules, d, "diabetes");
-          const insulinTreated = isYes(c.insulin) || combo.hasInsulin;
-          const polypharmacy = combo.count >= 3;
-          if (combo.hasInsulin && !isYes(c.insulin)) details.push(`Insulin detected in the medication list (${combo.count} diabetes med(s)) — not marked as insulin use on the form; treated as insulin-treated diabetes for severity review.`);
-          if (polypharmacy) details.push(`Combination therapy detected (${combo.count} distinct diabetes medications) — heavier than monotherapy; verify control.`);
-          // Carrier may publish a stricter A1c decline threshold (e.g., F&G: A1c 7 or above within the last year)
-          if (a1c !== null && (dm && dm.a1cDeclineMin !== undefined ? a1c >= dm.a1cDeclineMin : a1c > 10)) {
-            decline.push({ id: c.id, text: `Diabetes A1c ${a1c} ${dm && dm.a1cDeclineMin !== undefined ? "≥ " + dm.a1cDeclineMin : "> 10"} — decline/postpone screen.` });
-            ceiling = "decline";
-          } else if (c.complications === "yes") {
-            const dmc = dm && dm.complicationsCeiling;
-            if (dmc) {
-              ceiling = dmc;
-              details.push(`Diabetes with complications — ${dmc} best case (carrier tiering, e.g., Americo Eagle Select 2).`);
-            } else {
-              decline.push({ id: c.id, text: "Significant diabetes complications — decline/postpone screen." });
-              ceiling = "decline";
-            }
-          } else if (dm && dm.juvenileOnsetDeclineAge && onset !== null && onset < dm.juvenileOnsetDeclineAge) {
-            // Carrier-published juvenile-onset decline (e.g., National Life:
-            // diabetes diagnosed prior to age 20 is on the uninsurable list).
-            decline.push({ id: c.id, text: `Juvenile-onset diabetes (diagnosed at age ${onset}, before ${dm.juvenileOnsetDeclineAge}) — decline.` });
-            ceiling = "decline";
-          } else if (dm) {
-            // carrier-published type model (e.g., MOO: Type 1 -> Table 2-8, Type 2 -> Standard-Table 8)
-            const isType1 = c.type === "type1" || insulinTreated || (onset !== null && onset < 20);
-            ceiling = isType1 ? (dm.type1Ceiling || "table") : (dm.type2Ceiling || "standard");
-            details.push(`Diabetes: ${isType1 ? "Type 1 (or onset before age 20 / medication-detected insulin)" : "Type 2"} — ${ceiling} best case per the impairment table.`);
-          } else if (onset !== null && onset >= 50 && isNo(d.usedNicotine) && control === "good" && !insulinTreated && !polypharmacy) {
-            ceiling = "standard_plus";
-          } else if (onset !== null && onset >= 50) {
-            // M1 audit fix: this branch used to grant Standard Plus to EVERY
-            // late-onset presentation and cap only good-control-with-insulin,
-            // so a poorly controlled diabetic outranked a well-controlled one
-            // on insulin. The only late-onset lane that may reach Standard Plus
-            // is branch above (good control, non-tobacco, no insulin, no
-            // combination therapy); everything else reviews at Standard.
-            ceiling = "standard";
-            const reasons = [];
-            if (control !== "good") reasons.push(`${control} control`);
-            if (insulinTreated) reasons.push("insulin-treated");
-            if (polypharmacy) reasons.push("combination therapy");
-            if (isYes(d.usedNicotine)) reasons.push("tobacco use");
-            details.push(`Diabetes: onset ${onset} — ${reasons.length ? reasons.join(", ") + ": " : ""}below the Standard Plus ceiling (requires good control, non-tobacco, no insulin, no combination therapy); review at Standard.`);
-          } else {
-            ceiling = "standard";
-            details.push(`Diabetes: onset before 50 — below the Standard Plus ceiling; review individually.`);
-          }
-          if (c.insulin === "yes" && c.tobaccoCurrent) {
-            // tobacco + insulin diabetes is heavily rated
-            ceiling = worstOf(ceiling || "standard", "table");
-          }
-          // Medication-combination escalation: insclusion of insulin in the
-          // med list (or 3+ distinct diabetes drugs) caps an otherwise-claimed
-          // good control at Standard for carriers that tier good-control type 2
-          // at Standard Plus — the heavier combination never gets the monotherapy
-          // Standard Plus treatment.
-          if (polypharmacy && onset !== null && onset >= 50 && control === "good" && !insulinTreated) {
-            ceiling = worstOf(ceiling, "standard");
-          }
-          if (rules.id === "amam" && (isYes(c.insulin) || isYes(c.tobaccoCurrent))) {
-            // American Amicable: diabetes with insulin use or tobacco use in the
-            // past 12 months is on the decline list regardless of control.
-            decline.push({ id: c.id, text: `Diabetes ${isYes(c.insulin) ? "with insulin use" : "with tobacco use in the past 12 months"} — American Amicable decline list.` });
-            ceiling = "decline";
-          }
-        } else if (meta.id === "anxiety" || meta.id === "depression") {
-          if (severity === "mild" && control === "good" && (medCount === 0 || (medCount === 1 && status === "current"))) {
-            ceiling = "preferred_plus";
-          } else if (severity === "mild" && control === "good" && medCount === 1) {
-            ceiling = "preferred";
-          } else {
-            ceiling = "standard";
-          }
-        } else if (meta.id === "asthma") {
-          if (medCount !== null && severity === "mild" && medCount <= 1) ceiling = "preferred_plus";
-          else if (medCount !== null && severity === "mild" && medCount <= 2) ceiling = "preferred";
-          else ceiling = "standard";
-        } else if (meta.id === "sleep_apnea") {
-          if ((severity === "mild" || severity === "moderate") && control === "good" && !c.residualSymptoms) ceiling = "preferred";
-          else ceiling = "standard";
-        } else if (meta.id === "skin_cancer") {
-          /* Final-audit fix: this branch used to hard-code Preferred Plus for
-             every carrier, overriding published rows that grant Standard
-             (NLG, AMAM, Americo, Corebridge) or Preferred (Quility). Respect
-             the carrier's own ceilings row; Preferred Plus remains the
-             default only when a row lists the condition with no class. */
-          ceiling = (meta.ceilings && meta.ceilings[0] && meta.ceilings[0].klass) || "preferred_plus";
-        } else if (meta.id === "other_cancer") {
-          const cm = rules.conditionModels && rules.conditionModels.other_cancer;
-          const resolvedYears = yearsAgo(c.resolvedYears);
-          if (c.recurrence) { postpone.push({ id: c.id, text: "Cancer recurrence — contact underwriting before submitting." }); ceiling = "postpone"; }
-          else if (cm && cm.declineWithinYears && resolvedYears !== null && resolvedYears < cm.declineWithinYears) {
-            decline.push({ id: c.id, text: `Cancer resolved only ${resolvedYears} years ago — within the carrier's ${cm.declineWithinYears}-year decline window.` }); ceiling = "decline";
-          }
-          else if (cm && cm.waitYears && resolvedYears !== null && resolvedYears < cm.waitYears) {
-            postpone.push({ id: c.id, text: `Cancer resolved only ${resolvedYears} years ago — carrier wait-out is ${cm.waitYears} years.` }); ceiling = "postpone";
-          }
-          else if (c.treatedWithin12mo) { postpone.push({ id: c.id, text: "Cancer diagnosed/treated within 12 months — contact underwriting before submitting." }); ceiling = "postpone"; }
-          else if (cm && cm.afterCeiling) ceiling = cm.afterCeiling;
-          else if (c.status !== "resolved") {
-            // H2 third leg — actively current or unresolved cancer at a carrier
-            // without a conditionModel (e.g., Banner): never a favorable class.
-            // The favorable fallback (standard_plus) is dishonest while the
-            // condition is ongoing; the carrier's published postpone row is the
-            // honest gate.
-            postpone.push({ id: c.id, text: meta.postpone || "Cancer currently active or unresolved — postpone / pre-review until treatment completes and stability is documented." });
-            ceiling = "postpone";
-          }
-          else ceiling = "standard_plus";
-        } else if (meta.id === "bipolar") {
-          if (c.onsetWithin1yr) { postpone.push({ id: c.id, text: "Bipolar diagnosed within the last year." }); ceiling = "postpone"; }
-          else if (c.suicide10yr) { decline.push({ id: c.id, text: "Suicide attempt within 10 years." }); ceiling = "decline"; }
-          else if (stableYears !== null && severity === "mild" && control === "good" && stableYears >= 5) ceiling = "standard_plus";
-          else ceiling = "standard";
-        } else if (meta.id === "substance_treatment") {
-          const years = has(c, "yearsSober") ? yearsAgo(c.yearsSober) : null;
-          const tiers = rules.substanceTiers || { declineYears: 2, tiers: [{ minYears: 10, klass: "preferred" }, { minYears: 0, klass: "standard" }] };
-          if (years !== null && years < tiers.declineYears) {
-            decline.push({ id: c.id, text: `Substance treatment with less than ${tiers.declineYears} years since last use.` });
-            ceiling = "decline";
-          } else if (years !== null) {
-            ceiling = null;
-            for (const t of tiers.tiers) { if (years >= t.minYears) { ceiling = t.klass; break; } }
-            if (!ceiling) ceiling = "table";
-          } else {
-            ceiling = "standard";
-          }
-        } else if (meta.id === "ptsd" || meta.id === "major_depression") {
-          // QTP publishes PTSD criteria (no self-harm/suicide, no alcohol use).
-          let base;
-          if (meta.id === "ptsd" && (c.selfHarm || c.alcoholUse)) {
-            // the carrier's own entry publishes this as a decline (e.g., QTP:
-            // "otherwise declinable") — fire it rather than silently capping.
-            if (meta.decline) {
-              decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
-              ceiling = "decline";
-            } else {
-              base = "standard";
-              details.push("PTSD with self-harm/suicide history or alcohol use — below the accepted criteria; Standard ceiling.");
-              ceiling = worstOf(base, meta.ceilings[0].klass);
-            }
-          } else if (severity === "mild" && control === "good" && (medCount === 0 || medCount === 1)) {
-            base = "preferred_plus";
-            // never exceed the carrier's published ceiling (e.g., Transamerica
-            // lists PTSD under the depression row at Standard)
-            ceiling = worstOf(base, meta.ceilings[0].klass);
-          } else {
-            base = "standard";
-            ceiling = worstOf(base, meta.ceilings[0].klass);
-          }
-        } else if (meta.id === "migraine") {
-          // AMAM: migraine fully investigated & controlled -> Standard; severe or
-          // not investigated -> Decline. Quility: full evaluation completed -> Preferred.
-          if (severity === "severe" || !c.investigated) {
-            if (meta.decline) {
-              decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
-              ceiling = "decline";
-            } else {
-              ceiling = "table";
-            }
-          } else {
-            // base is the best case when fully investigated and controlled;
-            // the carrier's published ceiling caps it where the guide is stricter.
-            ceiling = worstOf("preferred_plus", meta.ceilings[0].klass);
-          }
-        } else if (meta.id === "hypothyroidism") {
-          // QTP: controlled, diagnosed >6 months ago, no complications. Transamerica: thyroid disorder.
-          // base is the best-case when controlled; the carrier's published
-          // ceiling (worstOf) caps it where the guide is stricter.
-          const base = (control === "good" && status === "current") ? "preferred_plus" : "standard";
-          ceiling = worstOf(base, meta.ceilings[0].klass);
-        } else if (meta.id === "hypogonadism" || meta.id === "erectile_dysfunction") {
-          // Testosterone therapy / ED meds are not rateable in the modeled guides
-          // when controlled; review if associated with a cardiac event.
-          ceiling = worstOf(control === "good" ? "preferred_plus" : "standard", meta.ceilings[0].klass);
-        } else if (meta.id === "chronic_fatigue" || meta.id === "rem_sleep_disorder") {
-          // Transamerica: chronic fatigue syndrome listed as rateable; REM sleep
-          // disorder reviewed under sleep/neuro. Conservative Standard.
-          ceiling = worstOf("standard", meta.ceilings[0].klass);
-        } else if (meta.id === "pacemaker_icd" || meta.id === "heart_valve_prosthesis") {
-          // QTP: pacemaker/defibrillator implant declinable. FE Express: defibrillator
-          // ever decline. AMO simplified: pacemaker/defibrillator listed as a common
-          // impairment — may be an adjusted benefit or decline. The carrier's own
-          // published ceiling is the stable-device best case.
-          const yrs = has(c, "implantYears") ? Number(c.implantYears) : null;
-          const published = meta.ceilings[0].klass;
-          let base;
-          if (meta.id === "heart_valve_prosthesis") {
-            // Mechanical valve requires anticoagulation — table-rated or specialist review.
-            base = "table";
-          } else if (yrs !== null && yrs >= 1 && control === "good") {
-            base = published; // stable device — carrier's published ceiling
-          } else {
-            base = "table"; // recent placement or poor control — table/specialist review
-          }
-          ceiling = worstOf(base, published);
-          details.push(`${meta.name}: device present — ${ceiling} best case per this carrier's published device row.`);
-        } else if (meta.id === "intracranial_aneurysm_clip" || meta.id === "vp_shunt" || meta.id === "neurostimulator") {
-          // Surgical implants: reviewed individually; stable, long-standing devices
-          // may be standard; recent placement is table/specialist review.
-          const yrs = has(c, "implantYears") ? Number(c.implantYears) : null;
-          const base = (yrs !== null && yrs >= 2 && control === "good") ? "standard" : "table";
-          ceiling = worstOf(base, meta.ceilings[0].klass);
-        } else if (meta.id === "dysplastic_nevi") {
-          // Banner publishes count-based criteria for dysplastic nevi: a single
-          // atypical/dysplastic nevus (no personal/family melanoma history,
-          // favorable dermatology follow-up) -> Preferred Plus; up to 3 -> Preferred;
-          // 4+ exceeds the published ceilings. An unanswered count must NOT be read
-          // as a single nevus (the favorable case) — it stays conservative (missing
-          // flag) until the number is confirmed.
-          const nevusCount = numOrNull(c.count);
-          if (control !== "good" || status !== "current") {
-            ceiling = "standard";
-          } else if (nevusCount === 1) {
-            ceiling = worstOf("preferred_plus", meta.ceilings[0].klass);
-          } else if (nevusCount !== null && nevusCount >= 2 && nevusCount <= 3) {
-            ceiling = worstOf("preferred", meta.ceilings[0].klass);
-          } else if (nevusCount !== null && nevusCount >= 4) {
-            ceiling = "standard";
-            details.push(`Dysplastic nevi: ${nevusCount} atypical nevi exceeds the published Preferred ceiling (up to 3) — Standard review; dermatology surveillance records needed.`);
-          } else {
-            // unanswered / malformed count — do not assume the single-nevus best case
-            ceiling = "standard";
-          }
-        } else {
-          // generic: first ceiling. A SINGLE published tier whose `when`
-          // language is presentation-qualified (e.g., Transamerica COPD
-          // "severity reviewed", MVP "no significant insufficiency",
-          // osteoporosis "no complications") must not hand the top class to
-          // every presentation: a severe / poorly-controlled disclosure reads
-          // conservatively at Standard instead of inheriting the favorable
-          // Published best case. Same rule shape as the dysplastic-nevi branch
-          // above — an adverse or unconfirmed presentation never inherits the
-          // favorable ceiling (H-audit sweep finding).
-          ceiling = meta.ceilings[0].klass;
-          if (meta.ceilings.length === 1 && (ceiling === "preferred_plus" || ceiling === "preferred") &&
-              (severity === "severe" || control === "poor")) {
-            ceiling = "standard";
-            details.push(`${meta.name}: ${severity} severity / ${control} control — below the published ${meta.ceilings[0].klass} ceiling; review at a conservative Standard.`);
-          }
-        }
-      } else {
-        // no ceiling defined (postpone/decline-only conditions like CAD, stroke, COPD)
-        ceiling = null;
-        if (meta.postpone && c.status === "current" && isYes(c.recentEvent)) {
-          postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone}` });
-        }
-        if (meta.decline && c.status === "current" && c.severity === "severe") {
-          decline.push({ id: c.id, text: `${meta.name}: ${meta.decline}` });
-        }
-        const resYears = yearsAgo(c.resolvedYears);
-        if (c.status === "resolved" && resYears !== null && resYears >= 1) {
-          // stable resolved history may still be acceptable; keep at standard ceiling
-          ceiling = "standard";
-          details.push(`${meta.name}: resolved ${resYears} yr ago — stable history, individual review.`);
-        } else if (c.status === "current") {
-          ceiling = "table"; // significant current condition without a published ceiling -> table/specialist review
-          details.push(`${meta.name}: current condition — table-rated or specialist review.`);
-        }
-      }
-
-      /* Carrier-specific best-class caps (conditionModels.best floors the
-         computed ceiling at the carrier's best-case class, e.g., MOO caps
-         anxiety/depression at Standard and bipolar at Table 2). */
-      const cm = rules.conditionModels && rules.conditionModels[meta.id];
-      if (cm && cm.best && ceiling && ceiling !== "postpone" && ceiling !== "decline" && CLASS_INDEX[ceiling] < CLASS_INDEX[cm.best]) {
-        ceiling = cm.best;
-      }
-
-      /* Carrier-specific cap: conditions that exclude the preferred classes (Transamerica:
-         no heart/vascular disease, diabetes, or cancer for preferred classes) */
-      if (ceiling && ceiling !== "postpone" && ceiling !== "decline" && rules.medicalStandardCap && rules.medicalStandardCap.includes(meta.id)) {
-        if (CLASS_INDEX[ceiling] < CLASS_INDEX.standard) ceiling = "standard";
-      }
-
-      /* Carrier-specific auto-declines from the impairment table */
-      if (c.status === "current") {
-        if (rules.autoDeclineIds && rules.autoDeclineIds.includes(meta.id)) {
-          decline.push({ id: c.id, text: `${meta.name}: ${(meta.decline || "decline")}`, reason: "Carrier impairment table." });
-          ceiling = "decline";
-        } else if (rules.autoDeclineSevereIds && rules.autoDeclineSevereIds.includes(meta.id) && c.severity === "severe") {
-          decline.push({ id: c.id, text: `${meta.name}: ${(meta.decline || "severe — decline")}`, reason: "Carrier impairment table." });
-          ceiling = "decline";
-        }
-      }
-
-      /* H2 — gates must win: a condition branch can resolve straight to
-         postpone/decline (e.g. other_cancer afterCeiling:"decline") WITHOUT
-         pushing a gate entry, and `worst` used to skip those classes — so an
-         active cancer honestly evaluated as a decline still surfaced as
-         Preferred. Materialize any un-gated postpone/decline ceiling from the
-         published row text, then let the aggregate absorb it. */
-      if (ceiling === "postpone" && !postpone.some(p => p.id === c.id)) {
-        postpone.push({ id: c.id, text: `${meta.name}: ${meta.postpone || "postpone / pre-review — wait for stability, records, or completed testing."}` });
-      } else if (ceiling === "decline" && !decline.some(g => g.id === c.id)) {
-        decline.push({ id: c.id, text: `${meta.name}: ${meta.decline || "decline / specialist review."}` });
-      }
-
-      if (ceiling === "postpone" || ceiling === "decline") {
-        worst = ceiling;
-      } else if (ceiling) {
-        if (classWorseThan(ceiling, worst)) worst = ceiling;
-      }
-      const ceilingName = ceiling ? (ceiling === "decline" ? "decline screen" : ceiling === "postpone" ? "postpone" : ceiling) : "review";
-      details.push(`${meta.name}: ${severity} / ${control} control — best supported class ${ceilingName}.`);
-    }
-
-    // Comorbidity interaction check
-    const ids = new Set(conds.map(c => c.id));
-    const combos = [];
-    if (ids.has("diabetes") && (ids.has("cad") || ids.has("heart_disease") || ids.has("kidney_disease"))) {
-      combos.push("Diabetes + coronary/cardiovascular or kidney disease");
-    }
-    if (ids.has("kidney_disease") && ids.has("hypertension")) combos.push("Chronic kidney disease + hypertension");
-    if ((ids.has("anxiety") || ids.has("depression") || ids.has("bipolar")) && ids.has("substance_treatment")) {
-      combos.push("Mental-health condition + alcohol/substance abuse");
-    }
-
-    return { klass: worst, details, postpone, decline, combos };
-  }
-
-  /* ---------- substance / lifestyle ----------------------------------- */
-
-  function evalSubstance(rules, d) {
-    if (!has(d, "alcoholConcern") && !has(d, "drugAbuse") && !has(d, "marijuana")) {
-      return { klass: null, missing: true, detail: "Substance history not provided." };
-    }
-    let klass = "preferred_plus";
-    const details = [];
-    if (d.drugAbuse === "yes") {
-      const years = has(d, "drugAbuseYears") ? yearsAgo(d.drugAbuseYears) : null;
-      if (years === null) {
-        return { klass: "decline", detail: "Drug abuse disclosed with no (valid) recovery duration — treat as decline screen pending details." };
-      }
-      const declineYears = (rules && rules.drugDeclineYears) || 3;
-      if (years < declineYears) {
-        return { klass: "decline", detail: `Non-marijuana drug use within ${years} years — decline/postpone screen (carrier window: ${declineYears} years).` };
-      }
-      if (rules && rules.drugRecoveryTiers) {
-        // carrier-published recovery ladder (e.g., F&G: beyond 5 years -> Standard)
-        let k = null;
-        for (const t of rules.drugRecoveryTiers) { if (years >= t.minYears) { k = t.klass; break; } }
-        klass = worstOf(klass, k || "standard");
-      } else {
-        // Banner class requirements: no abuse in past 7 years (Standard/Standard Plus), 10 years (Preferred)
-        if (years < 7) klass = worstOf(klass, "table");
-        else if (years < 10) klass = worstOf(klass, "standard_plus");
-        else klass = worstOf(klass, "preferred");
-      }
-      details.push(`Drug abuse history ${years} yr ago — recovery duration reviewed.`);
-    }
-    if (d.alcoholConcern === "active") {
-      return { klass: "decline", detail: "Current alcohol abuse or abstinence under 2 years — decline screen." };
-    }
-    if (d.alcoholConcern === "history") {
-      klass = worstOf(klass, "standard");
-      details.push("Alcohol abuse history — reviewed under recovery rules.");
-    }
-    /* Marijuana is rated separately from tobacco and never forces a tobacco
-       class. Carriers that publish a daily-use decline (F&G Quantum/Pathsetter,
-       National Life) treat daily use as a decline screen; medicinal use is rated
-       on the underlying condition; infrequent recreational use may still
-       qualify for preferred classes. */
-    if (d.marijuana === "daily") {
-      if (rules && rules.nicotine && rules.nicotine.marijuanaDailyDecline) {
-        return { klass: "decline", detail: `Daily marijuana use — ${rules.name} publishes a daily-use decline screen.` };
-      }
-      details.push("Daily marijuana use — carrier frequency limits apply (F&G/National Life decline daily use).");
-    } else if (d.marijuana === "medicinal") {
-      details.push("Medicinal marijuana — rated on the underlying condition, not the substance itself.");
-    } else if (d.marijuana === "infrequent") {
-      details.push("Infrequent recreational marijuana — non-tobacco rates; preferred classes may be available.");
-    } else if (d.marijuana === "frequent") {
-      details.push("Frequent marijuana use — carrier frequency limits reviewed (e.g., F&G: under 4x/week acceptable; daily use declines).");
-    }
-    return { klass, details, detail: details.join(" ") || "No substance concerns." };
-  }
-
-  /* ---------- medications --------------------------------------------- */
-
-  /* Normalize a medication entry for dictionary matching: lowercase,
-     strip doses/packaging, drop punctuation. */
-  function normalizeMed(t) {
-    return String(t).toLowerCase()
-      .replace(/\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|units?|tablets?|capsules?|tabs?|caps?|patch|injection|pen|vial|spray|puffs?)/g, " ")
-      .replace(/[^a-z ]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  /* Match a normalized token against a MEDICATION_MAP entry using whole-word
-     equality on normalized forms — substring matching over-matched common
-     words (e.g. "none" ⊂ "eplerenone"). Aliases are full generic/brand names. */
-  function medMatches(norm, entry) {
-    if (!norm) return false;
-    const normWords = norm.split(" ").filter(w => w.length >= 4);
-    if (!normWords.length) return false;
-    return entry.aliases.some(a => {
-      const aw = normalizeMed(a);
-      return !!aw && aw.length >= 4 && normWords.includes(aw);
-    });
-  }
-
-  /**
-   * Cross-check disclosed medications against the disclosed conditions and
-   * the carrier's APS trigger list. Never a diagnosis: an undisclosed med
-   * raises an advisory flag to confirm with the applicant.
-   */
-  function evalMedications(rules, d) {
-    const raw = d.medicationsText;
-    if (!raw || !String(raw).trim()) {
-      return { klass: null, missing: true, meds: [], disclosed: [], undisclosed: [], apsTriggers: [], detail: "Medications not provided." };
-    }
-    const tokens = String(raw).split(/[,;\n]+/).map(t => t.trim()).filter(Boolean);
-    const matched = [];
-    for (const t of tokens) {
-      const norm = normalizeMed(t);
-      if (!norm) continue;
-      const entry = MEDICATION_MAP.find(e => medMatches(norm, e));
-      if (entry && !matched.some(m => m.conditionId === entry.condition && m.med === t)) {
-        matched.push({ med: t, conditionId: entry.condition, conditionName: entry.name, apsLabel: entry.apsLabel });
-      }
-    }
-    const condIds = (d.conditions || []).map(c => c.id);
-    const disclosed = [], undisclosed = [];
-    const seenD = new Set(), seenU = new Set();
-    for (const m of matched) {
-      if (condIds.includes(m.conditionId)) {
-        if (!seenD.has(m.conditionId)) { disclosed.push(m); seenD.add(m.conditionId); }
-      } else {
-        if (!seenU.has(m.conditionId)) { undisclosed.push(m); seenU.add(m.conditionId); }
-      }
-    }
-    // Carrier APS triggers suggested by the prescription record (disclosed or not)
-    const apsConditions = (rules.evidence && rules.evidence.apsConditions) || [];
-    const strip = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-    const apsTriggers = [];
-    for (const m of matched) {
-      const hit = apsConditions.find(a => {
-        const aa = strip(a), ll = strip(m.apsLabel);
-        return aa && ll && (aa.includes(ll) || ll.includes(aa));
-      });
-      if (hit && !apsTriggers.some(x => x.apsText === hit)) {
-        apsTriggers.push({ conditionId: m.conditionId, conditionName: m.conditionName, apsText: hit, med: m.med });
-      }
-    }
-    const parts = [];
-    if (matched.length) parts.push(`${matched.length} medication(s) cross-checked.`);
-    if (disclosed.length) parts.push(`${disclosed.length} consistent with disclosed conditions.`);
-    if (undisclosed.length) parts.push(`${undisclosed.length} suggest a condition not disclosed — confirm with applicant.`);
-    return { klass: null, missing: false, meds: matched, disclosed, undisclosed, apsTriggers, detail: parts.join(" ") || "Entered medications matched no reference entries." };
-  }
-
-  /* Insulin is a step-change in diabetes severity vs. oral monotherapy: every
-     modeled carrier's diabetes row prices insulin-dependent disease heavier
-     (e.g. Quility requires non-insulin to accept, MOO Type 1 -> Table 2-8). If
-     insulin appears in the medication list the disclosure control claim must not
-     read as "well controlled monotherapy". The aliases are the map's insulin
-     analog generics/brands. */
-  const INSULIN_MEDS = new Set(["insulin", "lantus", "levemir", "humalog", "novolog", "humulin", "novolin", "toujeo", "tresiba", "apidra", "basaglar"]);
-
-  /**
-   * Medication-combination control check. For a disclosed condition, re-reads
-   * the entered medication list and counts how many distinct matched drugs treat
-   * that condition, and whether any is insulin. The carrier's own control
-   * criteria are monotherapy-graded ("controlled on 2 or fewer medications" for
-   * HTN, "non-insulin" for aceptable QTP diabetes), so a larger combination or
-   * insulin signals worse-than-claimed control even when the user ticked
-   * control "good". Pure advisory: it never declares a new diagnosis and only
-   * caps an overstated good-control claim (or raises a combo flag), never a
-   * blanket decline.
-   * Returns { count, hasInsulin, distinctCount }.
-   */
-  function medCombinationCheck(rules, d, conditionId) {
-    const raw = d.medicationsText;
-    if (!raw || !String(raw).trim()) return { count: 0, hasInsulin: false };
-    const tokens = String(raw).split(/[,;\n]+/).map(t => t.trim()).filter(Boolean);
-    const distinct = new Set();
-    let hasInsulin = false;
-    for (const t of tokens) {
-      const norm = normalizeMed(t);
-      if (!norm) continue;
-      const entry = MEDICATION_MAP.find(e => medMatches(norm, e));
-      if (!entry || entry.condition !== conditionId) continue;
-      // Insulin analogs indicate insulin-dependent diabetes even if the user
-      // did not tick the "Insulin? Yes" box on the detail form.
-      const words = norm.split(" ").filter(w => w.length >= 4);
-      if (words.some(w => INSULIN_MEDS.has(w))) hasInsulin = true;
-      distinct.add(norm); // distinct normalized name = distinct drug (a combo within one condition)
-    }
-    return { count: distinct.size, hasInsulin };
-  }
-
-  /* ---------- functional status / ADLs -------------------------------- */
-
-  function evalFunctional(d) {
-    if (!has(d, "adlAssistance") && !has(d, "livingSetting")) {
-      return { klass: null, missing: true, detail: "Functional status not provided." };
-    }
-    if (d.livingSetting === "nursing" || d.livingSetting === "psychiatric" || d.livingSetting === "hospice" || d.homeHealth) {
-      return { klass: "decline", flag: "adl_dependence", detail: "Facility care, hospice, or home-health care — specialist review / likely decline screen." };
-    }
-    if (d.mobility === "wheelchair_chronic" || d.mobility === "bedbound") {
-      return { klass: "decline", flag: "adl_dependence", detail: "Chronic wheelchair dependence or bedbound — specialist review / likely decline screen." };
-    }
-    if (d.adlAssistance === "yes") {
-      return { klass: "decline", flag: "adl_dependence", detail: "Ongoing ADL assistance required — specialist review / likely decline screen." };
-    }
-    return { klass: "preferred_plus", detail: "Fully independent — no functional limitation disclosed." };
-  }
-
-  /* ---------- pending care -------------------------------------------- */
-
-  function evalPending(d) {
-    if (!has(d, "pendingTests") && !has(d, "recentHospitalization") && !has(d, "recentSurgery") && !has(d, "activeSymptom")) {
-      return { klass: null, missing: true, detail: "Pending-care status not provided." };
-    }
-    const gates = [];
-    if (d.pendingTests === "yes") gates.push("pending test/referral with unknown results");
-    if (d.recentHospitalization === "yes") gates.push("hospitalization within past 4 months");
-    if (d.recentSurgery === "yes") gates.push("surgery within past 4 months");
-    if (d.activeSymptom === "yes") gates.push("uninvestigated active symptom");
-    if (gates.length) {
-      return { klass: "postpone", detail: `Postpone screen: ${gates.join("; ")}.` };
-    }
-    return { klass: "preferred_plus", detail: "No pending care or uninvestigated findings." };
-  }
-
-  /* ---------- financial justification --------------------------------- */
-
-  function evalFinancial(rules, d) {
-    if (!has(d, "income") || !has(d, "faceAmount")) {
-      return { flag: "missing_financial", detail: "Income or face amount not provided — financial justification unverified." };
-    }
-    const income = Number(d.income);
-    const face = Number(d.faceAmount);
-    const age = d.age ? Number(d.age) : null;
-    const mults = (rules.financial && rules.financial.incomeMultipliers) || [];
-    if (!mults.length) {
-      // Carrier publishes no income-multiplier schedule (e.g., American
-      // Amicable simplified-issue products): face amount vs. income is
-      // reviewed individually.
-      return { flag: null, detail: "No published income-multiplier schedule — face amount vs. income is reviewed individually by underwriting.", ok: null, multiplier: null };
-    }
-    if (age === null) return { flag: "missing_financial", detail: "Age not provided — financial multiplier unknown." };
-    const m = mults.find(x => age >= x.ageMin && age <= x.ageMax);
-    if (!m) return { flag: "missing_financial", detail: "No financial multiplier for age." };
-    const max = typeof m.multiplier === "number" ? m.multiplier * income : null;
-    const ok = max === null ? null : face <= max;
-    const fin = rules.financial || {};
-    const extra = [];
-    /* Total in-force + applied-for line caps (carrier-published eligibility
-       limits, e.g., F&G Quantum: over $1,000,000 total requires another
-       product). */
-    const totalLineExceeded = !!(fin.totalLineCap && has(d, "existingCoverage") && (face + Number(d.existingCoverage || 0)) > fin.totalLineCap);
-    if (totalLineExceeded) {
-      const total = face + Number(d.existingCoverage || 0);
-      extra.push(`Total coverage in force + applied ${total.toLocaleString()} exceeds the carrier's ${fin.totalLineCap.toLocaleString()} maximum — another product is required.`);
-    }
-    /* Replacement product rules (e.g., F&G Quantum: no internal or external
-       replacements allowed — a replacement case cannot be written on it). */
-    const replacementNotAllowed = !!(fin.noReplacements && d.replacement === "yes");
-    if (replacementNotAllowed) {
-      extra.push(`${rules.name} does not accept internal or external replacements — a replacement case cannot be written on this product.`);
-    }
-    return {
-      multiplier: m.multiplier,
-      maxJustified: max,
-      ok,
-      totalLineExceeded,
-      replacementNotAllowed,
-      detail: `Income ${income} x ${m.multiplier} = ${max === null ? "individual consideration" : "$" + max.toLocaleString()} justified for age ${age}. Requested face ${face.toLocaleString()} ${ok === false ? "EXCEEDS" : "within"} this guideline.${extra.length ? " " + extra.join(" ") : ""}`
-    };
-  }
-
-  /* ---------- evidence requirements ----------------------------------- */
-
-  function evidenceNeeded(rules, d, conditionIds) {
-    const list = [];
-    const age = d.age ? Number(d.age) : null;
-    const face = d.faceAmount ? Number(d.faceAmount) : null;
-    const hasAmtRules = (rules.evidence.amountRules || []).length > 0;
-
-    if (hasAmtRules) {
-      // Carrier-published age/amount evidence grid (e.g., Mutual of Omaha p. 16-17)
-      for (const ar of rules.evidence.amountRules) {
-        if (age !== null && face !== null && age >= ar.ageMin && age <= ar.ageMax && face >= ar.amountMin && (ar.amountMax === undefined || face <= ar.amountMax)) {
-          ar.items.forEach(i => { if (!list.includes(i)) list.push(i); });
-        }
-      }
-    } else if (Array.isArray(rules.evidence.requirementGrids) && rules.evidence.requirementGrids.length) {
-      // Carrier-published per-band requirement grids (Transamerica's
-      // age-and-face-amount charts, p. 7-9). Each grid maps (age band, face
-      // band) to requirement codes. With no product selected, the union
-      // across the carrier's product grids applies: a code that any product
-      // requires at the applicant's age/amount is listed.
-      const GRID_CODE_ITEMS = {
-        V: "Vitals / paramed physical findings",
-        BCP: "BCP (blood chemistry profile)",
-        HOS: "HOS (home office urine specimen)",
-        MVR: "MVR (motor vehicle report)",
-        CS: "CS (Minnesota Cognitive Acuity Screen)",
-        PFS: "PFS (personal financial statement)",
-        ECG: "ECG (resting electrocardiogram)",
-        IR: "IR (inspection report)"
-      };
-      for (const grid of rules.evidence.requirementGrids) {
-        if (age === null || face === null) continue;
-        const row = grid.rows.find(r => face >= r.min && face <= r.max);
-        if (!row) continue;
-        const ci = grid.ages.findIndex(a => age >= a[0] && age <= a[1]);
-        if (ci < 0 || ci >= row.cells.length) continue;
-        (row.cells[ci] || []).forEach(code => {
-          const label = GRID_CODE_ITEMS[code];
-          if (label && !list.includes(label)) list.push(label);
-        });
-      }
-    } else if (rules.evidence.genericGrid !== false) {
-      // Default age/amount grid (Banner-flavored); carriers that publish no
-      // exam grid (e.g., F&G Quantum, underwritten from electronic databases)
-      // set genericGrid: false and add their own lines on the results page.
-      if (age !== null && age > 60) list.push("APS (always required over age 60)");
-      if (age !== null && age >= 71) list.push("Daily Activities Questionnaire");
-      if (face !== null) {
-        if (age !== null && age <= 60 && face >= 100000) list.push("APM + blood/urine (age/amount requirements)");
-        if (age !== null && age > 60 && face >= 100000) list.push("Blood/urine (age/amount requirements)");
-        if (age !== null && age > 50 && face >= 2000000) list.push("EKG");
-        if (age !== null && age >= 51 && age <= 60 && face > 1000000) list.push("ProBNP");
-        if (age !== null && age > 60 && face > 250000) list.push("ProBNP");
-        if (age !== null && age >= 50 && d.sex === "male") list.push("PSA");
-        if (age !== null && age > 50) list.push("CEA");
-      }
-    }
-
-    // condition-based APS mapping
-    const apsMap = {
-      cancer: "Cancer", diabetes: "Diabetes", cad: "Heart (cardiac) disease", heart_disease: "Heart (cardiac) disease",
-      stroke: "Stroke / TIA", copd: "COPD / emphysema", kidney_disease: "Kidney disease", liver_disease: "Liver disease",
-      dementia: "Cognitive disorders", substance_treatment: "Substance abuse/dependence", hiv: "Blood disorders",
-      seizures: "Cognitive disorders", transplant: "Transplant", paralysis: "Paralysis"
-    };
-    const apsNeeded = [];
-    conditionIds.forEach(id => { if (apsMap[id] && !apsNeeded.includes(apsMap[id])) apsNeeded.push(apsMap[id]); });
-    apsNeeded.forEach(a => list.push(`APS: ${a}`));
-
-    // Dysplastic nevi: the atypical-nevus count (whether single, up to 3, or 4+)
-    // drives whether the published Preferred-class criteria are met, so the
-    // producer needs the dermatology records to confirm the count and the
-    // melanoma-history / surveillance picture.
-    if (conditionIds.includes("dysplastic_nevi")) {
-      const nevi = (d.conditions || []).find(c => c.id === "dysplastic_nevi");
-      const cnt = numOrNull(nevi && nevi.count);
-      list.push(`Dermatology records for atypical/dysplastic nevi (nevus count ${cnt === null ? "not provided" : cnt}, melanoma-history and surveillance follow-up needed) — confirms the published Preferred-class criteria.`);
-    }
-
-    // Coverage-purpose financial evidence (Banner financial underwriting
-    // guidance, p. 22-23 — the purpose determines what justifies the face
-    // amount; similar purpose documents are standard across carriers).
-    const purposeEvidence = {
-      income: "Income verification (tax returns / W-2 / paystubs) may be required.",
-      estate: "Estate analysis — asset and liability verification may be required (estate conservation / liquidity).",
-      business: "Business insurance questionnaire (BIQ) and a cover letter explaining the purpose and how the face amount was determined.",
-      mortgage: "Loan documentation supporting the debt / mortgage amount.",
-      family: "Coverage justification — verify how the face amount was determined (income-replacement factors).",
-      charity: "Contribution record confirming an established history of giving to the charity."
-    };
-    if (d.policyPurpose && purposeEvidence[d.policyPurpose]) list.push(purposeEvidence[d.policyPurpose]);
-    if (d.replacement === "yes") list.push("Replacement disclosed — carrier replacement rules and disclosure requirements apply.");
-    if (d.financing === "yes" || d.premiumPayor === "third_party" || d.premiumPayor === "financed") list.push("Third-party or financed premium disclosed — premium-financing financial review applies.");
-    if (d.ownership === "business") list.push("Business-owned coverage disclosed — business insurance questionnaire / ownership documentation may be required.");
-    if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) list.push("History of probation/parole disclosed — carriers review recency and offense severity; additional information may be required.");
-    if (isYes(d.foreignTravel)) list.push("Foreign travel disclosed — review destinations and duration; some destinations trigger postponement or additional requirements.");
-    if (d.militaryService === "yes" || d.militaryService === "combat" || d.militaryService === "veteran") {
-      list.push("Military service disclosed — VA treatment records may be requested.");
-      if (d.militaryService === "combat") list.push("Combat deployment disclosed — mental-health / TBI screening may apply.");
-      if (d.militaryService === "veteran") list.push("Veteran status disclosed — prior service with separation date; review for combat exposure, disability rating, or VA treatment history.");
-      const rating = d.militaryRating;
-      if (rating === "30to60") list.push("VA disability rating of 30–60% disclosed — request the rating decision and disability basis (records confirm the impairment).");
-      if (rating === "60plus") list.push("VA disability rating of 60% or more disclosed — substantial impairment; medical records confirming the disability are required.");
-      if (rating === "total") list.push("Total / unemployable VA disability disclosed — severe impairment review; carrier direction is required before an estimate is reliable.");
-      if (d.vaTreatment === "yes") list.push("Receiving VA treatment — confirm the condition under treatment; uninvestigated care can matter more than the known history.");
-    }
-    if (d.foreignResidence === "short" || d.foreignResidence === "long") {
-      list.push("Foreign residence disclosed — carrier residency requirements and country-of-residence review apply; certain countries may postpone or add requirements.");
-    }
-    if (d.doctorVisits === "frequent" && !(d.conditions && d.conditions.length)) {
-      list.push("Frequent physician visits with no disclosed condition — confirm the reason; uninvestigated care can matter more than known history.");
-    }
-    if (isYes(d.nicotineEver)) {
-      if (d.usedNicotine === "no") {
-        const qy = yearsAgo(d.nicotineQuitYears); // null when missing/invalid/negative
-        if (qy !== null && qy >= 0 && qy <= 10) list.push("Nicotine answers conflict: 'ever used' yes but last use within 10 years contradicts the 'no' answer — confirm the quit date.");
-        else if (qy !== null && qy > 10) list.push("Tobacco/nicotine use disclosed, last use more than 10 years ago — outside every carrier's lookback window; no class impact.");
-        else list.push("Nicotine answers conflict: 'no' current use with a last-use date that is missing or not a valid non-negative number of years ago — confirm the quit date.");
-      }
-    }
-
-    /* American Amicable Dignity Solutions final-expense lane: when the profile
-       fits the final-expense band (ages 50-85, face $2,500-$50,000) the term
-       products are not the right fit — Dignity Solutions applies, with the
-       plan tier (Immediate / Graded / Return of Premium) set by the health
-       answers and the three-plan build chart. No class change; the estimate
-       reflects the simplified-issue term lane. */
-    if (rules.id === "amam" && age !== null && face !== null && age >= 50 && age <= 85 && face >= 2500 && face <= 50000) {
-      list.push("Final-expense lane: Dignity Solutions applies at this age/face band (ages 50-85, $2,500-$50,000) — the plan tier (Immediate / Graded / Return of Premium) is set by the health answers and the three-plan build chart; a yes to any of the first three health questions means no coverage.");
-    }
-
-    return { list, apsNeeded };
-  }
-
-  /* ---------- confidence ---------------------------------------------- */
-
-  /* Grade a disclosed condition's submission depth 0..4 by how much
-     disease-specific evidence the producer captured, not just that a box was
-     ticked. Detail is what actually moves a class estimate (A1c, labs,
-     medication count/names, treatment intensity, duration/stability,
-     complication flags) — so it is weighted far above a single answered form
-     field in the confidence meter. An untouched condition (all defaults) scores
-     the base disclosure only. Returns 0..4. */
-  function conditionDetailDepth(c) {
-    const hasNum = v => v !== "" && v !== undefined && v !== null && !isNaN(Number(v));
-    let depth = 0;
-    // 1) Base disclosure: status/severity/control answered (app defaults are
-    //    "current / mild / good" — treated as the claimed-control baseline).
-    if (c.severity || c.control || c.status) depth += 1;
-    // 2) Duration / stability context (onset age, years stable, resolved years,
-    //    sobriety years) — a long stable history is constructive evidence.
-    if (hasNum(c.onsetAge) || hasNum(c.stableYears) || hasNum(c.resolvedYears) || hasNum(c.yearsSober)) depth += 1;
-    // 3) Lab / quantitative marker — the single highest-signal evidence class:
-    //    A1c for diabetes, medication count, implant years, nevus count.
-    if (hasNum(c.a1c) || hasNum(c.medCount) || hasNum(c.implantYears) || hasNum(c.count)) depth += 1;
-    // 4) Treatment-intensity / complication flags actually engaged (insulin,
-    //    complications, respiratory treatment, recent event, full migraine
-    //    workup, device flags, recurrence, relapse, self-harm, etc.).
-    for (const k of ["insulin", "complications", "treatment", "recentEvent", "investigated", "defibrillator", "cardiomyopathy", "recurrence", "relapse", "residualSymptoms", "selfHarm", "alcoholUse", "treatedWithin12mo", "suicide10yr", "onsetWithin1yr", "dialysis", "cirrhosis"]) {
-      const v = c[k];
-      if (v === true || (typeof v === "string" && v !== "" && v !== "no" && v !== "none")) { depth += 1; break; }
-    }
-    return depth;
-  }
-
-  function computeConfidence(d, flags) {
-    let score = 0, total = 0, missing = [];
-    const checks = [
-      ["heightIn", "height"], ["weightLb", "weight"], ["usedNicotine", "nicotine history"], ["bpSys", "blood pressure"],
-      ["movingViolations3yr", "driving history"], ["alcoholConcern", "substance history"], ["drugAbuse", "drug use history"], ["occupationHazardous", "hazardous occupation status"], ["famCardio", "family history"], ["adlAssistance", "functional status"],
-      ["livingSetting", "living setting"], ["mobility", "mobility"], ["pendingTests", "pending-care status"],
-      ["recentHospitalization", "hospitalization status"], ["recentSurgery", "surgery status"], ["activeSymptom", "symptom status"],
-      ["age", "age"], ["faceAmount", "face amount"], ["existingCoverage", "existing coverage"], ["policyPurpose", "policy purpose"],
-      ["replacement", "replacement status"], ["financing", "premium financing status"], ["marijuana", "marijuana use"],
-      ["paroleCurrent", "probation/parole status (current)"], ["parolePast", "probation/parole history"],
-      ["aviation", "aviation exposure"], ["hazardousSports", "hazardous sports"], ["foreignTravel", "foreign travel"],
-      ["ownership", "coverage ownership"], ["premiumPayor", "premium payor"],
-      ["doctorVisits", "physician-visit frequency"], ["militaryService", "military service"], ["foreignResidence", "foreign residence"], ["nicotineEver", "nicotine ever-use history"]
-    ];
-    for (const [k, label] of checks) {
-      total++;
-      if (has(d, k)) score++; else missing.push(label);
-    }
-    /* Military sub-fields only matter once service is disclosed — asking for
-       a rating from someone who answered "No" would be noise. */
-    if (d.militaryService && d.militaryService !== "no") {
-      for (const [k, label] of [["militaryRating", "VA disability rating"], ["vaTreatment", "VA treatment status"]]) {
-        total++;
-        if (has(d, k)) score++; else missing.push(label);
-      }
-    }
-    /* Condition detail is weighted far above a single answered field: each
-       disclosed condition carries up to 10 confidence points graded by how much
-       disease-specific evidence (A1c, labs, medication count/names, treatment,
-       duration) was captured — not the number of boxes ticked. A well-documented
-       condition contributes full credit; a bare checkbox contributes only its
-       base disclosure, so two profiles with the same number of answered boxes
-       can land in different confidence bands. */
-    if (d.conditions && d.conditions.length) {
-      const perCondition = 10;
-      total += d.conditions.length * perCondition;
-      let condScore = 0;
-      for (const c of d.conditions) condScore += conditionDetailDepth(c) * 2.5;
-      score += condScore;
-      /* An explicitly flagged missing A1c or undisclosed-med mismatch is real
-         uncertainty, not a field-counting artifact — surfaced as a missing signal. */
-      const bare = d.conditions.some(c => conditionDetailDepth(c) <= 1);
-      if (bare) missing.push("condition-specific detail (labs, treatment, stability)");
-    }
-    if (flags.includes("undisclosed_meds")) missing.push("medication-condition mismatch");
-    if (flags.includes("missing_material_data")) missing.push("key data");
-    if (flags.includes("diabetes_a1c_missing")) missing.push("diabetes A1c value");
-    const pct = score / total;
-    if (pct >= 0.9) return { level: "High", missing };
-    if (pct >= 0.7) return { level: "Moderate", missing };
-    return { level: "Low", missing };
-  }
-
-  /* ---------- MAIN ENTRY ---------------------------------------------- */
-
-  /**
-   * Run the full engine.
-   * @param {string} carrierId  'banner' | 'foresters'
-   * @param {object} d          form data
-   */
-  function run(carrierId, d) {
-    const rules = CARRIER_RULES[carrierId];
-    if (!rules) return { error: "Unknown carrier" };
+    const p = Object.prototype.hasOwnProperty.call(PRODUCT_RULES,productId) ? PRODUCT_RULES[productId] : null;
+    const asOf = options.asOf || new Date().toISOString().slice(0,10);
+    if (!date(asOf)) throw new Error("Assessment date must be a valid YYYY-MM-DD date.");
     const out = {
-      carrier: rules.name,
-      guide: rules.guide,
-      inputs: d,
-      domains: {},
-      gates: { postpone: [], decline: [] },
-      provisionalClass: null,
-      finalClass: null,
-      range: null,
-      confidence: null,
-      flags: [],
-      evidence: null,
-      financial: null,
-      comorbidityFlags: [],
-      limitingFactors: [],
-      flatExtra: null,
-      notes: []
+      productId, product: p?.name || "Select a product", carrier: p?.carrier || "",
+      route: p?.route || "", kind: p?.kind || "unverified", assessed: asOf,
+      sources: (p?.sources || []).map(id => source(id)), verification: p?.status || "unverified",
+      eligibility: "not_confirmed", status: "manual_review", finalClass: "manual_review",
+      healthClass: null, displayClass: null, tobaccoBasis: "unknown", tableRating: null, flatExtra: null,
+      benefitTier: null, range: null, issues: [], domains: {}, missing: [], notes: []
     };
-
-    /* ---- 1. Gate screen: postpone / decline ------------------------ */
-    // Decline gates (hardest first)
-    const declineHits = [];
-    if (d.alcoholConcern === "active") declineHits.push("alcohol_active");
-    if (d.drugAbuse === "yes") {
-      const drugDeclineYears = rules.drugDeclineYears || 3;
-      const yr = has(d, "drugAbuseYears") ? yearsAgo(d.drugAbuseYears) : null;
-      if (yr === null || yr < drugDeclineYears) declineHits.push("drug_use_recent");
-    }
-    if (isYes(d.criminalActive) || isYes(d.paroleCurrent)) declineHits.push("criminal_active");
-    if (isYes(d.bankruptcyActive)) declineHits.push("bankruptcy_active");
-    /* Carrier-published maximum issue age: above it the application would not
-       be accepted, so report an eligibility decline instead of fabricating an
-       estimate from data that was never published for that age (e.g., F&G
-       Quantum's BP/cholesterol bands end at 60 because the product issues to 60). */
-    const issueCap = rules.eligibility && rules.eligibility.maxIssueAge;
-    if (issueCap !== undefined && has(d, "age") && Number(d.age) > issueCap) {
-      out.gates.decline.push({ id: "eligibility_age", text: `Outside published issue ages — this carrier issues to age ${issueCap} only`, reason: "Carrier eligibility: the product is not available above the maximum issue age." });
-    }
-    const issueMin = rules.eligibility && rules.eligibility.minIssueAge;
-    if (issueMin !== undefined && has(d, "age") && Number(d.age) < issueMin) {
-      out.gates.decline.push({ id: "eligibility_age_min", text: `Below the published minimum issue age — this carrier issues from age ${issueMin}`, reason: "Carrier eligibility: the product is not available below the minimum issue age." });
-    }
-    /* Carrier-published prescription decline lists (John Hancock, Corebridge):
-       a disclosed medication on the carrier's Rx exclusion list drives the
-       outcome, independent of the disclosed-condition screen. */
-    if (rules.rxDecline && rules.rxDecline.length && d.medicationsText && String(d.medicationsText).trim()) {
-      const rxHits = [];
-      for (const t of String(d.medicationsText).split(/[,;\n]+/)) {
-        const n = normalizeMed(t);
-        if (!n) continue;
-        const words = n.split(" ");
-        if (rules.rxDecline.some(r => words.includes(r)) && !rxHits.includes(n)) rxHits.push(n);
-      }
-      if (rxHits.length) {
-        const shown = rxHits.slice(0, 3).join(", ");
-        out.gates.decline.push({ id: "rx_decline", text: `Prescription(s) on the carrier's Rx exclusion list (${shown})`, reason: rules.rxDeclineNote || "Carrier prescription list — decline." });
-      }
-    }
-    const func = evalFunctional(d);
-    if (func.flag === "adl_dependence") declineHits.push("adl_dependence", "facility_care");
-
-    const conds = d.conditions || [];
-    const condIds = conds.map(c => c.id);
-    const med = evalMedical(rules, d);
-    for (const dc of med.decline || []) out.gates.decline.push(dc);
-    for (const pp of med.postpone || []) out.gates.postpone.push(pp);
-
-    /* Foresters-specific medical screens (non-medical impairment guide) */
-    if (rules.id === "foresters" && rules.medical) {
-      for (const c of conds) {
-        const declineText = rules.medical.medicalDeclinesMap[c.id];
-        if (!declineText) continue;
-        if (c.id === "other_cancer" && (yearsAgo(c.resolvedYears) ?? -1) >= 10) continue; // completed >10 yrs ago, no recurrence: acceptable
-        out.gates.decline.push({ id: "foresters_" + c.id, text: declineText, reason: "Foresters non-medical impairment guide." });
-      }
-      /* Foresters diabetes lanes moved into evalMedical's no-meta branch
-         (final audit): the decline leg now also fires on poor control and
-         severe presentations per the published guide, and the accept leg
-         caps at Standard Plus (rating worksheet) instead of reading as
-         fully favorable. */
-    }
-
-    for (const t of rules.declineTriggers || []) {
-      const hit = conditionDeclineHit(t.id, d, condIds, med, rules, t);
-      if (hit) declineHits.push(t.id);
-    }
-
-    const declineSet = new Set(declineHits);
-    declineSet.forEach(id => {
-      const t = (rules.declineTriggers || []).find(x => x.id === id);
-      if (t && !out.gates.decline.some(g => g.id === t.id)) out.gates.decline.push({ id: t.id, text: t.text, reason: t.reason });
-    });
-
-    // Postpone gates
-    const postponeHits = [];
-    const pend = evalPending(d);
-    if (pend.klass === "postpone") postponeHits.push("pending_test");
-    if (isYes(d.a1cHigh)) postponeHits.push("a1c_high");
-    /* Carriers that tier diabetes complications instead of postponing them
-       (e.g., Americo: complications -> Eagle Select 2) define a
-       complicationsCeiling — the generic postpone trigger is suppressed. */
-    if (isYes(d.diabetesComplications) && !(rules.diabetes && rules.diabetes.complicationsCeiling)) postponeHits.push("diabetes_complications");
-    if (isYes(d.gastricBypassRecent)) postponeHits.push("gastric_bypass_recent");
-    if (isYes(d.pregnancyComplications)) postponeHits.push("pregnancy_complications");
-    /* M2 — condition-recency postpone triggers (Banner's published recency
-       screens: cancer within 12 months / recurrence, MI within 6 months,
-       stent or bypass within 6 months, valve replacement within 6 months,
-       cardiomyopathy 1-3 years, first seizure 3-6 months, stroke within 6
-       months, COPD oxygen/hospitalization within a year, schizophrenia under
-       1 year stability; National Life: heart_recent / cva_recent /
-       epilepsy_recent). These were declared ruleset data the engine never
-       evaluated, so a recent event on a disclosed condition produced no
-       postpone gate. Each trigger fires only when its owning condition has
-       no existing postpone/decline gate — evalMedical already postpones some
-       of these (cancer recency, COPD recency) and a decline supersedes a
-       postpone. */
-    const triggerOwningConditions = {
-      mi_recent: ["cad"], stent_bypass_recent: ["heart_disease"], valve_recent: ["heart_valve_prosthesis"],
-      cardiomyopathy_recent: ["heart_disease"], seizure_recent: ["seizures"], stroke_recent: ["stroke"],
-      copd_recent: ["copd"], cancer_recent: ["other_cancer"], cancer_recurrence: ["other_cancer"],
-      schizophrenia_recent: ["schizophrenia"], heart_recent: ["cad", "heart_disease"], cva_recent: ["stroke"],
-      epilepsy_recent: ["seizures"]
+    const issue = (id,text,status="review",sid=p?.sources[0],pages) => {
+      if (!out.issues.some(i => i.id === id && i.text === text)) out.issues.push({id,text,status,source:sid ? source(sid,pages) : null});
     };
-    for (const t of rules.postponeTriggers || []) {
-      /* A trigger declared in BOTH lists (National Life's suicide_recent)
-         renders once as a decline gate — the postpone twin would duplicate the
-         same published screen on the same result page. */
-      if (declineSet.has(t.id)) continue;
-      if (!conditionPostponeHit(t.id, d, condIds, med, rules, t)) continue;
-      const owning = triggerOwningConditions[t.id] || [];
-      const alreadyGated = owning.some(cid => [...out.gates.postpone, ...out.gates.decline].some(g => g.id === cid));
-      if (!alreadyGated) postponeHits.push(t.id);
-    }
-    /* Combat deployment with a disclosed mental-health condition: the PTSD/TBI
-       screening outcome can matter more than the known history — gate-first.
-       Pushed directly (no carrier publishes a combat-specific trigger), so the
-       gate renders for every carrier with the same honest message. */
-    if (d.militaryService === "combat" && condIds.some(id => ["anxiety", "depression", "bipolar", "schizophrenia", "substance_treatment"].includes(id))) {
-      out.gates.postpone.push({ id: "combat_mental_health", text: "Combat deployment with a disclosed mental-health condition — PTSD/TBI screening outcome pending; carrier direction required before an estimate is reliable.", reason: "Gate-first: the missing screening outcome can matter more than the known history." });
-    }
-
-    if (out.gates.postpone.length || postponeHits.length) {
-      const postponeSet = new Set([...postponeHits, ...out.gates.postpone.map(g => g.id || "condition")]);
-      postponeSet.forEach(id => {
-        if (out.gates.postpone.some(g => g.id === id)) return;
-        const t = (rules.postponeTriggers || []).find(x => x.id === id);
-        if (t && !out.gates.postpone.some(g => g.id === t.id)) out.gates.postpone.push({ id: t.id, text: t.text, reason: t.reason });
-      });
-    }
-
-    /* Deduplicate gate entries. evalMedical can push the same condition twice —
-       its published decline/postpone text and the carrier's auto-decline trigger
-       both fire — so keep the first entry per condition id. The results page,
-       comparison view, and print sheet all consume these lists. */
-    const dedupGates = arr => {
-      const seen = new Set();
-      return arr.filter(g => {
-        const key = g.id || g.text;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+    const need = (key,label,allowed) => {
+      if (!present(d[key]) || d[key] === "unknown" || (allowed && !allowed.includes(d[key]))) {
+        out.missing.push(label); issue("missing_"+key,"Please confirm "+label+".","missing"); return false;
+      } return true;
     };
-    out.gates.decline = dedupGates(out.gates.decline);
-    out.gates.postpone = dedupGates(out.gates.postpone);
-
-    /* ---- 2. Domain best classes ----------------------------------- */
-    const domains = {};
-
-    const nic = evalNicotine(rules, d);
-    domains.tobacco = nic;
-    if (!nic.missing) {
-      if (nic.klass === "tobacco") {
-        out.notes.push(`Tobacco class applies — ${rules.name} offers Preferred Tobacco / Standard Tobacco; table ratings are not available with preferred tobacco classes.`);
-      } else if (nic.klass) {
-        domains.tobacco.klass = nic.klass; // best NT class by lookback
-      }
+    const num = (key,label,min,max) => {
+      const n = numeric(d[key]);
+      if (n === null || n < min || n > max) {out.missing.push(label);issue("invalid_"+key,"Enter a valid "+label+".","missing");return null;} return n;
+    };
+    const past = (v,label) => {
+      if (!date(v) || v > asOf) {out.missing.push(label);issue("date_"+label,"Confirm the date for "+label+" (a past date is needed).","missing");return false;}return true;
+    };
+    const yn = (key,label) => need(key,label,["yes","no"]);
+    const confirm = (key,label) => need(key,label,["yes"]);
+    const history = (key,list,label) => {
+      yn(key,label);
+      if (!Array.isArray(d[list])) {issue("list_"+list,"Confirm the entries for "+label+".","missing");return [];}
+      if (d[key] === "yes" && !d[list].length) issue("empty_"+list,"Add the details for "+label+".","missing");
+      if (d[key] === "no" && d[list].length) issue("conflict_"+list,"The answer and listed "+label+" disagree. Please reconcile them.");
+      if (d[list].some(r => !r || typeof r !== "object" || Array.isArray(r))) issue("invalid_"+list,"Check each entry in "+label+".","missing");
+      return d[list].filter(r => r && typeof r === "object" && !Array.isArray(r));
+    };
+    invalidLists.forEach(key=>issue("invalid_list_"+key,"The saved "+key+" history is malformed. Confirm the entries.","missing"));
+    if (!p) {issue("product","Choose the carrier, product and underwriting route.");return finish();}
+    if (p.status !== "criteria") issue("source_scope",p.status === "unverified" ? "The product's source edition has not been reconciled. A health class cannot be estimated." : "Verified exclusions can be screened, but the complete product rating and application rules still need carrier review.");
+    if (p.scopeNote) out.notes.push(p.scopeNote);
+    out.notes.push("Based on the listed source editions. Carrier records, current application, product terms and state rules can change the result. No underwriting credits are assumed.");
+    if (d.schemaVersion !== 2) issue("schema","This saved interview uses an older or incomplete question set. Confirm the updated histories.");
+    const dobOK = past(d.dob,"date of birth");
+    const age = dobOK ? ageAt(d.dob,asOf,p.ageBasis === "nearest" ? "nearest" : "last") : null;
+    const alternateAge=["last","nearest"].includes(p.ageBasis) ? age : dobOK ? ageAt(d.dob,asOf,"nearest") : null;
+    if(!["last","nearest"].includes(p.ageBasis))issue("age_basis","The supplied product material does not establish the carrier age basis. Confirm it before relying on a class.");
+    out.age = age; out.ageBasis = p.ageBasis || "unconfirmed";
+    need("sex","sex used by the carrier",["male","female"]);
+    const states = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ");
+    need("state","state of residence",states);
+    const face = num("faceAmount","coverage amount",1,1000000000);
+    num("existingCoverage","existing life coverage",0,1000000000);
+    need("policyPurpose","purpose of coverage",["income","mortgage","family","estate","business","final_expense","other"]);
+    yn("replacement","whether coverage replaces a policy");yn("financing","whether premiums are financed");
+    if (age !== null && age < 18) issue("juvenile","Juvenile risks require the separate carrier application and growth charts; adult classes are withheld.");
+    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable");
+    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable");
+    if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
+    const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
+    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable");
+    if (p.id.startsWith("foresters_") && p.route === "Non-medical" && numeric(d.existingCarrierCoverage) === null) issue("carrier_total","Confirm total existing Foresters coverage; non-medical limits include coverage already in force.","review","D152",[7]);
+    if (p.id.startsWith("foresters_") && p.route === "Non-medical" && face + (numeric(d.existingCarrierCoverage)||0) > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
+    if (p.id === "fg_quantum" && face + (numeric(d.existingCoverage)||0) > 1000000) issue("total_line","Total in-force and requested coverage exceeds Quantum's $1 million total line.","unavailable","D141",[9]);
+    if (["fg_quantum","sbli_easytrak"].includes(p.id) && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],p.id === "fg_quantum" ? [5] : [4]);
+    if (d.financing === "yes" || ["estate","business","other"].includes(d.policyPurpose)) issue("financial","Coverage purpose or premium financing needs financial and ownership review.");
+    if (d.policyPurpose === "income") {
+      const income = num("income","annual earned income",0,1000000000);
+      if (p.id.startsWith("foresters_") && age >= 18 && income !== null) {
+        const factor = age <= 35 ? 30 : age <= 45 ? 25 : age <= 55 ? 20 : age <= 60 ? 15 : age <= 70 ? 10 : null;
+        if (!factor || face + (numeric(d.existingCoverage)||0) > income*factor) issue("income_limit","Income replacement amount needs financial justification under Foresters' income factors.","review","D152",[4]);
+      } else if (income !== null) out.notes.push("The carrier must confirm the financial justification for the total coverage requested.");
     }
-
-    const build = evalBuild(rules, d);
-    domains.build = build;
-    if (build.klass === "decline") {
-      out.gates.decline.push({ id: "bmi_decline", text: `Build: BMI ${build.bmi} (${build.bandName})`, reason: "Carrier BMI chart — decline band." });
+    residency();
+    const driving = history("drivingHistory","driving","driving history");
+    confirm("drivingComplete","that all driving events are listed");
+    need("licenseStatus","current driver's license status",["valid","never","suspended","revoked","expired"]);
+    for (const r of driving) {
+      if (!["minor","speeding","serious","reckless","dui","suspension","revocation"].includes(r.type)) issue("drive_type","Choose a type for each driving event.","missing");
+      past(r.date,"driving event");
+      if (r.type === "speeding" && (numeric(r.mphOver) === null || numeric(r.speed) === null || numeric(r.mphOver)<0 || numeric(r.speed)<0)) issue("speed_detail","Confirm speed and miles per hour over the posted limit.","missing");
     }
-    /* Simplified-issue rule (American Amicable): a medical condition combined
-       with build exceeding Table 2 is not eligible, even though build alone
-       within Table 4 would be issued at Standard. */
-    if (rules.build && rules.build.rules && rules.build.rules.conditionTable2Decline && build.aboveTable2 && (d.conditions || []).length) {
-      out.gates.decline.push({ id: "bmi_condition_decline", text: "Medical condition combined with build exceeding Table 2 — not eligible", reason: "Express Term / Term Made Simple build rule." });
+    drivingScreens(driving);
+    criminal();
+    const family = history("familyHistory","family","biological family history");
+    confirm("familyComplete","that family history is complete");
+    for (const r of family) {
+      if (!["parent","sibling"].includes(r.relation) || !present(r.member) || !["cardiovascular","cancer","huntington","polycystic_kidney","other"].includes(r.disease) || !["yes","no"].includes(r.death)) issue("family_detail","Confirm the relative, disease and whether it caused a death.","missing");
+      if (numeric(r.diagnosisAge) === null || numeric(r.diagnosisAge)<0 || numeric(r.diagnosisAge)>120) issue("family_diagnosis_age","Confirm each relative's age at diagnosis.","missing");
+      if (r.death === "yes" && (numeric(r.deathAge) === null || numeric(r.deathAge)<0 || numeric(r.deathAge)>120)) issue("family_death_age","Confirm each relative's age at death.","missing");
+      if (r.disease === "cancer" && (!["male","female"].includes(r.sex)||!present(r.cancerType)||r.cancerType === "unknown")) issue("family_cancer_type","Confirm the family cancer type.","missing");
+      if (["huntington","polycystic_kidney","other"].includes(r.disease)) issue("inherited_risk","This family condition needs carrier review; it is outside the modeled cardiovascular/cancer criteria.");
     }
+    const conds = medical();
+    nicotine(conds);
+    build();
+    productLimits();
+    medications(conds);
+    for (const [key,label] of [["hazardousOccupation","hazardous occupation"],["aviation","private aviation"],["hazardousSports","hazardous sports"],["militaryDeployment","current or ordered hazardous military deployment"]]) {
+      yn(key,label); if (d[key] === "yes") issue("exposure_"+key,"Carrier review is needed for "+label+". No generic military or VA-percentage rating is applied.","review",p.sources[0]);
+    }
+    if (p.id.startsWith("foresters_")) {
+      yn("forestersDeployment","deployment or notice of deployment under Foresters' specific geographic screen");
+      if(d.forestersDeployment === "yes")issue("warzone","Foresters does not offer coverage for deployment or notice of deployment to a war zone, an area of conflict/political instability, or a country outside North America.","decline","D152",[5]);
+    }
+    if (p.status === "criteria" && p.kind !== "final_expense") rateClasses(driving,family);
+    confirm("historyConfirmed","that the interview is complete and accurate");
+    return finish();
 
-    const bp = evalBP(rules, d);
-    domains.bp = bp;
-
-    const chol = evalCholesterol(rules, d);
-    domains.cholesterol = chol;
-
-    const drv = evalDriving(rules, d);
-    domains.driving = drv;
-
-    const fam = evalFamilyHistory(rules, d);
-    domains.family = fam;
-
-    domains.medical = med;
-
-    const meds = evalMedications(rules, d);
-    domains.medications = meds;
-
-    const sub = evalSubstance(rules, d);
-    domains.substance = sub;
-
-    /* Hazardous occupation / avocation (carrier-published class criteria,
-       e.g., MOO: PP no hazardous activity in 5 years, P in 2 years,
-       Standard Plus allows flat extras; F&G: Preferred + flat-extra rating).
-       Any of the hazardous-occupation / aviation / hazardous-sports answers
-       being "yes" triggers the avocation lane; all three must be explicitly
-       "no" for a clean avocation reading.
-       Carriers whose modeled guide publishes no avocation lane (Foresters,
-       Americo, Corebridge) must not silently treat a disclosed hazardous
-       activity as clean: mirror the medical fallback and cap conservatively at
-       Standard with an explicit review note. Carriers that publish a distinct
-       aviation lane (Transamerica: private aviation may be offered with or
-       without a ratable aviation flat extra; Quility: aviation accepted with an
-       Aviation Exclusion Rider) get that published lane instead of the generic
-       fallback. */
-    const hazYes = isYes(d.occupationHazardous) || isYes(d.aviation) || isYes(d.hazardousSports);
-    const hazNo = isNo(d.occupationHazardous) && isNo(d.aviation) && isNo(d.hazardousSports);
-    const avOnly = isYes(d.aviation) && !isYes(d.occupationHazardous) && !isYes(d.hazardousSports);
-    if (hazYes) {
-      if (rules.avocation) {
-        // Aviation-only disclosures may use a distinct published lane (e.g.,
-        // Transamerica: private aviation with a ratable aviation flat extra at
-        // Preferred). Hazardous occupation/sports use the general lane.
-        const fe = (avOnly && rules.avocation.aviationFlatExtra) || rules.avocation.flatExtra;
-        if (fe) {
-          // Flat-extra lane: the base class is the best class available with a
-          // flat extra (e.g., F&G Preferred, MOO Standard Plus, Transamerica
-          // Preferred for private aviation); the outcome conversion happens
-          // after the class merge below.
-          domains.avocation = { klass: fe.baseClass, flatExtra: fe, flag: "hazardous_avocation", detail: fe.text };
-        } else {
-          // Carrier caps below preferred instead of offering a flat extra
-          // (e.g., National Life: Verified Standard pending underwriter review;
-          // Transamerica hazardous avocation: individual consideration).
-          domains.avocation = { klass: rules.avocation.classCap || "standard_plus", detail: rules.avocation.currentHazardousText, flag: "hazardous_avocation" };
+    function productLimits() {
+      if (p.kind === "term") {
+        need("termYears","term length");
+        const term=Number(d.termYears),entry=p.terms?.[term];
+        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",p.sources[p.sources.length-1]);
+        if (entry && age!==null && out.tobaccoBasis!=="unknown") {
+          let cap=entry[out.tobaccoBasis === "tobacco"?1:0];
+          if (p.id === "transamerica_super" && face<100000) cap=({10:[80,80],15:[75,70],20:[65,65],25:[60,55],30:[50,45]})[term][out.tobaccoBasis === "tobacco"?1:0];
+          if(age>cap)issue("term_age","Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",p.sources[p.sources.length-1]);
         }
+      }
+      if (p.id === "sbli_easytrak") {
+        need("employment","work status",["employed","spouse","student","seeking","retired","other"]);
+        if (["student","seeking"].includes(d.employment) && (face>100000 || d.employment === "student" && age>=26)) issue("sbli_employment","EasyTrak student/seeking-work limits are not met.","unavailable","D347",[4]);
+        if (d.employment === "retired" && (age<49 || face>250000)) issue("sbli_retired","EasyTrak retired eligibility requires age49+ and coverage at most $250,000.","unavailable","D347",[4]);
+        if (d.employment === "other") issue("sbli_work_review","This work status requires EasyTrak eligibility review.","review","D347",[4]);
+        if (age>50 && Number(d.termYears)===30) issue("sbli_term","EasyTrak30-year term ends at issue age50.","unavailable","D347",[5]);
+      }
+      if (p.id === "corebridge_legacy") {
+        const existing=num("existingCarrierCoverage","existing AGL GIWL/SIWL coverage",0,1000000000);
+        const levelMax=age<=60?25000:age<=70?30000:35000;
+        if(face>levelMax || existing!==null && face+existing>35000 || out.benefitTier === "graded" && existing!==null && face+existing>25000) issue("core_amount","The requested amount / total existing AGL coverage exceeds the source benefit-design limit.","unavailable","D105",[7,9]);
+        if(age>=71&&out.tobaccoBasis === "tobacco"&&out.benefitTier === "level")issue("core_level_smoker","The supplied product guide does not offer Level benefits to smokers aged71–80.","unavailable","D105",[7]);
+        if(d.replacement === "yes" && out.benefitTier === "graded")issue("core_graded_replacement","Replacement is permitted only for the Level design in this supplied guide.","unavailable","D105",[9]);
+      }
+    }
+    function residency() {
+      yn("usResident","current US residence");
+      if(date(d.usSince) && date(d.dob) && d.usSince<d.dob)issue("residence_birth","The US residence start date precedes the date of birth.","missing");need("citizenship","citizenship or immigration status",["citizen","permanent","visa","itin","other"]);
+      past(d.usSince,"start of continuous US residence");yn("intentStay","intent to remain in the US");
+      yn("foreignResidence","planned foreign residence");
+      const travel = history("travelHistory","travels","foreign travel in the past two years or planned next two years");
+      for (const r of travel) {
+        if (!present(r.country) || !present(r.purpose) || !date(r.start) || !date(r.end) || r.end<r.start) issue("travel_detail","Confirm country, purpose and travel dates for each trip.","missing");
+      }
+      if (travel.length || d.travelHistory === "yes") issue("travel_risk","Destinations and current country risk must be checked by the carrier. Nationality alone does not determine travel risk.");
+      if (d.usResident === "no" || d.foreignResidence === "yes" || d.intentStay === "no") {
+        if (["corebridge_legacy","fg_quantum"].includes(p.id)) issue("residence_ineligible","This product requires permanent US residence and does not accept this disclosed residency plan.","unavailable");
+        else issue("foreign_residence","Foreign residence requires carrier review and may require a different product.");
+      }
+      if (["visa","itin","other"].includes(d.citizenship)) {
+        if (d.citizenship === "visa") {
+          need("visaType","visa type");if (!date(d.visaExpiry)) issue("visa_expiry","Confirm visa expiration date.","missing");
+          if (date(d.visaExpiry) && d.visaExpiry <= asOf) issue("visa_expired","Expired immigration documentation needs review.");
+          if (p.id.startsWith("foresters_") && date(d.visaExpiry) && (date(d.visaExpiry)-date(asOf))/86400000 <= 60 && d.visaRenewal !== "yes") issue("visa_renewal","Foresters requires renewal confirmation for a visa expiring within 60 days.","review","D199",[1]);
+          if (p.id.startsWith("foresters_") && ["R1","TN"].includes(String(d.visaType).toUpperCase().replace(/[ -]/g,"")) && d.workAuthorization !== "yes") issue("work_authorization","R1/TN cases need work authorization confirmation.","review","D199",[2]);
+        }
+        if (p.id === "corebridge_legacy") issue("citizenship_ineligible","SimpliNow Legacy accepts US citizens and permanent residents/green card holders only.","unavailable","D105",[9]);
+        else if (p.id !== "fg_quantum") issue("immigration_review","Confirm the carrier's current immigration/ITIN criteria and required documents.","review",p.id.startsWith("foresters_") ? "D199" : p.sources[0]);
+      }
+      if (p.id === "fg_quantum" && ["permanent","visa","itin","other"].includes(d.citizenship)) {
+        if (face > 300000) issue("noncitizen_face","Quantum limits non-US citizens to $300,000.","unavailable","D141",[13]);
+        const visas = ["E1","E2","E3","EB5","OPTF1","H1B","H1C","H2A","H2B","H4","L1","L2","K1","K3","O1","O3","P1","P2","P3","P4","TN","TN1","V1"];
+        if (d.citizenship !== "permanent" && !(d.citizenship === "visa" && visas.includes(String(d.visaType).toUpperCase().replace(/[ -]/g,"")))) issue("quantum_status","This immigration status is outside Quantum's published eligible list.","unavailable","D141",[13]);
+        if (date(d.usSince) && d.usSince > shift(asOf,-6)) issue("quantum_residence","Quantum requires six consecutive months in the US during the past year for non-US citizens.","unavailable","D141",[13]);
+        issue("quantum_documents","Confirm US address, income/taxes, application/delivery, payment bank and identity documents for the noncitizen case.","review","D141",[13]);
+      }
+      if (p.id === "sbli_easytrak") {
+        yn("healthInsurance","established US health insurance");
+        if (date(d.usSince) && d.usSince > shift(asOf,-24)) issue("sbli_residence","EasyTrak requires two years of US residence.","unavailable","D347",[4]);
+        if (d.healthInsurance === "no") issue("sbli_insurance","EasyTrak requires established health insurance.","unavailable","D347",[4]);
+      }
+    }
+    function drivingScreens(rows) {
+      const duis=rows.filter(r=>r.type === "dui" && date(r.date));
+      if (["banner_beyondterm","banner_flex"].includes(p.id)) {
+        if (duis.some(r=>within(r.date,24,asOf,true)) || duis.filter(r=>within(r.date,120,asOf)).length>1 || ["suspended","revoked"].includes(d.licenseStatus)) issue("beyond_driving_exclusion","DUI within two years, multiple DUIs within ten years, or a currently suspended/revoked license fails BeyondTerm/Flex screening.","decline","D077",[5,7,11]);
+      }
+      if (p.id === "corebridge_legacy" && duis.some(r=>within(r.date,24,asOf))) issue("core_dui","DUI within 24 months fails SimpliNow Legacy screening.","decline","D106",[4]);
+      if (p.id.startsWith("foresters_") && p.route === "Non-medical" && (duis.some(r=>within(r.date,12,asOf)) || duis.length>=2 && duis.some(r=>within(r.date,60,asOf)))) issue("foresters_nonmed_dui","This DUI history fails Foresters' non-medical route; fully underwritten consideration requires a separate assessment.","decline","D152",[18]);
+      if (["sbli_easytrak","moo_tle","moo_iule"].includes(p.id) && duis.some(r=>within(r.date,60,asOf))) issue("simplified_dui","DUI within five years fails this simplified product's screen.","decline",p.id === "sbli_easytrak" ? "D347" : "D295",p.id === "sbli_easytrak" ? [11] : [7,22]);
+      if (p.id === "uhl_otherterm" && rows.some(r=>["dui","suspension","revocation"].includes(r.type)&&within(r.date,60,asOf))) issue("uhl_partb_driving","This five-year driving history fails Part B term plans. Simple Term 20 DLX has a separate application screen.","decline","D459",[7]);
+      if (p.id === "transamerica_super") {
+        if (duis.some(r=>within(r.date,12,asOf))) issue("ta_dui_1","DUI within one year fails Transamerica's published impairment screen.","decline","D370",[27]);
+        if (duis.some(r=>ageAt(d.dob,r.date)!==null && ageAt(d.dob,r.date)<21 && within(r.date,48,asOf)) || duis.filter(r=>within(r.date,48,asOf)).length>1) issue("ta_dui_young_multiple","DUI before age 21 in four years, or multiple DUIs within four years, fails the published screen.","decline","D370",[27]);
+      }
+    }
+    function criminal() {
+      const rows = history("criminalHistory","criminal","criminal history (including misdemeanors and charges)");
+      confirm("criminalComplete","that criminal events and sentence dates are complete");
+      for (const [key,label] of [["incarcerated","current incarceration"],["pendingCharges","pending criminal charges"],["probationCurrent","current probation"],["paroleCurrent","current parole"],["outstandingRestitution","outstanding criminal fines or restitution"]]) yn(key,label);
+      const active = ["incarcerated","pendingCharges","probationCurrent","paroleCurrent"].some(k=>d[k] === "yes");
+      const foresters = p.id.startsWith("foresters_");
+      if (active) {
+        if (foresters || p.id === "transamerica_super" || p.id.startsWith("banner_") && p.id !== "banner_opterm" || p.id === "fg_quantum") issue("criminal_active","Current incarceration, pending charges, probation or parole fails this product's criminal screen.","decline",foresters ? "D152" : p.sources[0],foresters ? [18] : p.id === "transamerica_super" ? [26] : p.id === "fg_quantum" ? [8] : [11]);
+        else if (p.id === "corebridge_legacy" && d.incarcerated === "yes") issue("incarcerated","Current incarceration fails the SimpliNow Legacy screen.","decline","D106",[4]);
+        else issue("criminal_current_review","Current criminal status needs carrier review.");
+      }
+      if (d.outstandingRestitution === "yes") issue("restitution","Outstanding fines/restitution need carrier review.");
+      for (const r of rows) {
+        if (!["felony","misdemeanor","arrest"].includes(r.type) || !["convicted","pending","dismissed","other"].includes(r.disposition)) issue("criminal_detail","Confirm offense type and outcome for each criminal event.","missing");
+        past(r.date,"charge or arrest");
+        if (r.disposition === "convicted") past(r.convictionDate,"conviction");
+        for (const key of ["jail","probation","parole"]) {
+          if (!["yes","no"].includes(r[key])) issue("sentence_"+key,"Confirm whether jail, probation and parole were part of each sentence.","missing");
+          if (r[key] === "yes") past(r[key+"End"],key+" completion or release");
+        }
+        if (r.disposition !== "convicted") {issue("criminal_disposition","A charge or arrest is not assumed to be a conviction; the carrier must assess the disclosed outcome.");continue;}
+        if (r.type === "felony") {
+          if (["banner_beyondterm","banner_flex","sbli_easytrak"].includes(p.id) && within(r.convictionDate,120,asOf)) issue("felony_10","Felony conviction within ten years fails this product's screen.","decline",p.sources[0],p.id === "sbli_easytrak" ? [11] : [11]);
+          if (p.id === "moo_full" && within(r.convictionDate,120,asOf)) issue("moo_felony","MOO preferred and Standard Plus criteria exclude felony convictions within ten years; Standard/substandard requires review.","review","D282",[11,12,13]);
+          if (p.id === "corebridge_legacy" && within(r.convictionDate,24,asOf)) issue("core_felony","Felony conviction within 24 months fails the SimpliNow Legacy screen.","decline","D106",[4]);
+          if (p.id.startsWith("uhl_") && within(r.convictionDate,84,asOf)) issue("uhl_felony","Felony conviction within seven years fails the Texas term application screen.","decline","D459",[7]);
+        }
+        if (p.id === "fg_quantum" && [r.jailEnd,r.probationEnd,r.paroleEnd].some(v=>within(v,12,asOf))) issue("fg_release","Release from jail, probation or parole within 12 months fails Quantum's screen.","decline","D141",[8]);
+        if (foresters && ((r.jail === "no" && within(r.probationEnd,12,asOf)) || (r.jail === "yes" && within(r.paroleEnd,60,asOf)))) issue("foresters_release","Foresters consideration starts one year after probation without jail, or five years after parole with jail.","decline","D152",[18]);
+        else if (foresters && r.jail === "yes" && r.parole !== "yes") issue("foresters_sentence","Jail history without a confirmed parole completion requires carrier consideration.","review","D152",[18]);
+        if (p.id === "transamerica_super" && [r.probationEnd,r.paroleEnd].some(v=>within(v,12,asOf))) issue("ta_release","Transamerica requires one year after probation/parole ends before reconsideration.","decline","D370",[26]);
+        if (p.id === "royal") issue("royal_criminal","The supplied Royal guide does not accept criminal background; confirm the current product/application.","review","D309",[15]);
+        if (!["corebridge_legacy","banner_beyondterm","banner_flex","sbli_easytrak","uhl_simple20","uhl_otherterm"].includes(p.id)) issue("criminal_history_review","Past criminal history requires the carrier's case review after any published waiting period.");
+      }
+    }
+    function medical() {
+      const rows = history("medicalHistory","conditions","past and current medical diagnoses");
+      confirm("medicalComplete","that all diagnoses and treatments are disclosed");
+      const hospitals = history("hospitalHistory","hospitals","hospitalizations");
+      const surgeries = history("surgeryHistory","surgeries","operations and procedures");
+      for (const r of [...hospitals,...surgeries]) {past(r.date,"hospitalization or procedure");if (!present(r.reason)) issue("care_reason","Enter the reason for each hospitalization/procedure.","missing");}
+      for (const [key,label] of [["pendingCare","pending tests, treatment or surgery"],["activeSymptoms","unexplained current symptoms"],["oxygen","prescribed oxygen other than sleep-apnea CPAP"],["dialysis","current dialysis"],["adlAssistance","help with daily activities due to illness"],["careFacility","current nursing, hospital or hospice confinement"],["homeHealth","current or advised home nursing care"],["terminalIllness","diagnosed terminal illness"]]) {
+        yn(key,label);
+        if (d[key] === "yes") {
+          if (key === "terminalIllness") {
+            const prognosis=numeric(d.terminalMonths),limit=p.id === "corebridge_legacy"?12:p.id.startsWith("uhl_")?24:null;
+            if(limit&&prognosis!==null&&prognosis>0&&prognosis<=limit)issue("terminal_prognosis","The disclosed prognosis meets this product's terminal-illness exclusion.","decline",p.sources[0],p.id === "corebridge_legacy"?[6]:[7]);
+            else issue("terminal_review","Confirm terminal-illness prognosis and carrier rules before assigning an outcome.");
+          }
+          else if (p.id === "corebridge_legacy" && ["oxygen","dialysis","adlAssistance","careFacility","homeHealth"].includes(key)) issue("medical_"+key,"The disclosed "+label+" fails the SimpliNow Legacy medical screen.","decline","D106",[5,6]);
+          else if (p.id.startsWith("uhl_") && ["oxygen","dialysis","adlAssistance","careFacility","homeHealth","pendingCare"].includes(key)) issue("medical_"+key,"The disclosed "+label+" fails the Texas term application screen.","decline","D459",[7]);
+          else issue("medical_"+key,"The disclosed "+label+" requires medical underwriting review.");
+        }
+      }
+      if (d.pendingCare === "yes" && !present(d.pendingDetails)) issue("pending_detail","Describe the pending care.","missing");
+      if (d.activeSymptoms === "yes" && !present(d.symptomDetails)) issue("symptom_detail","Describe the unexplained symptoms.","missing");
+      yn("substanceHistory","any history of alcohol/drug abuse or treatment");
+      if (d.substanceHistory === "yes") {past(d.substanceLastDate,"last substance use or treatment");issue("substances","Alcohol or drug abuse/treatment needs the selected carrier's medical review.");}
+      need("marijuana","marijuana use",["none","past","current","medical"]);
+      if (d.marijuana !== "none" && present(d.marijuana)) issue("marijuana","Marijuana use needs frequency, form and any underlying condition reviewed; a favorable class is withheld.");
+      yn("priorInsuranceAdverse","past rated, declined or postponed life insurance");
+      if (d.priorInsuranceAdverse === "yes") {past(d.priorInsuranceDate,"prior insurance decision");issue("prior_decision","The prior insurance decision requires carrier review.");}
+      yn("disabled","current or recent disability");if (d.disabled === "yes") issue("disability","Review the disabling condition and disability dates with the carrier.");
+      if (p.id.startsWith("uhl_") && hospitals.filter(r=>within(r.date,12,asOf) && r.minor !== "yes").length >= 2) issue("uhl_hospitals","Two non-minor hospitalizations in 12 months fail the Texas term application screen.","decline","D459",[7]);
+      for (const r of rows) {
+        if (p.id.startsWith("uhl_")) {
+          const recent=r.status === "current" || within(r.diagnosisDate,60,asOf) || within(r.treatmentEnd,60,asOf);
+          const excluded=["coronary_disease","heart_failure","atrial_fibrillation","stroke","tia","kidney_disease","end_stage_kidney","cirrhosis","hepatitis_b","hepatitis_c","copd","als","parkinsons","multiple_sclerosis","huntington"];
+          if (r.id === "cancer" && recent && present(r.cancerType) && !["basal_cell","unknown"].includes(r.cancerType))issue("uhl_cancer","Cancer other than basal cell within five years fails the Texas Part A screen.","decline","D459",[7]);
+          if (["hiv","aids","alzheimers","dementia","transplant"].includes(r.id) || recent&&excluded.includes(r.id)) issue("uhl_medical_"+r.id,"The disclosed condition meets the Texas Part A term application exclusion.","decline","D459",[7]);
+          if(p.id === "uhl_otherterm" && recent && (["schizophrenia","bipolar","suicide_attempt"].includes(r.id)||r.id === "lupus"&&r.lupusType === "systemic"||r.id === "diabetes"&&r.insulin === "yes"))issue("uhl_partb_"+r.id,"This condition meets Part B's five-year exclusion; Simple Term20DLX has a separate screen.","decline","D459",[7]);
+        }
+        if (!present(r.id) || !present(r.name)) issue("condition_name","Name each medical condition.","missing");
+        past(r.diagnosisDate,"diagnosis of "+(r.name||"condition"));
+        if (!["current","resolved","unknown"].includes(r.status) || r.status === "unknown" || !["yes","no"].includes(r.complications) || !["yes","no"].includes(r.hospitalized) || !["yes","no"].includes(r.recurrence)) issue("condition_detail","Confirm current status, complications, hospitalization and recurrence for "+(r.name||"each condition")+".","missing");
+        if(r.insulin === "yes" && !(d.medications||[]).some(m=>m.conditionId === "diabetes" && m.current === "yes" && /insulin/i.test(m.name||"")))issue("insulin_rx","Insulin is reported but its current prescription is missing; reconcile the treatment history.");
+        if (r.status === "resolved") past(r.treatmentEnd,"last treatment for "+r.name);
+        if (r.hospitalized === "yes") past(r.hospitalDate,"condition hospitalization");
+        if (!present(r.treatment)) issue("treatment_detail","Describe treatment (or explicitly enter none) for "+r.name+".","missing");
+        if (p.id === "corebridge_legacy") coreCondition(r,rows);
+        else if (!["hypertension","cholesterol"].includes(r.id)) issue("condition_review_"+r.id,(r.name||"This condition")+" needs condition-specific carrier review; no mild/good-control default or guessed table is applied.");
+        if (r.complications === "yes" || r.recurrence === "yes") issue("condition_complex_"+r.id,"Complications/recurrence for "+r.name+" need review before a final class is estimated.");
+      }
+      if (hospitals.length || surgeries.length) issue("care_history","Hospitalizations and procedures require review of cause, treatment and recovery.");
+      return rows;
+    }
+    function coreCondition(r,rows) {
+      const alwaysDecline = ["alzheimers","dementia","als","huntington","hiv","aids","transplant","cirrhosis","suicide_attempt","end_stage_kidney"];
+      if (alwaysDecline.includes(r.id)) {issue("core_condition_"+r.id,r.name+" fails the SimpliNow Legacy medical screen.","decline","D106",[3,5,6]);return;}
+      if (r.id === "diabetes") {
+        const a1c = numeric(r.a1c);
+        if (a1c === null || a1c < 1 || a1c > 25 || !past(r.a1cDate,"A1c test") || !["yes","no"].includes(r.insulin)) issue("diabetes_detail","Confirm measured A1c, test date and insulin use.","missing","D106",[4]);
+        else if (Math.abs(a1c*10-Math.round(a1c*10))>0.000001) issue("a1c_precision","The source uses one-decimal A1c bands; a value between printed boundaries needs confirmation.","review","D106",[4]);
+        else if (a1c >= 10 || (r.hospitalized === "yes" && within(r.hospitalDate,24,asOf)) || rows.some(c=>["stroke","coronary_disease"].includes(c.id))) issue("core_diabetes","A1c 10+, diabetic hospitalization within 24 months, or diabetes plus stroke/coronary disease fails this screen.","decline","D106",[4]);
+        else if (a1c > 8.6 || r.insulin === "yes") benefit("graded","Diabetes falls in the source's Graded benefit category.","D106",[4]);
+        else benefit("level","A1c 8.6 or lower without insulin supports the Level category, subject to the other screens.","D106",[4]);
+      } else if (r.id === "atrial_fibrillation") {
+        if (!["yes","no"].includes(r.chronic24mo) || !["yes","no"].includes(r.dailyAnticoagulant)) issue("af_detail","Confirm chronic atrial fibrillation in 24 months and daily anticoagulant treatment.","missing","D106",[4]);
+        else benefit(r.chronic24mo === "yes" || r.dailyAnticoagulant === "no" ? "graded" : "level","The AF category depends on chronic diagnosis and daily anticoagulant use, not the drug name alone.","D106",[4]);
+      } else if (["multiple_sclerosis","parkinsons","hepatitis_b","schizophrenia"].includes(r.id)) benefit("graded",r.name+" is a Graded category in the supplied guide.","D106",[3,5]);
+      else if (["lupus","bipolar","kidney_disease"].includes(r.id) && (r.status === "current" || within(r.treatmentEnd,48,asOf))) benefit("graded",r.name+" within the stated 48-month window supports Graded screening.","D106",[5]);
+      else if (!["hypertension","cholesterol"].includes(r.id)) issue("core_unmodeled_"+r.id,"The exact timing/subtype for "+r.name+" requires carrier review.","review","D106",[3,4,5,6]);
+      if (rows.filter(c=>!["hypertension","cholesterol"].includes(c.id)).length > 1) issue("core_combination","The guide warns that medical combinations can worsen the decision; a single-condition tier is withheld.","review","D106",[6]);
+    }
+    function benefit(tier,text,sid,pages) {
+      if (out.benefitTier !== "graded") out.benefitTier = tier;
+      out.domains.medical = {detail:text,source:source(sid,pages)};
+    }
+    function nicotine(conds) {
+      need("nicotineHistory","complete tobacco/nicotine history",["never","yes"]);
+      const rows = Array.isArray(d.nicotine) ? d.nicotine.filter(r=>r && typeof r === "object") : [];
+      if (!Array.isArray(d.nicotine) || (d.nicotineHistory === "yes" && !rows.length)) issue("nicotine_list","List every tobacco, vaping and nicotine/cessation product used.","missing");
+      if (d.nicotineHistory === "never" && rows.length) issue("nicotine_conflict","Never-use answer conflicts with the listed products.");
+      if (d.nicotineHistory === "yes") confirm("nicotineComplete","that all tobacco/nicotine products are listed");
+      for (const r of rows) {
+        if (!["cigarette","cigar","pipe","chew","nicotine","vape","vape_no_nicotine","cessation"].includes(r.product)) issue("nicotine_type","Select a type for each nicotine/tobacco product.","missing");
+        past(r.lastDate,"last use of "+(r.product||"nicotine"));
+        if (r.current === "yes" && r.lastDate !== asOf) issue("current_nicotine_date","For a currently used product, confirm today's date as its last-use date.","missing");
+        if (!["yes","no"].includes(r.current)) issue("nicotine_current","Confirm whether each product is still used.","missing");
+      }
+      if (d.cotinineResult === "positive")issue("cotinine_conflict","A positive cotinine result needs reconciliation with all disclosed use before a class is estimated.");
+      if (d.nicotineHistory === "never") {out.tobaccoBasis="non_tobacco";out.domains.nicotine={ceiling:p.kind === "final_expense" ? null : "preferred_plus",detail:"Explicitly reported no lifetime tobacco/nicotine/vaping use.",source:source(p.sources[0])};return;}
+      if (!rows.length) return;
+      const relevant = p.id === "foresters_strong" ? rows.filter(r=>r.product === "cigarette") : rows;
+      if (p.id === "corebridge_legacy") {
+        if (relevant.some(r=>r.current === "yes")) out.tobaccoBasis="tobacco";
+        else issue("core_tobacco_window","The supplied guide does not establish a general tobacco class lookback; confirm the application definition.","review","D106",[4,5]);
+        return;
+      }
+      const cigar = relevant.filter(r=>r.product === "cigar" && within(r.lastDate,12,asOf));
+      let exception = false;
+      if (cigar.length && ["banner_opterm","moo_full","transamerica_super","foresters_yourterm_med","foresters_advantage_med","foresters_smart_med"].includes(p.id)) {
+        const maxMonth = p.id === "moo_full" ? 2 : 1, maxYear = p.id === "moo_full" ? 24 : 12;
+        const countOK = cigar.every(r=>numeric(r.perMonth) !== null && numeric(r.perYear) !== null && Number(r.perMonth)>=0 && Number(r.perYear)>=0 && Number(r.perMonth)<=maxMonth && Number(r.perYear)<=maxYear);
+        const tested = d.cotinineResult === "negative" && date(d.cotinineDate) && within(d.cotinineDate,12,asOf);
+        const otherWindow = 12;
+        const otherOK = !relevant.some(r=>r.product !== "cigar" && within(r.lastDate,otherWindow,asOf));
+        exception = countOK && tested && otherOK;
+        if (!countOK || !tested) issue("cigar_evidence","An occasional-cigar exception needs admitted monthly/annual use and dated negative cotinine evidence. Non-tobacco status is withheld until confirmed.");
+      }
+      let tobaccoMonths = p.id === "transamerica_super" ? 24 : 12;
+      const recent = relevant.some(r=>within(r.lastDate,tobaccoMonths,asOf));
+      out.tobaccoBasis = recent && !exception ? "tobacco" : "non_tobacco";
+      let ceiling = "preferred_plus";
+      if (out.tobaccoBasis === "non_tobacco" && !exception && p.nicotine) {
+        ceiling = CLASS_ORDER.slice(0,4).find((k,i)=>!relevant.some(r=>within(r.lastDate,p.nicotine[i],asOf))) || "standard";
+      }
+      if (exception) {
+        const otherProducts=relevant.filter(r=>r.product !== "cigar");
+        ceiling=CLASS_ORDER.slice(0,4).find((k,i)=>!otherProducts.some(r=>within(r.lastDate,(p.nicotine||[36,24,12,12])[i],asOf)))||"standard";
+        if (p.id.startsWith("foresters_") && rank(ceiling)<rank("preferred")) ceiling="preferred";
+        if (p.id === "banner_opterm" && conds.some(c=>["diabetes","asthma"].includes(c.id)) && rank(ceiling)<rank("preferred")) ceiling="preferred";
+      }
+      out.domains.nicotine={ceiling,detail:exception ? "Occasional cigar exception supported by disclosed frequency, other-product history and test evidence." : "Class lookbacks apply to the most recent use of every relevant product.",source:source(p.sources[0],p.id.startsWith("foresters_") ? [7,8,9] : undefined)};
+      if (p.id === "fg_quantum" && relevant.some(r=>r.product === "cigar" && within(r.lastDate,12,asOf))) issue("fg_cigar","Quantum's occasional cigar frequency threshold is unpublished; ask underwriting rather than assume one cigar per month.","review","D141",[10]);
+    }
+    function build() {
+      const h = num("heightIn","height in inches",36,100), w = num("weightLb","weight in pounds",30,1000);
+      need("weightChange","weight change in the last 12 months",["none","loss","gain"]);
+      let ratedWeight=w;
+      if (d.weightChange === "loss" || d.weightChange === "gain") {
+        const prior = num("priorWeightLb","previous weight",30,1000);past(d.weightChangeDate,"weight change");
+        need("weightCause","weight-change cause",["intentional","illness","pregnancy","surgery","unknown"]);
+        if (d.weightCause !== "intentional") {
+          if (p.id === "corebridge_legacy" && d.weightCause === "unknown" && d.weightChange === "loss" && within(d.weightChangeDate,12,asOf)) benefit("graded","Unexplained weight loss within 12 months supports Graded screening.","D106",[6]);
+          else issue("weight_cause","Weight change due to illness, pregnancy, surgery or an unknown cause requires review.");
+        }
+        if (w !== null && prior !== null && ((d.weightChange === "loss" && prior <= w) || (d.weightChange === "gain" && prior >= w))) issue("weight_conflict","The reported weight change conflicts with the current/previous weights.");
+        if (d.weightChange === "loss" && prior > w && d.weightCause === "intentional") {
+          if (p.build === "banner" && prior-w>20 && within(d.weightChangeDate,12,asOf)) ratedWeight=w+(prior-w)/2;
+          else if (p.build === "foresters") {
+            if (!past(d.stableSince,"weight stability")) return;
+            if (d.stableSince > shift(asOf,-12)) ratedWeight=w+(prior-w)/2;
+          } else if (["beyond","flex"].includes(p.build)) {ratedWeight=w+(prior-w)/2;out.notes.push("September guide permits adding back half of intentional weight loss; carrier discretion still applies.");}
+          else issue("weight_loss_review","This product's weight-loss adjustment has not been reconciled; underwriting must review it.");
+        }
+      }
+      if (h === null || w === null || !p.build) return;
+      const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0])};
+      let height = h;
+      if (h % 1) {
+        if (p.build === "banner" && h % 1 === 0.5) height=Math.ceil(h);
+        else {issue("height_rounding","A fractional height needs carrier confirmation; this product's rounding rule is not fully published.");return;}
+      }
+      if (p.build === "bmi") {
+        const edges=[16,age>=60?18:17,28,30,32,35,37,39,41,42,43,44];
+        if(edges.some(edge=>bmi>edge&&bmi<edge+0.0001)){issue("bmi_precision","BMI falls between printed four-decimal bands; carrier rounding must be confirmed.","review","D370",[12]);return;}
+        if (bmi <= 16 || bmi > 46) issue("bmi_decline","BMI is outside the published adult build range.","decline","D370",[12]);
+        else if (age >= 60 && bmi <= 18) issue("bmi_low","Age 60+ and BMI 16–18 require individual consideration.","review","D370",[12]);
+        else if (bmi > 35) {
+          const rating = [[37,"A"],[39,"B"],[41,"C"],[42,"D"],[43,"E"],[44,"F"],[46,"H"]].find(([max])=>bmi<=max);
+          out.tableRating={label:rating[1],basis:"Build component",source:source("D370",[12])};out.domains.build.ceiling="table";
+        } else out.domains.build.ceiling=bmi <= (age>=60?18:17) ? "standard" : bmi<=28 ? "preferred_plus" : bmi<=30 ? "preferred" : bmi<=32 ? "standard_plus" : "standard";
+      } else if (p.build === "flex") {
+        if (bmi>55) issue("flex_bmi_decline","BMI exceeds the BeyondTermflex maximum.","decline","D077",[3]);
+        else {out.domains.build.level=bmi>=43 && bmi<=45.99?1:bmi>=46&&bmi<=48?2:bmi>=48.1&&bmi<=55?3:null;issue("flex_level","The printed BMI intervals and all other Flex risks need carrier confirmation; a build level is not a health-class offer.","review","D077",[3]);}
+      } else if (p.build === "beyond") {
+        const row=BUILD_CHARTS.beyond[height];
+        const hits=row?.map((range,i)=>ratedWeight>=range[0]&&ratedWeight<=range[1]?CLASS_ORDER[i]:null).filter(Boolean)||[];
+        if (hits.length!==1) issue("beyond_build","Build is outside a single unambiguous published BeyondTerm band; overlapping/gapped chart cells need review.","review","D077",[3]);
+        else out.domains.build.ceiling=hits[0];
+      } else if (p.build === "corebridge") {
+        const row=BUILD_CHARTS.corebridge[height];
+        if (!row) issue("core_height","Height is outside the source build chart.","review","D106",[7]);
+        else if (ratedWeight>=row.level[0]&&ratedWeight<=row.level[1]) benefit("level","Build falls in the Level benefit column.","D106",[7]);
+        else if (ratedWeight>=row.graded[0]&&ratedWeight<=row.graded[1]) benefit("graded","Build falls in the Graded benefit column.","D106",[7]);
+        else issue("core_build","Build falls outside both published benefit charts.","review","D106",[7]);
       } else {
-        domains.avocation = { klass: "standard", flag: "hazardous_avocation", detail: rules.avocationNoLaneText || "Hazardous occupation/avocation disclosed — this carrier's modeled guide does not publish a specific avocation lane; conservative Standard ceiling until underwriting confirms." };
-      }
-    } else if (hazNo) {
-      if (rules.avocation) {
-        domains.avocation = { klass: "preferred_plus", detail: rules.avocation.cleanText };
-      } else {
-        domains.avocation = { klass: "preferred_plus", detail: "No hazardous occupation/avocation disclosed." };
-      }
-    } else {
-      domains.avocation = { klass: null, missing: true, detail: "Hazardous occupation/avocation status not confirmed — verify before quoting preferred classes." };
-    }
-
-    /* Military service / veteran status. Prior service alone is not rateable
-       in the modeled guides; combat exposure and VA disability ratings are
-       material history that caps the best class until records confirm the
-       picture (Elite / Preferred Plus classes require a clean, verifiable
-       profile). VA treatment without a disclosed condition is uninvestigated
-       care — a review flag, not a class cap by itself. */
-    if (isNo(d.militaryService)) {
-      domains.military = { klass: "preferred_plus", detail: "No military service disclosed." };
-    } else if (!d.militaryService) {
-      domains.military = { klass: null, missing: true, detail: "Military service status not confirmed — verify before quoting preferred classes." };
-    } else {
-      const combat = d.militaryService === "combat";
-      const rating = d.militaryRating || "none";
-      let klass = combat ? "preferred" : "preferred_plus";
-      let detail = combat
-        ? "Combat deployment disclosed — best class capped at Preferred pending records confirming no PTSD/TBI; Elite / Preferred Plus classes require a clean, verifiable profile."
-        : "Military service disclosed — no material disability rating; VA records may be requested.";
-      if (rating === "30to60" && classWorseThan("preferred", klass)) klass = "preferred";
-      if (rating === "60plus" && classWorseThan("standard", klass)) klass = "standard";
-      if (rating === "total" && classWorseThan("standard", klass)) klass = "standard";
-      if (rating === "30to60") detail = "VA disability rating of 30–60% disclosed — best class capped at Preferred; carriers review the disability basis and records.";
-      if (rating === "60plus") detail = "VA disability rating of 60% or more disclosed — best class capped at Standard; records confirming the impairment are required.";
-      if (rating === "total") detail = "Total / unemployable VA disability disclosed — best class capped at Standard pending carrier direction; severe impairment review applies.";
-      /* Service is disclosed but the VA sub-questions are unanswered: the
-         domain stays missing (do not silently assume "none") while any known
-         cap (combat) still applies. The confidence meter lists the sub-fields. */
-      const subUnanswered = !d.militaryRating || !d.vaTreatment;
-      domains.military = { klass, detail, flag: combat ? "combat_exposure" : null, missing: subUnanswered, ...(rating === "60plus" || rating === "total" ? { vaDisability: true } : {}) };
-    }
-
-    domains.functional = func;
-
-    domains.pending = pend;
-
-    out.domains = domains;
-    out.medications = meds;
-
-    /* ---- 3. Least favorable class wins ---------------------------- */
-    const usable = Object.entries(domains).filter(([k, v]) => v && v.klass && v.klass !== "tobacco" && v.klass !== "bp_outside" && v.klass !== "lipids_outside" && v.klass !== "driving_outside" && v.klass !== "substandard_review" && v.klass !== "manual_review");
-    let provisional = "preferred_plus";
-    const limiting = [];
-    for (const [k, v] of usable) {
-      const vk = normK(rules, v.klass);
-      const txt = v.detail || (v.details ? v.details.join(" ") : "");
-      if (classWorseThan(vk, provisional)) {
-        provisional = vk;
-        limiting.length = 0;
-        limiting.push({ domain: k, klass: vk, detail: txt });
-      } else if (vk === provisional) {
-        limiting.push({ domain: k, klass: vk, detail: txt });
+        const row=BUILD_CHARTS[p.build]?.[height];
+        if (!row) {issue("chart_height","Height is outside the source chart; no extrapolation is applied.");return;}
+        if (p.build === "banner" && (ratedWeight<row.min||bmi<=18.5)) {issue("low_build","Below-chart/low BMI requires Banner individual consideration.","review","B-FIELD",[7]);return;}
+        if (p.build !== "banner" && bmi<18.5) {issue("low_build_unpublished","Low build requires assessment; this product's lower preferred-class boundary is not fully modeled.");return;}
+        if (p.build === "fg_quantum") {
+          const add=age>=51&&age<=60?5:0, sexRow=row[d.sex];
+          if (!sexRow) return;
+          if (ratedWeight<row.min+add || ratedWeight>row.tableMax+add) issue("quantum_build","Build is outside Quantum's adult minimum/maximum range.","review","D141",[11,12]);
+          else if (ratedWeight<=sexRow.pp+add) out.domains.build.ceiling="preferred";
+          else if (ratedWeight<=sexRow.std+add) out.domains.build.ceiling="standard";
+          else {out.domains.build.ceiling="table";issue("quantum_table","Build is in Quantum's substandard range through Table D/4, but the exact table is not published in this chart.","review","D141",[12]);}
+        } else {
+          const keys=["pp","p","sp","std"];const i=keys.findIndex(key=>ratedWeight<=row[key]);
+          if(p.build === "banner" && i>0 && ratedWeight<row[keys[i-1]]+1){issue("build_precision","Weight falls between the printed OPTerm integer-pound bands; carrier rounding must be confirmed.","review","B-FIELD",[7]);return;}
+          if (i>=0) out.domains.build.ceiling=CLASS_ORDER[i];
+          else if (p.build === "mutual_of_omaha") {
+            const t=[1,2,3,4,5,6,8,10,12].find(n=>ratedWeight<=row["t"+n]);
+            if (t) {out.domains.build.ceiling="table";out.tableRating={label:String(t),extraPercent:t*25,basis:"Build component",source:source("D282",[6,7])};}
+            else issue("moo_build","Above the published Table 12 build chart; no higher table or decline is guessed.","review","D282",[7]);
+          } else issue("substandard_build","Build exceeds Standard. The appropriate substandard rating needs carrier review and is not reduced to Standard Tobacco.");
+        }
       }
     }
-    // Domain-specific "outside" results that force a worse outcome
-    const outside = [];
-    if (domains.bp && domains.bp.klass === "bp_outside") outside.push({ domain: "bp", reason: "BP beyond Standard limits" });
-    if (domains.cholesterol && domains.cholesterol.klass === "lipids_outside") outside.push({ domain: "cholesterol", reason: "Lipids beyond Standard limits" });
-    if (domains.driving && domains.driving.klass === "driving_outside") outside.push({ domain: "driving", reason: "Driving history beyond Standard limits" });
-    if (domains.build && domains.build.klass === "substandard_review") outside.push({ domain: "build", reason: "Build above Standard maximum — substandard build chart required" });
-    if (domains.build && domains.build.klass === "manual_review") outside.push({ domain: "build", reason: "Build requires manual review (low build / BMI / unexplained change)" });
-
-    if (outside.length) provisional = "table";
-    // Simplified-issue carriers normalize the shared ladder (no Preferred Plus /
-    // Standard Plus / table classes) — an accept/reject model.
-    provisional = normK(rules, provisional);
-    out.provisionalClass = provisional;
-    out.limitingFactors = limiting;
-    out.outsideFactors = outside;
-
-    /* ---- Tobacco override ----------------------------------------- */
-    let final = provisional;
-    if (nic.tobacco) {
-      // Tobacco is a separate classification, not a lower medical class. A clean
-      // profile supports Preferred Tobacco; a table rating cannot pair with
-      // Preferred Tobacco (per Banner), so cap at Standard Tobacco when table-rated.
-      if (final === "table") final = "standard";
-      out.tobaccoClass = true;
-    }
-    // Foresters publishes Tobacco Plus (nicotine within the past year AND all
-    // Preferred Plus criteria; <= 1 pack per day for cigarettes). Heavier use,
-    // or any nicotine product above that threshold, cannot claim Tobacco Plus
-    // and lands in Standard Tobacco instead.
-    if (nic.tobacco && carrierId === "foresters" && final === "preferred_plus") {
-      const amt = d.nicotineAmount === "" || d.nicotineAmount === undefined || d.nicotineAmount === null ? NaN : Number(d.nicotineAmount);
-      const heavy = d.nicotineProduct === "cigarette" && !isNaN(amt) && amt > 20;
-      if (heavy) final = "standard";
-      else out.tobaccoPlus = true;
-    }
-    if (nic.klass && nic.klass !== "tobacco" && !nic.tobacco) {
-      // nicotine lookback can cap NT class below other domains
-      final = worstOf(final, nic.klass);
-    }
-    // Build data that cannot be evaluated (manual_review) ranks above every
-    // estimable class but below the postpone/decline gates, so it never masks
-    // a gate outcome — the gate assignment below wins.
-    if (domains.build && domains.build.klass === "manual_review") {
-      final = worstOf(final, "manual_review");
-    }
-
-    /* ---- 4. Gate outcomes override -------------------------------- */
-    let gateOutcome = null;
-    if (out.gates.decline.length) gateOutcome = "decline";
-    else if (out.gates.postpone.length || postponeHits.length) gateOutcome = "postpone";
-
-    if (gateOutcome) {
-      final = gateOutcome;
-    }
-
-    /* Flat-extra outcome: when the carrier publishes a flat-extra lane for a
-       hazardous avocation (e.g., F&G Preferred + flat extra, MOO Standard Plus
-       + flat extra) and the rest of the profile supports at least the flat-extra
-       base class, the estimate is a flat extra on that base class. A worse class
-       from another domain stands on its own, and a gate outcome always wins —
-       a flat extra never masks a decline/postpone. */
-    const fe = domains.avocation && domains.avocation.flatExtra;
-    if (!gateOutcome && fe && CLASS_INDEX[final] !== undefined && CLASS_INDEX[final] <= CLASS_INDEX[fe.baseClass]) {
-      out.flatExtra = { baseClass: fe.baseClass, reason: fe.text, tobacco: !!out.tobaccoClass };
-      final = "flat_extra";
-    }
-
-    // Normalize any residual ladder classes for simplified-issue carriers.
-    final = normK(rules, final);
-    out.finalClass = final;
-
-    /* Americo Eagle Select tiering (informational): the health questions set
-       the product tier — Eagle Select 1 (best), 2, or 3 (graded). The class
-       reflects the non-tobacco lane; the tier note tells the producer which
-       Eagle Select product the carrier would offer. */
-    if (rules.id === "americo" && final !== "decline" && final !== "postpone" && final !== "manual_review") {
-      const nicUse = isYes(d.usedNicotine);
-      const hasCond = id => condIds.includes(id);
-      const hd = hasCond("heart_disease") || hasCond("cad");
-      const dia = hasCond("diabetes");
-      const st = hasCond("stroke");
-      const pvd = hasCond("peripheral_vascular");
-      const resp = hasCond("copd") || hasCond("asthma");
-      const tier = (hd || dia || st || pvd || resp || nicUse) ? "Eagle Select 2" : "Eagle Select 1";
-      out.notes.push(`${tier} product tier applies — Americo's health-question tiering (heart disease, diabetes, stroke/TIA, peripheral vascular disease, respiratory disease, or nicotine use move the offer to Eagle Select 2; the graded Eagle Select 3 tier applies when the application's graded-trigger conditions are present).`);
-    }
-
-    /* ---- 5. Credits (possible, not applied) ----------------------- */
-    const creditEligible = ["build", "bp", "family", "cholesterol"];
-    const adverseDomains = [];
-    for (const [k, v] of Object.entries(domains)) {
-      if (v && v.klass && v.klass !== "preferred_plus" && v.klass !== "tobacco" && creditEligible.includes(k)) {
-        adverseDomains.push(k);
+    function medications(conds) {
+      const rows=history("medicationHistory","medications","past and current prescriptions");
+      confirm("medicationsComplete","that the prescription history is complete");
+      const names=["warfarin","coumadin","apixaban","eliquis","rivaroxaban","xarelto","dabigatran","pradaxa","metformin","insulin","lisinopril","losartan","amlodipine","atorvastatin","rosuvastatin","simvastatin","levothyroxine","albuterol","sertraline","fluoxetine","escitalopram","clopidogrel","plavix"];
+      for (const r of rows) {
+        if (!present(r.name) || !present(r.indication) || !present(r.dose) || !["yes","no"].includes(r.current)) issue("rx_details","Confirm prescription name, dose, reason and current/past use.","missing");
+        past(r.start,"prescription start");past(r.lastFill,"last prescription fill");
+        if (r.current === "no") past(r.end,"prescription end");
+        if (date(r.start) && date(r.lastFill) && r.start>r.lastFill || date(r.end)&&date(r.start)&&r.end<r.start) issue("rx_dates","Prescription dates conflict; please correct them.");
+        const normalized=String(r.name||"").toLowerCase().replace(/[^a-z ]/g," ").trim();
+        const mapped=names.find(n=>normalized.split(/\s+/).includes(n));
+        const indications={warfarin:["atrial_fibrillation","stroke","tia","coronary_disease"],coumadin:["atrial_fibrillation","stroke","tia","coronary_disease"],apixaban:["atrial_fibrillation"],eliquis:["atrial_fibrillation"],rivaroxaban:["atrial_fibrillation"],xarelto:["atrial_fibrillation"],dabigatran:["atrial_fibrillation"],pradaxa:["atrial_fibrillation"],metformin:["diabetes"],insulin:["diabetes"],lisinopril:["hypertension","heart_failure"],losartan:["hypertension","heart_failure"],amlodipine:["hypertension","coronary_disease"],atorvastatin:["cholesterol","coronary_disease"],rosuvastatin:["cholesterol","coronary_disease"],simvastatin:["cholesterol","coronary_disease"],albuterol:["asthma","copd"],sertraline:["anxiety","depression"],fluoxetine:["anxiety","depression"],escitalopram:["anxiety","depression"]};
+        if(mapped&&indications[mapped]&&!indications[mapped].includes(r.conditionId))issue("rx_indication_review","Confirm the reported indication for "+r.name+". Other or off-label indications require review; no diagnosis is inferred.");
+        if (!mapped) issue("rx_unrecognized","The medicine "+(r.name||"listed")+" is not mapped. Its indication and history need review; it is not assumed harmless or disqualifying.");
+        if (!r.conditionId || !conds.some(c=>c.id === r.conditionId)) issue("rx_condition","Link "+(r.name||"each prescription")+" to a disclosed diagnosis, or have its indication reviewed. A medicine alone does not establish a diagnosis.");
+        if (p.id === "amam_qsfp" && within(r.lastFill,24,asOf) && /\b(warfarin|coumadin|plavix|clopidogrel|aggrenox)\b/.test(normalized) && ["stroke","tia","coronary_disease"].includes(r.conditionId)) issue("amam_rx","This prescription plus the disclosed stroke/TIA/circulatory indication and fill within two years meets the QSFP exclusion.","decline","D017",[1]);
+      }
+      if (p.id === "corebridge_legacy") {
+        const af=conds.find(c=>c.id === "atrial_fibrillation");
+        if (af?.dailyAnticoagulant === "yes" && !rows.some(r=>r.current === "yes" && r.conditionId === "atrial_fibrillation" && /\b(warfarin|coumadin|apixaban|eliquis|rivaroxaban|xarelto|dabigatran|pradaxa)\b/i.test(r.name||""))) issue("af_rx_conflict","Daily anticoagulant use is reported but the matching current prescription is missing.","review","D106",[4]);
       }
     }
-    let possibleCredit = null;
-    if (rules.credit && adverseDomains.length === 1) {
-      if (final === "preferred") {
-        // e.g., BP in Preferred range while everything else is PP -> possible Preferred Plus via credit review
-        possibleCredit = { from: final, to: "preferred_plus", note: rules.credit.note };
-      } else if (final === "standard_plus") {
-        possibleCredit = { from: final, to: "preferred", note: rules.credit.note };
-      } else if (final === "standard") {
-        possibleCredit = { from: final, to: "standard_plus", note: rules.credit.note };
+    function rateClasses(driving,family) {
+      const v=VITAL_RULES[p.vitals];
+      if (!v) {issue("vital_rules","This product's complete class criteria are not reconciled.");return;}
+      const sys=num("bpSys","systolic blood pressure",60,260),dia=num("bpDia","diastolic blood pressure",30,160);
+      const total=num("cholTotal","total cholesterol",40,700),hdl=num("cholHdl","HDL cholesterol",5,200);
+      const bpOK=past(d.bpDate,"blood-pressure measurement"),cholOK=past(d.cholDate,"cholesterol measurement");
+      need("bpBasis","basis of blood-pressure readings",["current","average_2yr"]);need("cholBasis","basis of cholesterol readings",["current","average_12mo","average_2yr"]);
+      yn("bpTreatment","blood-pressure treatment");yn("bpControl","well-controlled blood pressure");yn("cholTreatment","cholesterol treatment");
+      if(d.bpTreatment === "yes" && !(d.conditions||[]).some(c=>c.id === "hypertension") || d.cholTreatment === "yes" && !(d.conditions||[]).some(c=>c.id === "cholesterol"))issue("vital_diagnosis","Treatment is reported but its related diagnosis is missing. Reconcile the medical history.");
+      if((d.bpTreatment === "yes"||d.cholTreatment === "yes") && d.medicationHistory!=="yes")issue("vital_prescriptions","Treatment is reported but the prescription history is unanswered or says no. Confirm the medicines.");
+      if (d.bpControl === "no") issue("bp_control","Blood pressure that is not well controlled requires review.");
+      if (sys!==null && dia!==null && sys<=dia) issue("bp_conflict","Systolic blood pressure must exceed diastolic pressure.","missing");
+      if (total!==null && hdl!==null && total<=hdl) issue("chol_conflict","Total cholesterol must exceed HDL cholesterol.","missing");
+      if (["banner_opterm","fg_quantum"].includes(p.id) && (d.bpBasis!=="average_2yr" || p.id === "fg_quantum" && d.cholBasis!=="average_2yr")) issue("vital_average","The selected guide uses two-year averages; a single reading cannot establish the published preferred criteria.");
+      if ((bpOK && !within(d.bpDate,12,asOf)) || (cholOK && !within(d.cholDate,12,asOf))) issue("vital_age","These readings are over a year old. Obtain current evidence before relying on a class estimate.","review",null);
+      if (sys===null || dia===null || total===null || hdl===null || age===null) return;
+      const ratio=total/hdl;
+      const candidates=(p.classes||CLASS_ORDER.slice(0,4)).filter(k=>(!p.preferredMinFace || face>=p.preferredMinFace || k === "standard")&&nicFit(k)&&buildFit(k)&&vitalFit(k)&&familyFit(k)&&drivingFit(k)&&residencyFit(k));
+      if (!candidates.length) issue("class_outside","The disclosed factors do not jointly meet a modeled published class. Standard or substandard requires individual review; a favorable range is withheld.");
+      else {
+        const k=candidates[0];
+        if(k === "standard" && p.id === "fg_quantum" && driving.length)issue("fg_driving_standard","Quantum Standard requires no rateable violations; assess the driving record.","review","D141",[10]);
+        if(k === "standard" && p.id === "transamerica_super" && driving.some(r=>["dui","serious","reckless","suspension","revocation"].includes(r.type)))issue("ta_driving_standard","Standard driving is individually considered; a disclosed major violation needs review.","review","D370",[21,27]);
+        out.healthClass=out.domains.build?.ceiling === "table" ? "table" : k;
+        out.domains.classes={detail:"The result must meet all modeled criteria together; no favorable domain is used as a range endpoint.",supported:candidates,source:source(p.sources[0])};
+      }
+      out.domains.vitals={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(vitalFit),detail:`Blood pressure ${sys}/${dia}; total cholesterol ${total}, HDL ${hdl}, ratio ${ratio.toFixed(2)}.`,source:source(p.sources[0])};
+      out.domains.family={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(familyFit),detail:"Disease, relation and age-at-death criteria applied only for this product.",source:source(p.sources[0])};
+      out.domains.driving={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(drivingFit),detail:"Events counted separately over the product's actual 1-, 2-, 3-, 5- and 10-year windows.",source:source(p.sources[0])};
+      function nicFit(k) {
+        if (out.tobaccoBasis === "unknown") return false;
+        if (out.tobaccoBasis === "tobacco") {
+          if (p.id.startsWith("foresters_")) {
+            const smoking=(d.nicotine||[]).filter(r=>r.product === "cigarette" && within(r.lastDate,12,asOf));
+            if (k === "preferred_plus" && smoking.some(r=>numeric(r.packsPerDay) === null || Number(r.packsPerDay)>1)) return false;
+            return ["preferred_plus","standard"].includes(k);
+          }
+          return ["preferred","standard"].includes(k);
+        }
+        return rank(k)>=rank(out.domains.nicotine?.ceiling||"preferred_plus");
+      }
+      function buildFit(k) {
+        const ceiling=out.domains.build?.ceiling;
+        return ceiling === "table" || ceiling && rank(k)>=rank(ceiling);
+      }
+      function vitalFit(k) {
+        let key=k;
+        if (out.tobaccoBasis === "tobacco" && p.id.startsWith("foresters_") && k === "preferred_plus") key="tobacco_plus";
+        const t=band(v.bp[key],age);
+        // If Standard has no numeric ceiling, favorable published readings
+        // may support it, but outside-band readings always require review.
+        const tFallback=t||band(v.bp.standard_plus||v.bp.preferred,age);
+        if (!tFallback) return false;
+        const strict=p.vitals === "mutual_of_omaha";
+        if (strict ? sys>=tFallback.sys||dia>=tFallback.dia : sys>tFallback.sys||dia>tFallback.dia) return false;
+        if (p.id === "transamerica_super" && k === "preferred_plus" && d.bpTreatment === "yes" && (age<50||age>=81)) return false;
+        const c=v.cholesterol;
+        const maxTotal=c.totalMax ?? maxOf(c.total?.[key],age) ?? maxOf(c.total?.standard_plus||c.total?.preferred,age);
+        const min=c.totalMin ?? (d.cholTreatment === "no" ? c.minUntreated : null);
+        if (min!=null && total<min || maxTotal!=null && total>maxTotal) return false;
+        const ratioMax=maxOf(c.ratio?.[key],age) ?? maxOf(c.ratio?.standard_plus||c.ratio?.preferred,age);
+        if (ratioMax==null || (c.strict ? ratio>=ratioMax : ratio>ratioMax)) return false;
+        return true;
+      }
+      function familyFit(k) {
+        const deaths=(items,threshold)=>new Set(items.filter(r=>r.death === "yes" && numeric(r.deathAge)!==null && Number(r.deathAge)<threshold).map(r=>r.member)).size;
+        if (p.family === "banner") {
+          if (age>70 && out.tobaccoBasis === "non_tobacco") return true;
+          const cv=family.filter(r=>r.disease === "cardiovascular");
+          const parents=cv.filter(r=>r.relation === "parent");
+          return k === "preferred_plus" ? deaths(cv,60)===0 : k === "preferred" ? deaths(parents,60)===0 : deaths(parents,60)<=1;
+        }
+        if (p.family === "foresters") {
+          if (k === "standard") return true;
+          const f=family.filter(r=>r.relation === "parent" && ["cardiovascular","cancer"].includes(r.disease));
+          return deaths(f,k === "standard_plus" ? 60 : 65)===0;
+        }
+        if (p.family === "moo") {
+          if (age>=60 || k === "standard") return true;
+          const f=family.filter(r=>r.relation === "parent" && ["cardiovascular","cancer"].includes(r.disease) && !oppositeCancer(r));
+          // MOO's one cardiac-death exception requires an underwriter's
+          // favorable workup decision; no self-entered credit is assumed.
+          return deaths(f,60)===0;
+        }
+        if (p.family === "transamerica") {
+          if (age>=65 || k === "standard") return true;
+          const types=["breast","ovarian","melanoma","prostate","colon"];
+          const f=family.filter(r=>r.disease === "cardiovascular" || r.disease === "cancer" && types.includes(r.cancerType));
+          return deaths(f,60)<=(k === "standard_plus" ? 1 : 0);
+        }
+        if (p.family === "fg") {
+          if (k === "standard") return true;
+          return deaths(family.filter(r=>["cardiovascular","cancer"].includes(r.disease) && !oppositeCancer(r)),60)<=1;
+        }
+        return false;
+      }
+      function oppositeCancer(r) {
+        return r.disease === "cancer" && r.sex && r.sex !== d.sex && (d.sex === "male" && ["breast","ovarian"].includes(r.cancerType) || d.sex === "female" && r.cancerType === "prostate");
+      }
+      function drivingFit(k) {
+        const duis=driving.filter(r=>r.type === "dui");
+        const major=driving.filter(r=>["dui","reckless","serious","suspension","revocation"].includes(r.type) || r.type === "speeding" && (Number(r.mphOver)>=30||Number(r.speed)>=90));
+        const moving=driving.filter(r=>["minor","speeding","serious","reckless","dui"].includes(r.type));
+        if (["suspended","revoked","expired"].includes(d.licenseStatus)) {issue("license_review","Current suspended, revoked or expired license needs underwriting review.");return false;}
+        if (p.id === "banner_opterm") {
+          if (duis.length>1) {issue("multiple_dui","Multiple DUI history is excluded from these published Banner class criteria and requires review.","review","B-FIELD",[5,6]);return false;}
+          const idx=rank(k),max=[2,2,3,4][idx],years=[5,5,3,2][idx];
+          return moving.filter(r=>within(r.date,36,asOf)).length<=max && !major.some(r=>within(r.date,years*12,asOf));
+        }
+        if (p.id.startsWith("foresters_")) {
+          if (k === "standard") {
+            if (moving.filter(r=>within(r.date,36,asOf)).length>2||major.some(r=>within(r.date,60,asOf))) issue("foresters_driving_standard","Outside published preferred driving criteria; obtain a fully underwritten driving assessment.","review","D152",[8,9,18]);
+            return true;
+          }
+          const months=k === "preferred_plus"?60:36,max=k === "preferred_plus"?p.drivingPPMax:2;
+          return moving.filter(r=>within(r.date,months,asOf)).length<=max&&!major.some(r=>within(r.date,60,asOf));
+        }
+        if (p.id === "moo_full") {
+          if (moving.length) issue("moo_driving","MOO requires an otherwise non-rateable driving record; assess the disclosed violations before assigning a class.","review","D282",[11,12,13]);
+          return k === "standard" || !major.some(r=>within(r.date,60,asOf));
+        }
+        if (p.id === "fg_quantum") {
+
+          return k === "standard" || moving.filter(r=>within(r.date,36,asOf)).length<=2&&!duis.some(r=>within(r.date,60,asOf));
+        }
+        if (p.id === "transamerica_super") {
+          if (duis.some(r=>within(r.date,12,asOf))) issue("ta_dui_1","DUI within one year fails Transamerica's published impairment screen.","decline","D370",[27]);
+          if (duis.some(r=>ageAt(d.dob,r.date)<21 && within(r.date,48,asOf)) || duis.filter(r=>within(r.date,48,asOf)).length>1) issue("ta_dui_young_multiple","DUI before age 21 in four years, or multiple DUIs within four years, fails the published screen.","decline","D370",[27]);
+          if (duis.some(r=>within(r.date,48,asOf))) {out.flatExtra={rangePerThousand:[0,3.5],basis:"DUI history; exact amount/duration require underwriting",source:source("D370",[27])};issue("ta_dui_flat","Recent DUI may require a flat extra or other adverse outcome; carrier review sets the amount and duration.","review","D370",[27]);}
+
+          return k === "standard" || !duis.some(r=>within(r.date,60,asOf)) && major.filter(r=>within(r.date,36,asOf)).length<=1 && (k !== "preferred_plus"||!major.some(r=>within(r.date,12,asOf))) && moving.filter(r=>!["serious","reckless","dui"].includes(r.type)&&within(r.date,36,asOf)).length<=3;
+        }
+        return false;
+      }
+      function residencyFit(k) {
+        if (p.id !== "banner_opterm") return true;
+        const months=rank(k)<=1?36:24;
+        return ["citizen","permanent"].includes(d.citizenship) && date(d.usSince) && d.usSince<=shift(asOf,-months);
       }
     }
-    out.possibleCredit = possibleCredit;
-
-    /* ---- 6. Flags ------------------------------------------------- */
-    const flags = [];
-    if (final === "table" || outside.length) flags.push("likely_table");
-    if (gateOutcome === "decline" || out.gates.decline.length) flags.push("possible_decline");
-    if (gateOutcome === "postpone" || out.gates.postpone.length) flags.push("manual_review");
-    if (build.missing || bp.missing || chol.missing || drv.missing || fam.missing || sub.missing || func.missing || pend.missing || nic.missing || meds.missing || (domains.military && domains.military.missing)) {
-      flags.push("missing_material_data");
-    }
-    if (meds.undisclosed && meds.undisclosed.length) flags.push("undisclosed_meds");
-    if (final === "manual_review") flags.push("manual_review");
-    if (out.flatExtra) flags.push("flat_extra");
-    // Past (not current) probation/parole is a review item, not an automatic
-    // decline — carriers weigh recency and offense severity.
-    if (isYes(d.parolePast) && !isYes(d.paroleCurrent)) flags.push("criminal_history");
-    // Frequent physician visits with no disclosed condition = uninvestigated
-    // care, which can matter more than the known history.
-    if (d.doctorVisits === "frequent" && !(d.conditions && d.conditions.length)) flags.push("unexplained_care");
-    // Extended foreign residence triggers carrier residency eligibility review.
-    if (d.foreignResidence === "long") flags.push("foreign_residence");
-    // Military service flags: combat exposure caps the best class; a material
-    // VA disability rating caps further; VA treatment without a disclosed
-    // condition is uninvestigated care — same honesty rule as frequent visits.
-    if (d.militaryService === "combat") flags.push("combat_exposure");
-    if (d.militaryRating === "30to60" || d.militaryRating === "60plus" || d.militaryRating === "total") flags.push("va_disability");
-    if (d.vaTreatment === "yes" && !(d.conditions && d.conditions.length)) flags.push("va_treatment");
-    // Nicotine ever/quit-history conflicts — surface for confirmation.
-    if (d.usedNicotine === "yes" && d.nicotineEver === "no") flags.push("conflicting_disclosure");
-    // A future-dated or malformed last-use date was clamped to 0 months (or
-    // treated as unverified) — surface it so the producer re-confirms instead
-    // of trusting a corrected class.
-    if (nic.dateKind === "future" || nic.dateKind === "invalid") flags.push("nicotine_date_suspect");
-    if (d.usedNicotine === "no" && d.nicotineEver === "yes" && !isNaN(Number(d.nicotineQuitYears)) && Number(d.nicotineQuitYears) >= 0 && Number(d.nicotineQuitYears) <= 10) flags.push("conflicting_disclosure");
-    /* A disclosed diabetes with a blank/unparseable A1c must not be read as
-       "A1c is fine" — the high-A1c decline screen is keyed off a valid number,
-       so an unanswered A1c would otherwise silently avoid a decline it can't be
-       sure about. Surface it so the producer confirms the A1c before relying on
-       a non-declined diabetes class. */
-    const dmCond = (d.conditions || []).find(c => c.id === "diabetes");
-    if (dmCond && (dmCond.a1c === "" || dmCond.a1c === null || dmCond.a1c === undefined || Number.isNaN(Number(dmCond.a1c)))) {
-      flags.push("diabetes_a1c_missing");
-    }
-
-    // evidence flags
-    const ev = evidenceNeeded(rules, d, condIds);
-    const apsAge = rules.evidence.apsAge || 60;
-    if (ev.apsNeeded.length || (d.age && d.age >= apsAge)) flags.push("needs_aps");
-    if (d.age && d.faceAmount && (Number(d.faceAmount) >= 2000000 || (d.age > 60 && Number(d.faceAmount) >= 500000))) flags.push("needs_exam");
-    const auw = rules.evidence.acceleratedUw;
-    let auPossible = false;
-    if (auw) {
-      auPossible = !!(d.age && d.faceAmount && d.age >= auw.ageMin && d.age <= auw.ageMax && Number(d.faceAmount) >= auw.amountMin && Number(d.faceAmount) <= auw.amountMax);
-    } else if (d.age && d.faceAmount && d.age >= 20 && d.age <= 60 && Number(d.faceAmount) <= 5000000) {
-      auPossible = true;
-    }
-    if (auPossible) {
-      // Banner publishes explicit accelerated-UW exclusions: no premium
-      // financing and no policy lapse or replacement considered within the
-      // last 6 months (no internal lapse/replacement within 2 years). Other
-      // carriers' AU lanes are unchanged until their guides publish similar
-      // conditions.
-      if (rules.financial && rules.financial.auExcludesReplacement && (d.replacement === "yes" || d.financing === "yes" || d.premiumPayor === "third_party" || d.premiumPayor === "financed")) {
-        ev.list.push("Premium financing or a recent replacement disclosed — accelerated underwriting not available; standard underwriting applies.");
-      } else {
-        flags.push("accelerated_uw_possible");
-      }
-    }
-
-    out.flags = [...new Set(flags)];
-    out.evidence = ev;
-
-    // medication-driven APS triggers from the prescription record
-    if (ev && ev.list && meds.apsTriggers && meds.apsTriggers.length) {
-      meds.apsTriggers.forEach(t => ev.list.push(`APS: ${t.apsText} (medication ${t.med} suggests ${t.conditionName})`));
-    }
-
-    /* ---- 7. Financial -------------------------------------------- */
-    out.financial = evalFinancial(rules, d);
-    if (out.financial && (out.financial.ok === false || out.financial.totalLineExceeded || out.financial.replacementNotAllowed)) {
-      out.flags.push("financial_review");
-    }
-    if (rules.financial && rules.financial.maxFace && d.faceAmount && Number(d.faceAmount) > rules.financial.maxFace) {
-      out.flags.push("financial_review");
-      out.financial = out.financial || {};
-      out.financial.maxFaceExceeded = true;
-      out.financial.detail = (out.financial.detail ? out.financial.detail + " " : "") + `Face amount ${Number(d.faceAmount).toLocaleString()} exceeds the carrier's ${rules.financial.maxFace.toLocaleString()} maximum — another product is required.`;
-    }
-
-    /* ---- 8. Comorbidity flags ------------------------------------- */
-    out.comorbidityFlags = med.combos || [];
-
-    /* ---- 9. Confidence --------------------------------------------- */
-    out.confidence = computeConfidence(d, out.flags);
-
-    /* ---- Range ----------------------------------------------------- */
-    const classInfo = rules.classInfo || {};
-    out.classInfo = classInfo;
-
-    // Build final range: from best supported domain class to final
-    let bestDomain = "preferred_plus";
-    for (const [k, v] of Object.entries(domains)) {
-      if (v && v.klass && !["tobacco", "bp_outside", "lipids_outside", "driving_outside", "substandard_review", "manual_review"].includes(v.klass)) {
-        const vk = normK(rules, v.klass);
-        if (CLASS_INDEX[vk] < CLASS_INDEX[bestDomain]) bestDomain = vk;
-      }
-    }
-    if (nic.klass && nic.klass !== "tobacco") {
-      const nk = normK(rules, nic.klass);
-      if (CLASS_INDEX[nk] < CLASS_INDEX[bestDomain]) bestDomain = nk;
-    }
-    out.range = { low: bestDomain, high: final };
-
-    out.summaryLines = buildSummary(out, rules);
-    return out;
-  }
-
-  /* Suicide-attempt recency, read from the wizard's "years since most recent
-     suicide attempt" field. Nothing disclosed -> unfired (an empty field is
-     no-attempt-disclosed, mirroring drugAbuseYears). A disclosed attempt with
-     an unparseable or negative recency counts as within-window — gate-first:
-     the missing fact is exactly what the carrier's screen asks about (same
-     convention as valve_recent). Each ruleset publishes its own window via
-     windowYears / multipleWindowYears on the trigger row (Banner/Foresters 2
-     years; MOO 1 year; National Life 1 year, or more than one within 2). */
-  function suicideAttemptRecentHit(d, t) { return disclosedYearsWithin(d, "suicideAttemptYears", t, 2); }
-
-  /* Shared core for the "years since <event>" wizard recency fields. Nothing
-     disclosed -> unfired (an empty field means the fact was not disclosed,
-     mirroring drugAbuseYears). A disclosed but unparseable or negative
-     recency counts as within-window — gate-first: the missing fact is
-     exactly what the carrier's screen asks about (same convention as
-     valve_recent). Each ruleset publishes its own window via windowYears on
-     the trigger row, with a per-trigger fallback for carrier-less calls. */
-  function disclosedYearsWithin(d, key, t, fallbackYears) {
-    if (!has(d, key)) return false; // nothing disclosed
-    const yrs = numOrNull(d[key]);
-    if (yrs === null) return true; // disclosed, recency unknown — gate-first
-    return yrs < ((t && t.windowYears) || fallbackYears);
-  }
-  function suicideRecentHit(d, t) {
-    if (!has(d, "suicideAttemptYears")) return false;
-    const yrs = numOrNull(d.suicideAttemptYears);
-    if (yrs === null) return true;
-    const w = (t && t.windowYears) || 1;
-    const mw = (t && t.multipleWindowYears) || 2;
-    // The multiple-attempts leg needs a recency: the flag alone can describe
-    // decades-old history and must never read as recent by itself.
-    return yrs < w || (isYes(d.suicideMultiple) && yrs < mw);
-  }
-
-  /* conditionPostponeHit: evaluate the published condition-recency postpone
-     triggers (M2) declared in each ruleset but previously never evaluated —
-     a recent event on a disclosed condition must surface the carrier's
-     published postpone window. Suicide-recency triggers (suicide_attempt_recent
-     at Banner/Transamerica/MOO, suicide_recent at National Life) fire from the
-     wizard's years-since-attempt field via the helpers above; National Life's
-     mental_hospitalization screen fires the same way from the wizard's
-     years-since-mental-health-hospitalization field. */
-  function conditionPostponeHit(id, d, condIds, med, rules, t) {
-    const condOf = (ids) => condIds.some(cid => ids.includes(cid));
-    const recentEventOn = (ids) => (d.conditions || []).some(c => ids.includes(c.id) && isYes(c.recentEvent));
-    switch (id) {
-      case "cancer_recent": return (d.conditions || []).some(c => c.id === "other_cancer" && isYes(c.treatedWithin12mo));
-      case "cancer_recurrence": return (d.conditions || []).some(c => c.id === "other_cancer" && isYes(c.recurrence));
-      case "mi_recent": return recentEventOn(["cad", "heart_disease"]);
-      case "stent_bypass_recent": {
-        // heart_disease is the catch-all (CHF / cardiomyopathy / valve / device);
-        // a cardiomyopathy disclosure has its own published screen, so it is not
-        // double-read as a stent/bypass event.
-        return recentEventOn(["heart_disease"]) && !(d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy));
-      }
-      case "valve_recent": {
-        const v = (d.conditions || []).find(c => c.id === "heart_valve_prosthesis");
-        if (!v || !has(v, "implantYears")) return false;
-        const yrs = Number(v.implantYears);
-        return Number.isFinite(yrs) ? yrs < 1 : true; // recent placement (or unparseable) — within the window
-      }
-      case "cardiomyopathy_recent": return (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy));
-      case "seizure_recent": return recentEventOn(["seizures"]);
-      case "stroke_recent": return recentEventOn(["stroke"]);
-      // Suppress when the separate oxygen_use form flag is set — that fires the
-      // stronger oxygen_use decline, so a copd_recent postpone beside it would
-      // describe the same COPD-on-oxygen fact twice (cosmetic gate duplication).
-      case "copd_recent": return !isYes(d.oxygenUse) && (d.conditions || []).some(c => c.id === "copd" && (isYes(c.recentEvent) || c.treatment === "oxygen"));
-      case "schizophrenia_recent": {
-        const scz = (d.conditions || []).find(c => c.id === "schizophrenia");
-        if (!scz) return false;
-        const stable = has(scz, "stableYears") ? numOrNull(scz.stableYears) : null;
-        return stable === null || stable < 1; // unknown or under 1 year of stability
-      }
-      case "heart_recent": return recentEventOn(["cad", "heart_disease"]);
-      case "cva_recent": return recentEventOn(["stroke"]);
-      case "epilepsy_recent": return recentEventOn(["seizures"]);
-      case "suicide_attempt_recent": return suicideAttemptRecentHit(d, t);
-      case "suicide_recent": return suicideRecentHit(d, t);
-      case "mental_hospitalization": return disclosedYearsWithin(d, "mentalHospitalYears", t, 1); // National Life 1-year screen
-      default: return false;
+    function finish() {
+      // Independently verified exclusions govern even when other evidence is
+      // missing. Otherwise any material uncertainty withholds a final class.
+      const unavailable=out.issues.some(i=>i.status === "unavailable"),decline=out.issues.some(i=>i.status === "decline");
+      const review=out.issues.some(i=>["review","missing"].includes(i.status));
+      out.eligibility=unavailable ? "unavailable" : review ? "not_confirmed" : "screen_passed";
+      out.status=unavailable ? "unavailable" : decline ? "decline_screen" : review ? "manual_review" : "estimated";
+      if (out.kind === "final_expense" && out.status === "estimated" && !out.benefitTier) out.benefitTier="level";
+      if (out.status !== "estimated") {out.healthClass=null;out.benefitTier=null;}
+      if (out.status === "estimated" && out.kind !== "final_expense" && !out.healthClass) out.status="manual_review";
+      out.finalClass=out.status === "estimated" ? out.healthClass||out.benefitTier : out.status;
+      if(out.healthClass)out.displayClass=out.tobaccoBasis === "tobacco" && out.healthClass === "preferred_plus" && p?.id.startsWith("foresters_") ? "Tobacco Plus" : CLASS_LABELS[out.healthClass];
+      out.range=out.healthClass ? {low:out.healthClass,high:out.healthClass} : null;
+      out.missing=[...new Set([...out.missing,...out.issues.filter(i=>i.status === "missing").map(i=>i.text)])];
+      out.confidence={level:out.issues.some(i=>i.status === "missing") ? "Incomplete information" : out.status === "estimated" ? "Complete for modeled screens" : "Carrier review required",missing:out.missing};
+      out.flags=out.issues.map(i=>i.id);
+      return out;
     }
   }
-
-  /* conditionDeclineHit: map form flags to decline trigger ids */
-  function conditionDeclineHit(id, d, condIds, med, rules, t) {
-    const recentOn = (ids) => (d.conditions || []).some(c => ids.includes(c.id) && isYes(c.recentEvent));
-    switch (id) {
-      case "alcohol_active": return d.alcoholConcern === "active";
-      case "drug_use_recent": {
-        // carrier-published drug-use decline window (e.g., Banner 3 years,
-        // American Amicable 4 years)
-        const dy = (rules && rules.drugDeclineYears) || 3;
-        return d.drugAbuse === "yes" && (!has(d, "drugAbuseYears") || (yearsAgo(d.drugAbuseYears) ?? Infinity) < dy);
-      }
-      case "amam_stroke": return rules && rules.id === "amam" && condIds.includes("stroke");
-      case "amam_heart": return rules && rules.id === "amam" && (condIds.includes("heart_disease") || condIds.includes("cad"));
-      case "amam_copd": return rules && rules.id === "amam" && condIds.includes("copd");
-      case "amam_paralysis": return rules && rules.id === "amam" && condIds.includes("paralysis");
-      case "amam_liver": return rules && rules.id === "amam" && condIds.includes("liver_disease");
-      case "amam_third_party_payor": return rules && rules.id === "amam" && d.premiumPayor === "third_party" && d.age && Number(d.age) >= 30;
-      case "pending_test": return isYes(d.pendingTests);
-      case "driving_dui_recent": {
-        if (!isYes(d.seriousDriving)) return false;
-        const yrs = has(d, "seriousDrivingYears") ? yearsAgo(d.seriousDrivingYears) : null;
-        if (yrs === null) return true; // missing/invalid/negative -> within the recent window
-        const cap = rules && rules.id === "john_hancock" ? 5 : 2; // JH: 5 years; Quility / Corebridge: 2 years
-        return yrs < cap;
-      }
-      case "jh_pending_test": return rules && rules.id === "john_hancock" && isYes(d.pendingTests);
-      case "jh_occupation": return rules && rules.id === "john_hancock" && isYes(d.occupationHazardous);
-      case "es_pending": return rules && rules.id === "americo" && (isYes(d.pendingTests) || isYes(d.recentHospitalization) || isYes(d.recentSurgery));
-      case "q_gastric": return rules && rules.id === "quility" && isYes(d.gastricBypassRecent);
-      case "cs_pending": return rules && rules.id === "corebridge" && isYes(d.pendingTests);
-      /* SimpliNow Legacy condition table: "Terminal illness or expected to die
-         within 12 months" — fired from the terminal-prognosis flag. (The old
-         predicate required activeSymptom === "severe", a value the wizard
-         never produces, so the trigger was dead.) */
-      case "cs_terminal": return rules && rules.id === "corebridge" && isYes(d.terminalPrognosis);
-      case "dementia": return condIds.includes("dementia");
-      /* Final-audit convention (stroke_severe/cardiomyopathy precedent): each
-         flag-based trigger reads the projected form flag AND the condition
-         object, so direct engine callers behave identically to the wizard. */
-      case "cirrhosis": return condIds.includes("liver_disease") && (isYes(d.cirrhosis) || (d.conditions || []).some(c => c.id === "liver_disease" && c.cirrhosis === "yes"));
-      case "defibrillator": return condIds.includes("heart_disease") && (isYes(d.defibrillator) || (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.defibrillator)));
-      /* Final-audit fix: reads the projected form flag AND the condition field
-         directly (the wizard pill lives on the condition object), so the
-         Transamerica / Mutual of Omaha published decline fires from real UI
-         data instead of staying dead. */
-      case "cardiomyopathy": return condIds.includes("heart_disease") && (isYes(d.cardiomyopathy) || (d.conditions || []).some(c => c.id === "heart_disease" && isYes(c.cardiomyopathy)));
-      case "hiv": return condIds.includes("hiv");
-      case "renal_failure": return condIds.includes("kidney_disease") && (isYes(d.dialysis) || isYes(d.kidneyFailure) || (d.conditions || []).some(c => c.id === "kidney_disease" && c.dialysis === "yes"));
-      case "quadriplegia": return condIds.includes("paralysis") && (d.paralysisType === "quadriplegia" || (d.conditions || []).some(c => c.id === "paralysis" && c.paralysisType === "quadriplegia"));
-      /* stroke_severe reads both the projected form flag (buildInput lifts the
-         condition field) and the condition object directly, so direct engine
-         callers without the projection behave identically. */
-      case "stroke_severe": return condIds.includes("stroke") && (isYes(d.strokeSevere) || isYes(d.multipleStrokes) || (d.conditions || []).some(c => c.id === "stroke" && isYes(c.multipleStrokes)));
-      case "suicide_multiple": return isYes(d.suicideMultiple);
-      case "suicide_recent": return suicideRecentHit(d, t); // National Life uninsurable list
-      case "transplant": return condIds.includes("transplant");
-      case "bankruptcy_active": return isYes(d.bankruptcyActive);
-      case "criminal_active": return isYes(d.criminalActive);
-      case "adl_dependence": return d.adlAssistance === "yes" || d.mobility === "wheelchair_chronic" || d.mobility === "bedbound";
-      case "facility_care": return d.livingSetting === "nursing" || d.livingSetting === "psychiatric" || d.livingSetting === "hospice" || isYes(d.homeHealth);
-      case "wheelchair": return d.mobility === "wheelchair_chronic";
-      case "oxygen_use": return isYes(d.oxygenUse);
-      /* National Life publishes these recency screens on BOTH lists; the
-         decline copy (Uninsurable list) is the stricter published outcome —
-         the postpone twin is deduped behind it via the declineSet skip in
-         run()'s postpone loop. */
-      case "cva_recent": {
-        if (recentOn(["stroke"])) return true; // stroke within one year
-        // or stroke with diabetes or cardiac history (published leg)
-        return condIds.includes("stroke") && condIds.some(cid => ["diabetes", "cad", "heart_disease"].includes(cid));
-      }
-      case "epilepsy_recent": return recentOn(["seizures"]); // diagnosed within one year
-      case "heart_surgery_recent": {
-        if (recentOn(["cad", "heart_disease"])) return true; // angioplasty/bypass/MI or heart surgery within 6 months
-        const v = (d.conditions || []).find(c => c.id === "heart_valve_prosthesis");
-        if (!v || !has(v, "implantYears")) return false;
-        const yrs = Number(v.implantYears);
-        return Number.isFinite(yrs) ? yrs < 1 : true; // valve replacement within 1 year
-      }
-      /* National Life uninsurable list: age 60+ without routine health care
-         and a physical within the last 24 months. */
-      case "no_routine_care": return Number(d.age) >= 60 && d.doctorVisits === "rarely";
-      /* Currently suspended/revoked license — collected as serious driving
-         (DUI/reckless/suspension) with years-since; unanswered recency is
-         gate-first. */
-      case "driving_no_license": {
-        if (!isYes(d.seriousDriving)) return false;
-        const yrs = has(d, "seriousDrivingYears") ? yearsAgo(d.seriousDrivingYears) : null;
-        return yrs === null || yrs < 1;
-      }
-      /* National Life uninsurable list: abdominal aortic aneurysm present, or
-         surgically corrected within the past 6 months. A repaired aneurysm
-         with an unanswered repair date is gate-first (unknown recency counts
-         as within-window). Other carriers take the conservative
-         no-published-row Standard fallback in evalMedical. */
-      case "aneurysm": {
-        const aaa = (d.conditions || []).find(c => c.id === "abdominal_aneurysm");
-        if (!aaa) return false;
-        if (aaa.status === "current") return true; // present
-        if (aaa.status !== "resolved") return false;
-        if (aaa.repairedWithin6mo === true) return true;
-        if (aaa.repairedWithin6mo === false) return false;
-        const yrs = has(aaa, "resolvedYears") ? yearsAgo(aaa.resolvedYears) : null;
-        return yrs === null || yrs < 0.5;
-      }
-      /* National Life uninsurable list: SSDI/DI disability for depression,
-         PTSD, or other medical (non-musculoskeletal) impairments. */
-      case "disabled": return isYes(d.disabledBenefits);
-      /* Transamerica impairment table: terminal illness — a physician's
-         prognosis of life expectancy measured in months. Fires only where
-         declared; other carriers evaluate terminal presentations through
-         their own published screens (hospice/facility care, active cancer,
-         ADL dependence). */
-      case "terminal": return isYes(d.terminalPrognosis);
-      default: return false;
-    }
+  function compare(input,options={}) {
+    const selected=Object.prototype.hasOwnProperty.call(PRODUCT_RULES,input?.productId) ? PRODUCT_RULES[input.productId] : null;
+    // Same coverage type AND underwriting route; no unlike-product ranking.
+    if (!selected || selected.status === "unverified" || selected.kind === "life") return [];
+    return Object.values(PRODUCT_RULES).filter(p=>p.kind === selected.kind && p.route === selected.route && p.status !== "unverified").map(p=>run(p.id,input,options));
   }
-
-  /* Build human-readable summary lines for the results page */
-  function buildSummary(out, rules) {
-    const lines = [];
-    const cls = out.classInfo[out.finalClass] || { name: out.finalClass.replace(/_/g, " ") };
-    lines.push(`Preliminary estimate: ${cls.name || out.finalClass}`);
-    if (out.tobaccoClass) lines.push("Nicotine history drives a separate tobacco class.");
-    if (out.possibleCredit) {
-      const from = (out.classInfo[out.possibleCredit.from] || { name: out.possibleCredit.from }).name;
-      const to = (out.classInfo[out.possibleCredit.to] || { name: out.possibleCredit.to }).name;
-      lines.push(`Possible one-class credit review: ${from} → ${to}. ${out.possibleCredit.note}`);
-    }
-    if (out.medications && out.medications.undisclosed && out.medications.undisclosed.length) {
-      out.medications.undisclosed.forEach(u => lines.push(`Medication cross-check: ${u.med} suggests ${u.conditionName} — not disclosed. Confirm with the applicant and update medical history before submission.`));
-    }
-    if (out.financial && out.financial.ok === false) lines.push(out.financial.detail);
-    return lines;
-  }
-
-  return { run, classWorseThan, worstOf, CLASS_INDEX };
+  return {run,compare,ageAt,within,shift};
 })();
