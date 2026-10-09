@@ -221,4 +221,49 @@ equal(o.status,"manual_review","BMI Level1 does not establish policy Level1");
 equal(o.healthClass,null,"BMI cannot promise a final Flex offer");
 equal(run("banner_beyondterm",{faceAmount:500001,termYears:30}).status,"manual_review","Flex maximum is not borrowed by BeyondTerm");
 equal(PRODUCT_RULES.banner_flex.status,"partial","Product-limit reconciliation does not promote underwriting criteria");
+// Release 73: the optional Beyond/Flex add-back is scoped to valid recent loss.
+const loss={heightIn:70,weightLb:375,priorWeightLb:425,weightChange:"loss",weightCause:"intentional",weightChangeDate:"2026-09-01"};
+o=run("banner_flex",loss);
+equal(o.status,"manual_review","Possible add-back alone cannot produce a Flex decline");
+equal(o.domains.build.weight,375,"Current weight is retained as recorded evidence");
+equal(o.domains.build.possibleWeight,400,"Half-loss calculation is retained as a carrier possibility");
+ok(o.domains.build.bmi<55&&o.domains.build.possibleBmi>55,"Example crosses BMI55 only after the optional add-back");
+ok(o.issues.some(i=>i.id==="flex_weight_limit_review"),"Potential threshold crossing is explicitly reviewed");
+ok(!o.issues.some(i=>i.id==="flex_bmi_decline"),"An optional rating weight is not treated as actual BMI");
+equal(o.domains.build.level,undefined,"Pending rating weight cannot establish a Flex build level");
+equal(o.healthClass,null,"Weight-loss review withholds class");
+equal(o.benefitTier,null,"Weight-loss review withholds benefit tier");
+equal(o.issues.find(i=>i.id==="beyond_weight_adjustment").source.pages.join(","),"3","Add-back cites the physical build page");
+for(const id of ["banner_beyondterm","banner_flex"]) {
+  for(const [when,pending,windowReview] of [["2026-09-01",true,false],["2025-10-09",true,false],["2025-10-08",true,false],["2025-10-07",false,true],["2024-09-01",false,true],["2026-10-09",false,false],["",false,false],["2026-02-30",false,false]]) {
+    o=run(id,{...loss,weightChangeDate:when});
+    equal(o.domains.build.weight,375,id+" current weight retained for "+when);
+    equal(o.domains.build.adjustmentPending===true,pending,id+" only a valid last12-month date permits a potential add-back");
+    equal(o.issues.some(i=>i.id==="beyond_weight_window"),windowReview,id+" old dates require interview reconciliation");
+    equal(o.healthClass,null,id+" date boundary never confirms a class");
+    if(!pending)equal(o.domains.build.possibleWeight,undefined,id+" no stale/invalid weight adjustment");
+    if(id==="banner_flex")equal(o.status,"manual_review","Date errors cannot cause an adjusted-weight decline");
+  }
+  o=run(id,{heightIn:68,weightLb:185,priorWeightLb:225,weightChange:"loss",weightChangeDate:"2026-09-01",weightCause:"intentional"});
+  equal(o.domains.build.weight,185,"D077 printed example retains current185lb");
+  equal(o.domains.build.possibleWeight,205,"D077 printed example considers205lb without fixing the rating");
+  equal(o.domains.build.ceiling,undefined,"Discretionary rating weight withholds a fixed build ceiling");
+  equal(o.status,"manual_review","Printed example is carrier review, not an offer");
+  for(const extra of [{weightCause:"illness"},{weightCause:"pregnancy"},{weightCause:"surgery"},{weightCause:"unknown"},{priorWeightLb:350},{priorWeightLb:""},{weightChange:"gain",priorWeightLb:350},{weightLb:""}]) {
+    o=run(id,{...loss,...extra});
+    ok(!o.domains.build?.adjustmentPending,id+" excludes non-intentional, inconsistent or incomplete loss from optional add-back");
+    equal(o.healthClass,null,id+" unconfirmed weight facts never assign a health class");
+  }
+}
+o=run("banner_flex",{...loss,weightLb:390,priorWeightLb:430});
+equal(o.status,"decline_screen","Current disclosed BMI above55 retains the published Flex exclusion");
+ok(o.issues.some(i=>i.id==="flex_bmi_decline"),"Actual BMI exclusion is preserved");
+o=run("banner_flex",{...loss,weightLb:55*70*70/703,priorWeightLb:430});
+equal(o.status,"manual_review","Current BMI exactly55 is not >55");
+o=run("banner_beyondterm",{weightLb:185,heightIn:68,weightChange:"none"});
+equal(o.domains.build.ceiling,"preferred_plus","No-loss BeyondTerm build component remains unchanged");
+o=run("banner_opterm",{weightLb:185,heightIn:68,priorWeightLb:225,weightChange:"loss",weightChangeDate:"2026-09-01",weightCause:"intentional"});
+equal(o.domains.build.weight,205,"OPTerm's separate weight-loss rule is preserved");
+o=run("foresters_yourterm_med",{weightLb:185,heightIn:68,priorWeightLb:225,weightChange:"loss",weightChangeDate:"2026-09-01",weightCause:"intentional",stableSince:"2026-09-01"});
+equal(o.domains.build.weight,205,"Foresters' separate stability rule is preserved");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

@@ -397,26 +397,36 @@ const Engine = (() => {
     function build() {
       const h = num("heightIn","height in inches",36,100), w = num("weightLb","weight in pounds",30,1000);
       need("weightChange","weight change in the last 12 months",["none","loss","gain"]);
-      let ratedWeight=w;
+      let ratedWeight=w,possibleWeight=null;
       if (d.weightChange === "loss" || d.weightChange === "gain") {
-        const prior = num("priorWeightLb","previous weight",30,1000);past(d.weightChangeDate,"weight change");
+        const prior = num("priorWeightLb","previous weight",30,1000),changeDateOK=past(d.weightChangeDate,"weight change");
         need("weightCause","weight-change cause",["intentional","illness","pregnancy","surgery","unknown"]);
         if (d.weightCause !== "intentional") {
           if (p.id === "corebridge_legacy" && d.weightCause === "unknown" && d.weightChange === "loss" && within(d.weightChangeDate,12,asOf)) benefit("graded","Unexplained weight loss within 12 months supports Graded screening.","D106",[6]);
           else issue("weight_cause","Weight change due to illness, pregnancy, surgery or an unknown cause requires review.");
         }
         if (w !== null && prior !== null && ((d.weightChange === "loss" && prior <= w) || (d.weightChange === "gain" && prior >= w))) issue("weight_conflict","The reported weight change conflicts with the current/previous weights.");
-        if (d.weightChange === "loss" && prior > w && d.weightCause === "intentional") {
+        if (d.weightChange === "loss" && w!==null && prior!==null && prior > w && d.weightCause === "intentional") {
           if (p.build === "banner" && prior-w>20 && within(d.weightChangeDate,12,asOf)) ratedWeight=w+(prior-w)/2;
           else if (p.build === "foresters") {
             if (!past(d.stableSince,"weight stability")) return;
             if (d.stableSince > shift(asOf,-12)) ratedWeight=w+(prior-w)/2;
-          } else if (["beyond","flex"].includes(p.build)) {ratedWeight=w+(prior-w)/2;out.notes.push("September guide permits adding back half of intentional weight loss; carrier discretion still applies.");}
+          } else if (["beyond","flex"].includes(p.build)) {
+            if (changeDateOK && within(d.weightChangeDate,12,asOf,true)) {
+              possibleWeight=w+(prior-w)/2;
+              issue("beyond_weight_adjustment","The carrier may add back half of intentional weight loss over the last 12 months. The adjusted weight is a possibility requiring review, not a confirmed rating weight.","review","D077",[3]);
+            } else if (changeDateOK) issue("beyond_weight_window","The reported loss date is more than 12 months ago. Confirm the answer about weight change in the last 12 months; no half-loss adjustment has been applied.","review","D077",[3]);
+          }
           else issue("weight_loss_review","This product's weight-loss adjustment has not been reconciled; underwriting must review it.");
         }
       }
       if (h === null || w === null || !p.build) return;
-      const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0])};
+      const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0],["beyond","flex"].includes(p.build) ? [3] : undefined)};
+      if (possibleWeight!==null) {
+        const possibleBmi=possibleWeight*703/(h*h);
+        Object.assign(out.domains.build,{possibleWeight,possibleBmi,adjustmentPending:true,detail:`Current weight: ${w} lb; BMI ${bmi.toFixed(2)}. The carrier may use ${possibleWeight} lb (BMI ${possibleBmi.toFixed(2)}) after a discretionary weight-loss adjustment; this is not a confirmed rating weight.`});
+        if(p.build === "flex" && bmi<=55 && possibleBmi>55)issue("flex_weight_limit_review","Only the possible discretionary adjustment exceeds BMI 55. The carrier must confirm the weight it will use; that possibility alone does not establish a decline screen.","review","D077",[3]);
+      }
       let height = h;
       if (h % 1) {
         if (p.build === "banner" && h % 1 === 0.5) height=Math.ceil(h);
@@ -433,12 +443,13 @@ const Engine = (() => {
         } else out.domains.build.ceiling=bmi <= (age>=60?18:17) ? "standard" : bmi<=28 ? "preferred_plus" : bmi<=30 ? "preferred" : bmi<=32 ? "standard_plus" : "standard";
       } else if (p.build === "flex") {
         if (bmi>55) issue("flex_bmi_decline","BMI exceeds the BeyondTermflex maximum.","decline","D077",[3]);
-        else {out.domains.build.level=bmi>=43 && bmi<=45.99?1:bmi>=46&&bmi<=48?2:bmi>=48.1&&bmi<=55?3:null;issue("flex_level","The printed BMI intervals and all other Flex risks need carrier confirmation; a build level is not a health-class offer.","review","D077",[3]);}
+        else {const level=bmi>=43 && bmi<=45.99?1:bmi>=46&&bmi<=48?2:bmi>=48.1&&bmi<=55?3:null;if(possibleWeight===null)out.domains.build.level=level;else out.domains.build.currentLevel=level;issue("flex_level","The printed BMI intervals and all other Flex risks need carrier confirmation; a build level is not a health-class offer.","review","D077",[3]);}
       } else if (p.build === "beyond") {
         const row=BUILD_CHARTS.beyond[height];
         const hits=row?.map((range,i)=>ratedWeight>=range[0]&&ratedWeight<=range[1]?CLASS_ORDER[i]:null).filter(Boolean)||[];
         if (hits.length!==1) issue("beyond_build","Build is outside a single unambiguous published BeyondTerm band; overlapping/gapped chart cells need review.","review","D077",[3]);
-        else out.domains.build.ceiling=hits[0];
+        else if(possibleWeight===null)out.domains.build.ceiling=hits[0];
+        else out.domains.build.currentCeiling=hits[0];
       } else if (p.build === "corebridge") {
         const row=BUILD_CHARTS.corebridge[height];
         if (!row) issue("core_height","Height is outside the source build chart.","review","D106",[7]);
