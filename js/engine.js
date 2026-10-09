@@ -361,12 +361,15 @@ const Engine = (() => {
       let exception = false;
       if (cigar.length && ["banner_opterm","moo_full","transamerica_super","foresters_yourterm_med","foresters_advantage_med","foresters_smart_med"].includes(p.id)) {
         const maxMonth = p.id === "moo_full" ? 2 : 1, maxYear = p.id === "moo_full" ? 24 : 12;
-        const countOK = cigar.every(r=>numeric(r.perMonth) !== null && numeric(r.perYear) !== null && Number(r.perMonth)>=0 && Number(r.perYear)>=0 && Number(r.perMonth)<=maxMonth && Number(r.perYear)<=maxYear);
+        // Frequency fields are applicant totals: highest monthly count and annual total.
+        // Multiple recent cigar rows may duplicate or split those totals; do not
+        // accept each row independently or silently add potentially duplicate use.
+        const countOK = cigar.length === 1 && cigar.every(r=>numeric(r.perMonth) !== null && numeric(r.perYear) !== null && Number.isInteger(Number(r.perMonth)) && Number.isInteger(Number(r.perYear)) && Number(r.perMonth)>0 && Number(r.perYear)>0 && Number(r.perMonth)<=maxMonth && Number(r.perYear)<=maxYear && Number(r.perYear)>=Number(r.perMonth) && Number(r.perYear)<=12*Number(r.perMonth));
         const tested = d.cotinineResult === "negative" && date(d.cotinineDate) && within(d.cotinineDate,12,asOf);
         const otherWindow = 12;
         const otherOK = !relevant.some(r=>r.product !== "cigar" && within(r.lastDate,otherWindow,asOf));
         exception = countOK && tested && otherOK;
-        if (!countOK || !tested) issue("cigar_evidence","An occasional-cigar exception needs admitted monthly/annual use and dated negative cotinine evidence. Non-tobacco status is withheld until confirmed.");
+        if (!countOK || !tested) issue("cigar_evidence","An occasional-cigar exception needs one confirmed applicant-total record, consistent positive whole-number monthly/annual counts, and dated negative cotinine evidence. Multiple recent cigar records require reconciliation; non-tobacco status is withheld until confirmed.");
       }
       let tobaccoMonths = p.id === "transamerica_super" ? 24 : 12;
       const recent = relevant.some(r=>within(r.lastDate,tobaccoMonths,asOf));
@@ -648,3 +651,4 @@ const Engine = (() => {
   }
   return {run,compare,ageAt,within,shift};
 })();
+

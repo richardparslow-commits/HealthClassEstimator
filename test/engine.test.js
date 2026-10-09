@@ -69,6 +69,16 @@ o=run("transamerica_super",smoke({weightLb:270}));equal(o.healthClass,"table","D
 o=review("banner_opterm",smoke({weightLb:350}),"Out-of-chart smoker requires review");equal(o.tobaccoBasis,"tobacco","Review keeps tobacco status");
 const cigarAnswers={nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[cigar],cotinineResult:"negative",cotinineDate:"2026-09-01"};
 equal(run("banner_opterm",cigarAnswers).healthClass,"preferred_plus","Banner cigar evidence permits PP");
+// Regression: exceptions use an applicant total, not an independently allowed count per row.
+for (const id of ["banner_opterm","moo_full","transamerica_super","foresters_yourterm_med","foresters_advantage_med","foresters_smart_med"]) {
+  review(id,{...cigarAnswers,nicotine:[{...cigar},{...cigar}]},id+" duplicate/split cigar totals require reconciliation");
+  for (const [perMonth,perYear] of [[0,0],[0,1],[1,0],[1,-1],[0.5,6],[1,12.5],[2,1]]) {
+    review(id,{...cigarAnswers,nicotine:[{...cigar,perMonth,perYear}]},id+" inconsistent/noninteger cigar counts "+perMonth+"/"+perYear);
+  }
+}
+equal(run("moo_full",{...cigarAnswers,nicotine:[{...cigar,perMonth:2,perYear:24}]}).tobaccoBasis,"non_tobacco","MOO maximum confirmed applicant total remains supported");
+review("moo_full",{...cigarAnswers,nicotine:[{...cigar,perMonth:1,perYear:13}]},"Annual total cannot exceed twelve times highest monthly count");
+
 equal(run("foresters_yourterm_med",cigarAnswers).healthClass,"preferred","Foresters cigar maximum is Preferred");
 review("banner_opterm",{...cigarAnswers,cotinineDate:""},"Cigar exception needs specimen date");
 equal(run("banner_opterm",{...cigarAnswers,nicotine:[cigar,{product:"cigarette",current:"no",lastDate:"2025-01-01"}]}).healthClass,"standard_plus","Other tobacco3yr prevents Banner PP cigar class while preserving eligible NT basis");
@@ -141,3 +151,4 @@ review("corebridge_legacy",{...core,medicalHistory:"yes",conditions:[condition("
 review("transamerica_super",{weightLb:(28.00005*70*70/703)},"BMI printed precision gap withheld");
 review("banner_opterm",{weightLb:196.5},"OPTerm printed pound gap withheld");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);
+
