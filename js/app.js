@@ -200,7 +200,7 @@ const App = (() => {
     if(o.kind === "final_expense")return o.benefitTier === "graded" ? "Graded benefit screen" : "Level benefit screen";
     return (o.displayClass||CLASS_LABELS[o.healthClass]||"Review")+(o.tobaccoBasis === "tobacco" ? " · Tobacco" : " · Non-tobacco");
   }
-  function sourceText(s) {return s ? s.id+" · "+s.edition+" · PDF p. "+s.pages.join(", ") : "Information / evidence check";}
+  function sourceText(s) {return s ? s.id+" · "+s.edition+(s.pages?.length ? " · PDF p. "+s.pages.join(", ") : " · Web reference") : "Information / evidence check";}
   function showResults() {
     const target=$("#results-content");target.replaceChildren();target.classList.remove("hidden");$("#step-content").classList.add("hidden");
     const out=Engine.run(state.productId,state),hero=node("section","result-hero");
@@ -222,7 +222,7 @@ const App = (() => {
     if(comparisons.length>1){const box=node("section","card");box.appendChild(node("h3",null,"Other products with the same coverage type and route"));paragraph(box,"Listed in carrier order. Term length, riders, price and availability still require confirmation; these are not ranked offers.");
       const table=node("table","domain-table"),head=node("tr");["Product","Screen result","Source scope"].forEach(t=>head.appendChild(node("th",null,t)));const th=node("thead");th.appendChild(head);table.appendChild(th);const body=node("tbody");
       comparisons.forEach(o=>{const tr=node("tr");tr.appendChild(node("td",null,o.carrier+" — "+o.product));tr.appendChild(node("td",null,resultLabel(o)));tr.appendChild(node("td",null,o.verification === "criteria" ? "Selected criteria reconciled" : "Carrier review"));body.appendChild(tr);});table.appendChild(body);const scroll=node("div","table-scroll");scroll.appendChild(table);box.appendChild(scroll);target.appendChild(box);}
-    const refs=node("section","card");refs.appendChild(node("h3",null,"Source editions used"));out.sources.forEach(s=>{paragraph(refs,s.id+" · "+s.title+" · "+s.edition+" · Physical PDF pages "+s.pages.join(", "));if(s.url){const a=node("a",null,"Carrier source");a.href=s.url;a.target="_blank";a.rel="noopener noreferrer";refs.appendChild(a);}});target.appendChild(refs);
+    const refs=node("section","card");refs.appendChild(node("h3",null,"Source editions used"));out.sources.forEach(s=>{paragraph(refs,s.id+" · "+s.title+" · "+s.edition+(s.pages?.length ? " · Physical PDF pages "+s.pages.join(", ") : " · Web reference"));if(s.url){const a=node("a",null,"Carrier source");a.href=s.url;a.target="_blank";a.rel="noopener noreferrer";refs.appendChild(a);}});target.appendChild(refs);
     const actions=node("section","card");actions.append(button("Print this result",()=>window.print()),button("Delete saved answers and start over",reset));target.appendChild(actions);
     $("#btn-next").classList.add("hidden");$("#btn-back").textContent="← Edit answers";$("#btn-back").disabled=false;
   }
@@ -260,3 +260,4 @@ const App = (() => {
   }
   init();return {reset};
 })();
+
