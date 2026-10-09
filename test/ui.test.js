@@ -3,6 +3,7 @@
 // npm run test:ui. HCE_BROWSER_PATH may point to an existing Chromium binary.
 const {chromium}=require("playwright"),fs=require("fs"),path=require("path"),http=require("http"),assert=require("node:assert/strict");
 const root=path.resolve(__dirname,"..");
+const expectedVersion=fs.readFileSync(path.join(root,"index.html"),"utf8").match(/var HCE_VERSION = "(\d+)"/)[1];
 const server=http.createServer((req,res)=>{
   const name=decodeURIComponent(new URL(req.url,"http://localhost").pathname),file=path.resolve(root,"."+(name === "/"?"/index.html":name));
   if(!file.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}
@@ -74,7 +75,7 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>{localStorage.removeItem("hce_state_v2");localStorage.setItem("hce_state_v1",JSON.stringify({carrier:"foresters",age:35,heightFt:5,heightIn:10,conditions:[{id:"diabetes",severity:"mild",control:"good"}],criminalActive:false}));});
     await page.reload();await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.locator("#productId").inputValue(),"");assert.match(await page.locator(".migration-notice").innerText(),/reconfirm/);await nav("Criminal history");assert.equal(await page.locator("#probationCurrent").inputValue(),"");
     // Validate the actual deployment build has all four scripts in order.
-    await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),"69");assert.deepEqual(errors,[]);
+    await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
     console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests and embedded build.");
   } catch(e) {console.error("Page text:",(await page.locator("body").innerText()).slice(-1800)); await page.screenshot({path:path.join(root,"..","ui-failure.png"),fullPage:true});throw e;} finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

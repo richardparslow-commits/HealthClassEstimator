@@ -150,5 +150,33 @@ review("corebridge_legacy",{...core,medicalHistory:"yes",conditions:[condition("
 review("corebridge_legacy",{...core,medicalHistory:"yes",conditions:[condition("hypertension")],medicationHistory:"yes",medications:[rx("warfarin","hypertension")]},"Known drug with unusual indication is reviewed");
 review("transamerica_super",{weightLb:(28.00005*70*70/703)},"BMI printed precision gap withheld");
 review("banner_opterm",{weightLb:196.5},"OPTerm printed pound gap withheld");
+// Release 71: Eagle Select family limits are verified without guessing a plan or benefit tier.
+const eagle = {dob:"1951-10-08",faceAmount:50000,policyPurpose:"final_expense"};
+for (const [age,face,status] of [[39,5000,"unavailable"],[40,5000,"manual_review"],[75,50000,"manual_review"],[76,40000,"manual_review"],[85,40000,"manual_review"],[86,5000,"unavailable"],[40,4999,"unavailable"],[75,50001,"unavailable"],[76,40001,"unavailable"],[85,40001,"unavailable"]]) {
+  o=run("americo",{...eagle,dob:`${2026-age}-10-08`,faceAmount:face});
+  equal(o.status,status,`AM-ES-SPECS p.1 age${age} face${face}`);
+  equal(o.healthClass,null,"Eagle Select family limits never assign a health class");
+  equal(o.benefitTier,null,"Eagle Select family limits never assign a benefit tier");
+}
+o=run("americo",{...eagle,dob:"1950-04-08",faceAmount:40001});
+equal(o.age,76,"Eagle Select uses last birthday rather than nearest birthday");
+equal(o.status,"unavailable","Age76 reduced face maximum uses confirmed age basis");
+equal(o.issues.find(i=>i.id==="face_limit").source.id,"AM-ES-SPECS","Amount boundary cites the exact reference sheet");
+equal(run("americo",{...eagle,state:"NY"}).status,"unavailable","AM-ES-SPECS p.1 issuing company excludes New York");
+o=review("americo",{...eagle,dob:"1950-10-08",faceAmount:40000,...smoke()},"Age76 nicotine case requires carrier plan selection, not an invented family exclusion");
+equal(o.benefitTier,null,"Nicotine review cannot promise a level or graded tier");
+o=review("americo",{...eagle,medicalHistory:"yes",conditions:[condition("diabetes")]},"Eagle Select does not borrow another final-expense medical screen");
+equal(o.benefitTier,null,"Disclosed condition cannot produce an inferred Eagle Select tier");
+for(const id of ["quility","national_life","john_hancock"]) {
+  o=review(id,{},id+" incomplete current underwriting scope remains under review");
+  ok(o.sources.length>0,id+" includes explicitly scoped identity references");
+  ok(o.notes.some(n=>/application/.test(n)),id+" explains the required source gap");
+}
+o=Engine.run("quility",InterviewState.migrate({...clone(base),productId:"quility"}),{asOf});
+equal(o.productId,"quility","Saved legacy QTP identity is not silently remapped");
+equal(o.status,"manual_review","Saved QTP selection cannot inherit current BeyondTerm rating");
+equal(o.healthClass,null,"Legacy identity source cannot establish a favorable rating");
+equal(Engine.compare({...clone(base),productId:"quility"},{asOf}).length,0,"Unverified QTP cannot enter a current product comparison");
+ok(Engine.compare({...clone(base),...eagle,productId:"americo"},{asOf}).every(r=>r.productId==="americo"),"Eagle Select does not mix with a different final-expense underwriting route");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);
 
