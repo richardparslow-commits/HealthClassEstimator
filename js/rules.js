@@ -248,6 +248,21 @@ const RULE_SOURCES = {
     "file": "Corebridge Financial/SIWL UW Guide_cXrbDfI.pdf",
     "sha256": "6d51fdd6ca8e59fac15d64424af32fcbf5c0cfc6bfd78a53cc62bc0937998844"
   },
+  "AM-QSFP-INFO": {
+    "title": "Quility Secure Future Preferred product information",
+    "edition": "Created by QMKTG 07-17-2026; reviewed 2026-10-09",
+    "pages": [1],
+    "file": "American Amicable/AM AM secure future.pdf",
+    "sha256": "72b4edc9bdc3fda0b4d83661d778549fee95518d35e47f49d2069ef5bca25551",
+    "url": "https://navigator-help.quility.com/hc/en-us/articles/46241491592219-Whole-Life-AmAm-UHL-vs-Term-Life-Banner-Life-SBLI-vs-IUL-F-G-in-Navigator"
+  },
+  "AM-QSFP-FAQ": {
+    "title": "Quility Secure Future Preferred FAQs",
+    "edition": "Created by QTG 10.2.2026; reviewed 2026-10-09",
+    "pages": [2],
+    "file": "American Amicable/QSFP_by_AmAm_FAQs_10.2026_ojEpXbK.pdf",
+    "sha256": "bac0b143f3706ac879964f8780e49566409af830daefa5b7abad8a7d01d056a0"
+  },
   "D017": {
     "title": "Quility Secure Future Preferred prescription reference",
     "edition": "November 18, 2025",
@@ -1489,14 +1504,17 @@ const PRODUCT_RULES = Object.fromEntries([
     "id": "amam_qsfp",
     "carrier": "American Amicable",
     "name": "Quility Secure Future Preferred",
-    "kind": "term",
-    "route": "Simplified issue",
-    "sources": [
-      "D016",
-      "D017"
-    ],
+    "kind": "final_expense",
+    "route": "Instant-decision simplified issue whole life",
+    "sources": ["AM-QSFP-INFO", "AM-QSFP-FAQ", "D016", "D017"],
     "status": "partial",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-09",
+    "eligibilitySource": "AM-QSFP-INFO",
+    "minAge": 50,
+    "maxAge": 85,
+    "maxFace": 100000,
+    "excludeStates": ["NY"],
+    "scopeNote": "QSFP is final-expense whole life, with permanent coverage rather than a selected term. The July 2026 product sheet lists a $5,000 minimum and the October 2026 FAQ lists $2,500; requests in that difference require current carrier confirmation. Standard/Preferred/Preferred Plus limits depend on the carrier's actual class, which this partial profile does not assign. Current application, age basis, rating criteria, state approvals and appointment remain unconfirmed."
   },
   {
     "id": "sbli_easytrak",

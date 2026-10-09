@@ -169,6 +169,11 @@ const Engine = (() => {
           if ((face!==null && alternateMax && face>alternateMax && face<=maxFace) || (entry && age<=entry[0] && alternateAge>entry[0])) issue("flex_age_limits","The requested amount or term crosses a published limit under age nearest birthday. Confirm the carrier age basis before relying on availability.","review","BF-INFO",[1]);
         }
       }
+      if (p.id === "amam_qsfp" && face !== null) {
+        if (face < 2500) issue("qsfp_face_minimum","Requested coverage is below both supplied QSFP minimums.","unavailable","AM-QSFP-FAQ",[2]);
+        else if (face < 5000) issue("qsfp_minimum_conflict","The July 2026 product sheet lists a $5,000 minimum, while the October 2026 FAQ lists $2,500. Confirm the current minimum before relying on this request.","review","AM-QSFP-FAQ",[2]);
+        if (face > 50000 && face <= 100000) issue("qsfp_class_amount","This amount requires a carrier-assigned Preferred or Preferred Plus class under the supplied limits. The partial profile does not infer a class from the amount requested.","review","AM-QSFP-INFO",[1]);
+      }
       if (p.id === "sbli_easytrak") {
         need("employment","work status",["employed","spouse","student","seeking","retired","other"]);
         if (["student","seeking"].includes(d.employment) && (face>100000 || d.employment === "student" && age>=26)) issue("sbli_employment","EasyTrak student/seeking-work limits are not met.","unavailable","D347",[4]);

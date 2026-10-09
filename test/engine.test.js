@@ -109,7 +109,7 @@ for(const [a1c,insulin,tier,status] of [[8.6,"no","level","estimated"],[8.6,"yes
 }
 review("banner_opterm",{medicalHistory:"yes",conditions:[condition("other")]},"Unmodeled diagnosis cannot assume mild");
 review("banner_opterm",{medicationHistory:"yes",medications:[rx("Unknown medicine","other")]},"Unmapped prescription does not count as clean history");
-equal(run("amam_qsfp",{medicalHistory:"yes",conditions:[condition("stroke")],medicationHistory:"yes",medications:[rx("warfarin","stroke")]}).status,"decline_screen","D017 drug+indication+recent fill exclusion");
+equal(run("amam_qsfp",{dob:"1966-10-08",faceAmount:25000,medicalHistory:"yes",conditions:[condition("stroke")],medicationHistory:"yes",medications:[rx("warfarin","stroke")]}).status,"decline_screen","D017 drug+indication+recent fill exclusion");
 // Exact boundary / immutability checks.
 equal(Engine.within("2024-10-08",24,asOf),false,"Exact lookback anniversary is outside past24months");equal(Engine.within("2024-10-09",24,asOf),true,"One day inside window");equal(Engine.within("not-a-date",24,asOf),false,"Invalid date not interpreted as recent");
 equal(Engine.shift("2024-02-29",12),"2025-02-28","Leap-year calendar shift");equal(Engine.ageAt("1991-04-08",asOf,"last"),35,"Last birthday age");equal(Engine.ageAt("1991-04-08",asOf,"nearest"),36,"Nearest birthday age");
@@ -413,5 +413,41 @@ for(const [i,r] of amSourceBuild.entries()){
 }
 for(const h of [55,80,70.5]){o=amRun({heightIn:h});equal(o.status,"manual_review","Unpublished height/rounding remains review");ok(o.issues.some(i=>["americo_build_height","height_rounding"].includes(i.id)),"Unpublished height is explained");}
 equal(PRODUCT_RULES.americo.status,"partial","Selected screens do not certify complete Americo application/tier criteria");
+
+// Release 76: QSFP permanent coverage identity and product-family boundaries.
+equal(PRODUCT_RULES.amam_qsfp.kind,"final_expense","QSFP is final-expense whole life, not term");
+ok(PRODUCT_RULES.amam_qsfp.route.includes("whole life"),"QSFP route names permanent coverage explicitly");
+equal(PRODUCT_RULES.amam_qsfp.status,"partial","Product identity does not complete underwriting criteria");
+const qsfp=(changes={})=>run("amam_qsfp",{dob:"1966-10-08",faceAmount:25000,policyPurpose:"final_expense",...changes});
+for(const termYears of ["",10,20,30,40,"unknown"]){
+ o=qsfp({termYears});equal(o.kind,"final_expense","Restored term does not change permanent product identity");
+ ok(!o.issues.some(i=>i.id==="missing_termYears"||i.id==="term_unavailable"||i.id==="term_age"),"QSFP never requires or validates a term");
+ equal(o.status,"manual_review","Partial QSFP remains review regardless of stale term");
+ equal(o.healthClass,null,"QSFP class remains unassigned");equal(o.benefitTier,null,"Whole-life identity does not assign level benefits");
+}
+const qsfpComparison=Engine.compare({...clone(base),dob:"1966-10-08",faceAmount:25000,policyPurpose:"final_expense",productId:"amam_qsfp"},{asOf});
+ok(qsfpComparison.length>0,"Selected whole-life route remains represented");
+ok(qsfpComparison.every(r=>r.kind==="final_expense"&&r.route.includes("whole life")),"QSFP comparison never mixes term or other routes");
+for(const productId of ["moo_tle","sbli_easytrak","banner_opterm"]){
+ const peers=Engine.compare({...clone(base),productId},{asOf});
+ ok(!peers.some(r=>r.productId==="amam_qsfp"),"Term comparisons exclude QSFP in both directions");
+ ok(peers.every(r=>r.kind==="term"),"Term route still compares term coverage only");
+}
+for(const [dob,expected] of [["1978-10-08","unavailable"],["1976-10-09","manual_review"],["1976-10-08","manual_review"],["1941-10-08","manual_review"],["1940-11-08","manual_review"],["1940-10-08","unavailable"]]){
+ o=qsfp({dob});equal(o.status,expected,"QSFP issue-age boundary with unconfirmed age basis: "+dob);
+ equal(o.healthClass,null,"Age eligibility is not a rating");equal(o.benefitTier,null,"Age eligibility is not a benefit offer");
+ if(expected==="unavailable")ok(o.issues.some(i=>i.id==="age_limit"&&i.source.id==="AM-QSFP-INFO"&&i.source.pages.join(",")==="1"),"Issue-age screen cites product page");
+ else ok(o.issues.some(i=>i.id==="age_basis"),"Ambiguous age basis remains explicit carrier review");
+}
+for(const [faceAmount,expected,flag] of [[2499,"unavailable","qsfp_face_minimum"],[2500,"manual_review","qsfp_minimum_conflict"],[4999,"manual_review","qsfp_minimum_conflict"],[5000,"manual_review",null],[50000,"manual_review",null],[50001,"manual_review","qsfp_class_amount"],[75000,"manual_review","qsfp_class_amount"],[75001,"manual_review","qsfp_class_amount"],[100000,"manual_review","qsfp_class_amount"],[100001,"unavailable","face_limit"]]){
+ o=qsfp({faceAmount});equal(o.status,expected,"QSFP requested face boundary: "+faceAmount);
+ if(flag)ok(o.issues.some(i=>i.id===flag),"Face boundary explains its source or conflict");
+ else ok(!o.issues.some(i=>["qsfp_face_minimum","qsfp_minimum_conflict","qsfp_class_amount","face_limit"].includes(i.id)),"Common published face range does not fabricate a restriction");
+ equal(o.healthClass,null,"Face request does not infer Preferred class");equal(o.benefitTier,null,"Face request does not infer level tier");
+}
+o=qsfp({faceAmount:2500});ok(o.issues.some(i=>i.id==="qsfp_minimum_conflict"&&i.source.id==="AM-QSFP-FAQ"&&i.source.pages.join(",")==="2"),"Conflicting minimum cites FAQ physical page 2");
+equal(qsfp({state:"NY"}).status,"unavailable","QSFP excludes New York");
+ok(qsfp({state:"NY"}).issues.some(i=>i.id==="state_limit"&&i.source.id==="AM-QSFP-INFO"),"NY screen uses product information");
+equal(qsfp({medicalHistory:"yes",conditions:[condition("stroke")],medicationHistory:"yes",medications:[rx("warfarin","stroke")]}).status,"decline_screen","Corrected product family preserves scoped drug/indication exclusion");
 
 console.log(`Passed ${checks} source-derived underwriting assertions.`);
