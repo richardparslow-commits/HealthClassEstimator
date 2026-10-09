@@ -98,11 +98,11 @@ const Engine = (() => {
     need("policyPurpose","purpose of coverage",["income","mortgage","family","estate","business","final_expense","other"]);
     yn("replacement","whether coverage replaces a policy");yn("financing","whether premiums are financed");
     if (age !== null && age < 18) issue("juvenile","Juvenile risks require the separate carrier application and growth charts; adult classes are withheld.");
-    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable");
-    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable");
+    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
+    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
     if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
     const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
-    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable");
+    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && numeric(d.existingCarrierCoverage) === null) issue("carrier_total","Confirm total existing Foresters coverage; non-medical limits include coverage already in force.","review","D152",[7]);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && face + (numeric(d.existingCarrierCoverage)||0) > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
     if (p.id === "fg_quantum" && face + (numeric(d.existingCoverage)||0) > 1000000) issue("total_line","Total in-force and requested coverage exceeds Quantum's $1 million total line.","unavailable","D141",[9]);
@@ -155,11 +155,18 @@ const Engine = (() => {
       if (p.kind === "term") {
         need("termYears","term length");
         const term=Number(d.termYears),entry=p.terms?.[term];
-        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",p.sources[p.sources.length-1]);
-        if (entry && age!==null && out.tobaccoBasis!=="unknown") {
+        const termSource=p.eligibilitySource || p.sources[p.sources.length-1],termPages=p.eligibilitySource ? [1] : undefined;
+        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",termSource,termPages);
+        if (entry && age!==null && (p.termTobaccoIndependent || out.tobaccoBasis!=="unknown")) {
           let cap=entry[out.tobaccoBasis === "tobacco"?1:0];
           if (p.id === "transamerica_super" && face<100000) cap=({10:[80,80],15:[75,70],20:[65,65],25:[60,55],30:[50,45]})[term][out.tobaccoBasis === "tobacco"?1:0];
-          if(age>cap)issue("term_age","Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",p.sources[p.sources.length-1]);
+          if(age>cap)issue("term_age",p.termTobaccoIndependent ? "Age exceeds the selected term's published limit." : "Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",termSource,termPages);
+        }
+        if (p.id === "banner_flex" && age!==null) {
+          const level23Max=p.level23FaceBands.find(([to])=>age<=to)?.[1];
+          if ((face!==null && level23Max && face>level23Max && face<=maxFace) || (term===25 && age<=55) || (term===20 && age>55 && age<=60)) issue("flex_level_limits","The requested amount or term may require Level 1. The carrier must confirm the actual Flex level; the build component alone cannot establish it.","review","BF-INFO",[1]);
+          const alternateMax=p.faceBands.find(([to])=>alternateAge<=to)?.[1];
+          if ((face!==null && alternateMax && face>alternateMax && face<=maxFace) || (entry && age<=entry[0] && alternateAge>entry[0])) issue("flex_age_limits","The requested amount or term crosses a published limit under age nearest birthday. Confirm the carrier age basis before relying on availability.","review","BF-INFO",[1]);
         }
       }
       if (p.id === "sbli_easytrak") {
@@ -651,4 +658,3 @@ const Engine = (() => {
   }
   return {run,compare,ageAt,within,shift};
 })();
-

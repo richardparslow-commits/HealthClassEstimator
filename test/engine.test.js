@@ -178,5 +178,47 @@ equal(o.status,"manual_review","Saved QTP selection cannot inherit current Beyon
 equal(o.healthClass,null,"Legacy identity source cannot establish a favorable rating");
 equal(Engine.compare({...clone(base),productId:"quility"},{asOf}).length,0,"Unverified QTP cannot enter a current product comparison");
 ok(Engine.compare({...clone(base),...eagle,productId:"americo"},{asOf}).every(r=>r.productId==="americo"),"Eagle Select does not mix with a different final-expense underwriting route");
+// Release 72: Flex outer limits never turn a build component into a policy level.
+const flexCase=(age,face=25000,term=10,extra={})=>run("banner_flex",{dob:`${2026-age}-10-08`,usSince:`${2026-age}-10-08`,faceAmount:face,termYears:term,...extra});
+for (const [age,face,status] of [[19,25000,"unavailable"],[20,25000,"manual_review"],[44,500000,"manual_review"],[44,500001,"unavailable"],[45,250000,"manual_review"],[45,250001,"unavailable"],[54,250000,"manual_review"],[54,250001,"unavailable"],[55,100000,"manual_review"],[55,100001,"unavailable"],[65,100000,"manual_review"],[65,100001,"unavailable"],[66,25000,"unavailable"],[35,24999,"unavailable"]]) {
+  o=flexCase(age,face);
+  equal(o.status,status,`BF-INFO p.1 Flex age${age} face${face}`);
+  equal(o.healthClass,null,"Flex limits never assign a health class");
+  equal(o.benefitTier,null,"Flex limits never assign a benefit tier");
+  if(o.issues.some(i=>i.id==="face_limit")) {
+    equal(o.issues.find(i=>i.id==="face_limit").source.id,"BF-INFO","Flex amount limit cites the age/level table");
+    equal(o.issues.find(i=>i.id==="face_limit").source.pages.join(","),"1","Flex amount decision cites physical page1");
+  }
+}
+for(const [age,term,status] of [[65,10,"manual_review"],[60,15,"manual_review"],[61,15,"unavailable"],[55,20,"manual_review"],[56,20,"manual_review"],[60,20,"manual_review"],[61,20,"unavailable"],[55,25,"manual_review"],[56,25,"unavailable"],[35,30,"unavailable"],[35,35,"unavailable"],[35,40,"unavailable"]]) {
+  o=flexCase(age,25000,term);
+  equal(o.status,status,`BF-INFO p.1 Flex age${age} term${term}`);
+  equal(o.healthClass,null,"Term availability never establishes a Flex class");
+  const limit=o.issues.find(i=>["term_age","term_unavailable"].includes(i.id));
+  if(limit)equal(limit.source.id,"BF-INFO","Flex term limit cites product information");
+}
+for(const [age,face,term,requiresLevel1] of [[44,250000,10,false],[44,250001,10,true],[45,100000,10,false],[45,100001,10,true],[55,50000,10,false],[55,50001,10,true],[55,25000,20,false],[56,25000,20,true],[35,25000,25,true]]) {
+  o=flexCase(age,face,term);
+  equal(o.issues.some(i=>i.id==="flex_level_limits"),requiresLevel1,`Level-dependent request age${age} amount${face} term${term}`);
+  equal(o.status,"manual_review","Actual risk level remains carrier review");
+}
+o=flexCase(35,25000,30,{nicotineHistory:"unknown"});
+equal(o.status,"unavailable","Unsupported Flex term is screened even without tobacco evidence");
+o=flexCase(61,25000,20,{nicotineHistory:"unknown"});
+equal(o.status,"unavailable","Flex term age caps apply to both tobacco bases");
+for(const [dob,face,term] of [["1982-04-08",500000,10],["1972-04-08",250000,10],["1971-04-08",25000,25],["1966-04-08",25000,20]]) {
+  o=run("banner_flex",{dob,usSince:dob,faceAmount:face,termYears:term});
+  equal(o.status,"manual_review","Age-basis boundary cannot become an unsupported exclusion");
+  ok(o.issues.some(i=>i.id==="flex_age_limits"),"Crossing a limit under nearest birthday requires explicit review");
+  equal(o.ageBasis,"unconfirmed","Flex does not borrow OPTerm's age basis");
+}
+o=flexCase(35,25000,10,{state:"NY"});
+equal(o.status,"unavailable","Flex is unavailable in New York");
+equal(o.issues.find(i=>i.id==="state_limit").source.id,"BF-INFO","Flex state screen cites its own product sheet");
+o=flexCase(35,500000,25,{weightLb:44*70*70/703});
+equal(o.domains.build.level,1,"Printed BMI band remains a build component only");
+equal(o.status,"manual_review","BMI Level1 does not establish policy Level1");
+equal(o.healthClass,null,"BMI cannot promise a final Flex offer");
+equal(run("banner_beyondterm",{faceAmount:500001,termYears:30}).status,"manual_review","Flex maximum is not borrowed by BeyondTerm");
+equal(PRODUCT_RULES.banner_flex.status,"partial","Product-limit reconciliation does not promote underwriting criteria");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);
-

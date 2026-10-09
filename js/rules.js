@@ -41,12 +41,23 @@ const RULE_SOURCES = {
   },
   "D085": {
     "title": "Banner BeyondTermflex product specifications",
-    "edition": "Supplied edition",
+    "edition": "CN08282026-6 (August 2026)",
     "pages": [
-      1
+      1,
+      2
     ],
     "file": "Banner Life/product-specifications_flex.pdf",
     "sha256": "5365bb79002e9a9783d2164c10683a43ed464df596464647c2bb669ee05e20b5"
+  },
+  "BF-INFO": {
+    "title": "Banner BeyondTermflex product information",
+    "edition": "CN08282026-5 (August 2026)",
+    "pages": [
+      1,
+      2
+    ],
+    "file": "Banner Life/product-information_flex.pdf",
+    "sha256": "005316a8b7a26c3639cb91c20f341479e38a041b2c3b5ed4564da5f83b336619"
   },
   "D235": {
     "title": "Foresters Your Term product guide",
@@ -946,17 +957,67 @@ const PRODUCT_RULES = Object.fromEntries([
     "route": "Digital simplified with risk levels",
     "sources": [
       "D077",
-      "D085"
+      "D085",
+      "BF-INFO"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 20,
     "maxAge": 65,
     "minFace": 25000,
     "build": "flex",
     "excludeStates": [
       "NY"
-    ]
+    ],
+    "eligibilitySource": "BF-INFO",
+    "faceBands": [
+      [
+        44,
+        500000
+      ],
+      [
+        54,
+        250000
+      ],
+      [
+        65,
+        100000
+      ]
+    ],
+    "level23FaceBands": [
+      [
+        44,
+        250000
+      ],
+      [
+        54,
+        100000
+      ],
+      [
+        65,
+        50000
+      ]
+    ],
+    "terms": {
+      "10": [
+        65,
+        65
+      ],
+      "15": [
+        60,
+        60
+      ],
+      "20": [
+        60,
+        60
+      ],
+      "25": [
+        55,
+        55
+      ]
+    },
+    "termTobaccoIndependent": true,
+    "scopeNote": "BeyondTermflex screens only the published outer limits: ages 20\u201365, $25,000 minimum, maximum $500,000 at ages 20\u201344, $250,000 at 45\u201354 and $100,000 at 55\u201365. Level 2/3 maxima are $250,000, $100,000 and $50,000 respectively. Offered terms are 10 years through age 65, 15 years through 60, 20 years through 60 for Level 1 (55 for Level 2/3), and 25 years through 55 for Level 1 only. The carrier age basis and actual risk level must be confirmed; a BMI build level does not establish the policy level. Being within the outer limits does not confirm eligibility, a health class, rates or a benefit tier."
   },
   {
     "id": "foresters_yourterm_med",
