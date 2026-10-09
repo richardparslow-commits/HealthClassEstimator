@@ -318,14 +318,37 @@ const Engine = (() => {
         if (r.status === "resolved") past(r.treatmentEnd,"last treatment for "+r.name);
         if (r.hospitalized === "yes") past(r.hospitalDate,"condition hospitalization");
         if (!present(r.treatment)) issue("treatment_detail","Describe treatment (or explicitly enter none) for "+r.name+".","missing");
+        if (p.id === "americo") americoCondition(r);
         if (p.id === "banner_flex") flexCondition(r);
         if (["banner_beyondterm","banner_flex"].includes(p.id) && r.id === "atrial_fibrillation") issue("beyond_af_source_conflict","The guide gives different atrial-fibrillation timing scenarios in its accepted and declinable sections. The carrier must reconcile the applicable product, age, episode, treatment and procedure history; no AF-only decline or favorable class is inferred.","review","D077",[4,7,10]);
         if (p.id === "corebridge_legacy") coreCondition(r,rows);
         else if (!["hypertension","cholesterol"].includes(r.id)) issue("condition_review_"+r.id,(r.name||"This condition")+" needs condition-specific carrier review; no mild/good-control default or guessed table is applied.");
         if (r.complications === "yes" || r.recurrence === "yes") issue("condition_complex_"+r.id,"Complications/recurrence for "+r.name+" need review before a final class is estimated.");
       }
+      if (p.id === "americo") americoRecentCare();
       if (hospitals.length || surgeries.length) issue("care_history","Hospitalizations and procedures require review of cause, treatment and recovery.");
       return rows;
+    }
+    function americoCondition(r) {
+      const ids=["transplant","tissue_transplant","multiple_sclerosis","als","alzheimers","dementia","huntington","brain_tumor","parkinsons","liver_disease","cirrhosis"];
+      const qualified=ids.includes(r.id) || r.id === "lupus" && r.lupusType === "systemic" || r.id === "amputation" && r.dueToDisease === "yes" || r.id === "cancer" && r.cancerType === "leukemia" || ["hepatitis_b","hepatitis_c"].includes(r.id) && r.liverDisease === "yes";
+      const invalidDiagnosis=present(r.diagnosisDate) && (!date(r.diagnosisDate) || r.diagnosisDate>asOf);
+      if(qualified && !invalidDiagnosis)issue("americo_knockout_"+r.id,"The disclosed "+(r.name||r.id)+" meets a listed Eagle Select medical exclusion screen.","decline","AM-ES-GUIDE",[11]);
+      if(r.id === "lupus" && !["systemic","discoid"].includes(r.lupusType))issue("americo_lupus_type","Confirm whether the lupus diagnosis is systemic; a generic lupus label does not establish this exclusion.","review","AM-ES-GUIDE",[11]);
+      if(r.id === "amputation" && !["yes","no"].includes(r.dueToDisease))issue("americo_amputation_cause","Confirm whether the amputation was due to disease before applying the listed exclusion.","review","AM-ES-GUIDE",[11]);
+    }
+    function americoRecentCare() {
+      for(const [key,label,current] of [["Adl","disease-related assistance with bathing, toileting or dressing / bed-bound care",null],["Hospice","hospice care",null],["Oxygen","supplemental oxygen for breathing","oxygen"],["Mobility","wheelchair or motorized-mobility dependence",null]]) {
+        const flag="americo"+key+"History",last="americo"+key+"LastDate";
+        yn(flag,"Eagle Select history of "+label);
+        if(d[flag] === "yes") {
+          if(!past(d[last],"most recent "+label))continue;
+          if(current && d[current] === "yes" && d[last]!==asOf){issue("americo_care_conflict_"+key,"Current care and its last-occurrence date conflict. Reconcile them before applying a dated exclusion.","review","AM-ES-GUIDE",[11]);continue;}
+          if(within(d[last],12,asOf))issue("americo_recent_"+key,"The dated history of "+label+" meets the Eagle Select twelve-month medical exclusion screen.","decline","AM-ES-GUIDE",[11]);
+          else if(d[last] === shift(asOf,-12))issue("americo_care_boundary_"+key,"This event lies on the twelve-month boundary. Confirm the carrier's applicable date window.","review","AM-ES-GUIDE",[11]);
+        } else if(present(d[last]) || current && d[current] === "yes")issue("americo_care_conflict_"+key,"The care history, date or current-care answer conflicts. Confirm the Eagle Select question.","review","AM-ES-GUIDE",[11]);
+      }
+      if(d.pendingCare === "yes" || d.careFacility === "yes")issue("americo_pending_scope","The Eagle Select pending-care screen includes specific advice, results and hospitalization wording, with an HIV/AIDS-related exception. Reconcile the actual application question; this generic answer alone is not an automatic exclusion.","review","AM-ES-GUIDE",[11]);
     }
     function flexCondition(r) {
       // These screens belong to Flex's explicit declinable section. Do not
@@ -430,6 +453,16 @@ const Engine = (() => {
         if(!noUse)issue("beyond_nicotine_scope","Confirm this product's tobacco definitions and class lookbacks with the current application; OPTerm rules are not substituted.","review","D077",[4,5,13]);
         return;
       }
+      if(p.id === "americo") {
+        const validProducts=["cigarette","cigar","pipe","chew","nicotine","vape"];
+        const invalid=invalidLists.includes("nicotine") || d.cotinineResult === "positive" || d.nicotineHistory === "never" && rows.length>0 || d.nicotineHistory === "yes" && (d.nicotineComplete!=="yes" || !rows.length) || rows.some(r=>!validProducts.includes(r.product) || !date(r.lastDate) || r.lastDate>asOf || !["yes","no"].includes(r.current) || r.current === "yes" && r.lastDate!==asOf);
+        const known=d.nicotineHistory === "never" || d.nicotineHistory === "yes";
+        out.tobaccoBasis=!known || invalid ? "unknown" : rows.some(r=>r.current === "yes" || within(r.lastDate,24,asOf)) ? "tobacco" : "non_tobacco";
+        out.domains.nicotine={ceiling:null,detail:out.tobaccoBasis === "unknown" ? "Confirm every product, nicotine content, use date and conflicting evidence against Eagle Select's 24-month definition; no class or tier is assigned." : out.tobaccoBasis === "tobacco" ? "Disclosed nicotine use falls within Eagle Select's 24-month initial classification window; this is a nicotine basis, not a premium or tier offer." : "Disclosed history meets Eagle Select's at-least-24-month nicotine-free definition; carrier records and the current application must confirm it.",source:source("AM-ES-GUIDE",[6])};
+        if(out.tobaccoBasis === "unknown")issue("americo_nicotine_evidence","The nicotine classification requires complete, consistent product and date evidence. Unspecified cessation products and zero-nicotine vape claims need the current application reviewed.","review","AM-ES-GUIDE",[6]);
+        if(out.tobaccoBasis === "tobacco")issue("americo_qsa_scope","Quit Smoking Advantage applies to eligible Eagle Select 1/2 nicotine policies after issue. Initial non-nicotine rates do not change the nicotine policy classification; the separate twelve-month quit requirement and benefit options need carrier confirmation.","review","AM-ES-GUIDE",[6,7]);
+        return;
+      }
       if (d.nicotineHistory === "never") {out.tobaccoBasis="non_tobacco";out.domains.nicotine={ceiling:p.kind === "final_expense" ? null : "preferred_plus",detail:"Explicitly reported no lifetime tobacco/nicotine/vaping use.",source:source(p.sources[0])};return;}
       if (!rows.length) return;
       const relevant = p.id === "foresters_strong" ? rows.filter(r=>r.product === "cigarette") : rows;
@@ -506,7 +539,13 @@ const Engine = (() => {
         if (p.build === "banner" && h % 1 === 0.5) height=Math.ceil(h);
         else {issue("height_rounding","A fractional height needs carrier confirmation; this product's rounding rule is not fully published.");return;}
       }
-      if (p.build === "bmi") {
+      if(p.build === "americo") {
+        const row=BUILD_CHARTS.americo[height];
+        out.domains.build.source=source("AM-ES-SPECS",[1]);out.domains.build.ceiling=null;
+        if(!row){issue("americo_build_height","Height is outside the published Eagle Select chart; no range is extrapolated.","review","AM-ES-SPECS",[1]);return;}
+        Object.assign(out.domains.build,{minWeight:row[0],maxWeight:row[1],detail:`Current weight: ${w} lb; published range at ${height} inches: ${row[0]}–${row[1]} lb. A chart match does not establish an Eagle Select tier.`});
+        if(w<row[0]||w>row[1])issue("americo_build_range","Weight falls outside the published Eagle Select build range. Confirm the carrier's application outcome; no class or benefit tier is inferred.","review","AM-ES-SPECS",[1]);
+      } else if (p.build === "bmi") {
         const edges=[16,age>=60?18:17,28,30,32,35,37,39,41,42,43,44];
         if(edges.some(edge=>bmi>edge&&bmi<edge+0.0001)){issue("bmi_precision","BMI falls between printed four-decimal bands; carrier rounding must be confirmed.","review","D370",[12]);return;}
         if (bmi <= 16 || bmi > 46) issue("bmi_decline","BMI is outside the published adult build range.","decline","D370",[12]);

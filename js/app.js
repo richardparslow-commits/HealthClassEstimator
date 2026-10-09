@@ -13,7 +13,8 @@ const App = (() => {
     ["end_stage_kidney","End-stage kidney disease"],["cirrhosis","Liver cirrhosis"],["hepatitis_b","Hepatitis B"],["hepatitis_c","Hepatitis C"],
     ["copd","COPD / emphysema"],["als","ALS"],["parkinsons","Parkinson's disease"],["multiple_sclerosis","Multiple sclerosis"],
     ["huntington","Huntington's disease"],["lupus","Lupus"],["alzheimers","Alzheimer's disease"],["dementia","Dementia"],
-    ["hiv","HIV / AIDS"],["transplant","Organ transplant"],["bipolar","Bipolar disorder"],["schizophrenia","Schizophrenia"],
+    ["hiv","HIV / AIDS"],["transplant","Organ transplant"],["tissue_transplant","Tissue transplant"],
+    ["brain_tumor","Brain tumor"],["liver_disease","Liver disease"],["amputation","Amputation"],["bipolar","Bipolar disorder"],["schizophrenia","Schizophrenia"],
     ["depression","Depression"],["anxiety","Anxiety"],["suicide_attempt","Suicide attempt"],["other","Another diagnosis"]
   ];
   function node(tag,cls,text) {const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;}
@@ -147,7 +148,7 @@ const App = (() => {
       if(r.status === "resolved")f("Date treatment ended","treatmentEnd",null,{type:"date"});
       f("Treatment and follow-up (enter none if none)","treatment",null,{type:"textarea"});f("Any complications?","complications",yesNo);f("Any recurrence?","recurrence",yesNo);f("Hospitalized for this condition?","hospitalized",yesNo,{render:true});
       if(r.hospitalized === "yes")f("Most recent related hospitalization","hospitalDate",null,{type:"date"});
-      if(r.id === "cancer")f("Cancer type","cancerType",[["basal_cell","Basal cell skin"],["squamous_cell","Squamous cell skin"],["breast","Breast"],["colon","Colon"],["prostate","Prostate"],["other","Another type"],["unknown","Unsure"]]);
+      if(r.id === "cancer")f("Cancer type","cancerType",[["basal_cell","Basal cell skin"],["squamous_cell","Squamous cell skin"],["breast","Breast"],["colon","Colon"],["prostate","Prostate"],["leukemia","Leukemia"],["other","Another type"],["unknown","Unsure"]]);
       if(state.productId === "banner_flex") {
         if(r.id === "asthma") {f("Asthma attacks in the last 12 months","attacksLastYear",null,{type:"number",min:0,max:365,step:1});f("Days of work missed due to asthma in the last 12 months","missedWorkDays",null,{type:"number",min:0,max:365,step:1});f("Do asthma symptoms restrict daily activities?","activityRestricted",yesNo);}
         if(r.id === "heart_failure")f("Has a clinician diagnosed cardiomyopathy?","cardiomyopathy",yesNo);
@@ -155,10 +156,20 @@ const App = (() => {
         if(r.id === "diabetes") {f("Physician follow-up for diabetes in the last 24 months?","diabetesFollowUp24mo",yesNo);f("Date of most recent diabetes physician follow-up","diabetesFollowUpDate",null,{type:"date"});f("Has a clinician described blood sugar or A1c as uncontrolled?","sugarUncontrolled",yesNo);f("Diabetic kidney or nephropathy complications?","kidneyComplications",yesNo);}
         if(r.id === "cancer") {f("Most recent cancer diagnosis, recurrence or treatment date","lastCancerDate",null,{type:"date"});f("Any cancer spread, metastasis or lymph-node involvement?","metastasis",yesNo);f("Any past or pending chemotherapy/radiation?","chemoRadiation",yesNo);}
       }
+      if(state.productId === "americo" && r.id === "amputation")f("Was the amputation due to disease?","dueToDisease",yesNo);
+      if(state.productId === "americo" && ["hepatitis_b","hepatitis_c"].includes(r.id))f("Has a clinician diagnosed liver disease?","liverDisease",yesNo);
       if(r.id === "lupus")f("Lupus type","lupusType",[["systemic","Systemic (SLE)"],["discoid","Discoid / skin only"],["other","Another type"],["unknown","Unsure"]]);
       if(r.id === "diabetes"){f("Measured A1c","a1c",null,{type:"number",min:1,max:25,step:0.1});f("A1c test date","a1cDate",null,{type:"date"});f("Use insulin?","insulin",yesNo);}
       if(r.id === "atrial_fibrillation"){f("Diagnosed with chronic AF within the last 24 months?","chronic24mo",yesNo);f("Take a daily anticoagulant / blood thinner?","dailyAnticoagulant",yesNo);}
     }));
+    if(state.productId === "americo") {
+      paragraph(c,"Eagle Select asks about these specific past events. Enter the most recent occurrence or use today for ongoing care. A date near the 12-month boundary requires carrier confirmation.");
+      for(const [key,label] of [["Adl","Have you received help with bathing, toileting or dressing because of a debilitating disease, or been bed-bound?"],["Hospice","Have you received hospice care?"],["Oxygen","Have you used supplemental oxygen for breathing (not CPAP alone)?"],["Mobility","Have you been dependent on a wheelchair or motorized mobility device?"]]) {
+        yn(c,label,"americo"+key+"History",{render:true});
+        if(state["americo"+key+"History"] === "yes" || state["americo"+key+"LastDate"])date(c,"Most recent occurrence — "+label,"americo"+key+"LastDate");
+      }
+      paragraph(c,"Pending tests, surgery, hospitalization or results need the exact carrier question and its HIV/AIDS-related exception reviewed. A generic pending-care answer is not treated as an automatic exclusion.");
+    }
     confirmed(c,"Have you disclosed all diagnoses and treatments?","medicalComplete");
     screen(c,"Have you been hospitalized (other than routine childbirth)?","hospitalHistory","hospitals",()=>listEditor(c,"hospitals","Hospitalization",(card,r,f)=>{f("Date","date",null,{type:"date"});f("Reason and outcome","reason");f("Was this only for a minor condition?","minor",yesNo);}));
     screen(c,"Have you had an operation or medical procedure?","surgeryHistory","surgeries",()=>listEditor(c,"surgeries","Procedure",(card,r,f)=>{f("Date","date",null,{type:"date"});f("Reason and recovery","reason");}));

@@ -365,4 +365,53 @@ for(const id of ["banner_beyondterm","banner_flex"]) {
 equal(PRODUCT_RULES.banner_flex.status,"partial","Adding selected screens does not certify full Flex criteria");
 equal(PRODUCT_RULES.banner_beyondterm.status,"partial","BeyondTerm still awaits full product application and classes");
 
+// Release 75: Eagle Select source scope, dates, nicotine and chart ranges.
+const amDefaults={dob:"1966-10-08",faceAmount:25000,termYears:"",policyPurpose:"final_expense",americoAdlHistory:"no",americoHospiceHistory:"no",americoOxygenHistory:"no",americoMobilityHistory:"no"};
+const amRun=(changes={})=>run("americo",{...amDefaults,...changes});
+const amMed=(id,extra={})=>({medicalHistory:"yes",conditions:[condition(id,extra)]});
+const amScreen=(changes,flag)=>{const x=amRun(changes);equal(x.status,"decline_screen",flag+" screens the product");equal(x.healthClass,null,flag+" withholds class");equal(x.benefitTier,null,flag+" withholds benefit");ok(x.issues.some(i=>i.id===flag&&i.source.id==="AM-ES-GUIDE"&&i.source.pages.join(",")==="11"),flag+" cites its exact page");return x;};
+for(const id of ["transplant","tissue_transplant","multiple_sclerosis","als","alzheimers","dementia","huntington","brain_tumor","parkinsons","liver_disease","cirrhosis"]){
+  amScreen(amMed(id),"americo_knockout_"+id);
+  const other=run("banner_beyondterm",{faceAmount:100000,termYears:10,...amMed(id)});equal(other.status,"manual_review",id+" does not borrow Eagle Select rules");
+}
+amScreen(amMed("lupus",{lupusType:"systemic"}),"americo_knockout_lupus");
+for(const t of ["discoid","unknown",""]){o=amRun(amMed("lupus",{lupusType:t}));equal(o.status,"manual_review","Non-systemic/unknown lupus is not a listed knockout");}
+amScreen(amMed("amputation",{dueToDisease:"yes"}),"americo_knockout_amputation");
+for(const cause of ["no","unknown",""])equal(amRun(amMed("amputation",{dueToDisease:cause})).status,"manual_review","An injury or unknown amputation cause is not inferred as disease");
+amScreen(amMed("cancer",{cancerType:"leukemia"}),"americo_knockout_cancer");
+for(const type of ["basal_cell","breast","other","unknown",""])equal(amRun(amMed("cancer",{cancerType:type})).status,"manual_review","Other cancer types are not generalized to leukemia");
+for(const id of ["hepatitis_b","hepatitis_c"]){amScreen(amMed(id,{liverDisease:"yes"}),"americo_knockout_"+id);equal(amRun(amMed(id,{liverDisease:"unknown"})).status,"manual_review","Confirm actual liver-disease diagnosis");}
+for(const dt of ["2027-01-01","2026-02-30"])equal(amRun(amMed("als",{diagnosisDate:dt})).status,"manual_review","Contradictory diagnosis date requires review");
+for(const key of ["Adl","Hospice","Oxygen","Mobility"]){
+ const flag="americo"+key+"History",last="americo"+key+"LastDate";
+ amScreen({[flag]:"yes",[last]:"2025-10-09"},"americo_recent_"+key);
+ for(const dt of ["2025-10-08","2025-10-07","2027-01-01","2026-02-30",""]){o=amRun({[flag]:"yes",[last]:dt});equal(o.status,"manual_review","Old/boundary/invalid "+key+" date is reviewed");equal(o.healthClass,null,"No unsupported class");}
+ o=amRun({[flag]:"yes",[last]:"2025-10-08"});ok(o.issues.some(i=>i.id==="americo_care_boundary_"+key),"Exact 12-month boundary is explicit");
+ equal(amRun({[flag]:"no",[last]:"2026-01-01"}).status,"manual_review","No-care/date contradiction is reviewed");
+ equal(amRun({[flag]:"unknown"}).status,"manual_review","Unknown care stays review");
+ const other=run("banner_beyondterm",{faceAmount:100000,termYears:10,[flag]:"yes",[last]:asOf});equal(other.status,"manual_review","Americo dated screens do not affect another product");
+ const migrated=InterviewState.migrate({...base,productId:"americo",[flag]:"yes",[last]:"2026-01-01"});equal(migrated[flag],"yes","New care answer survives restore");equal(migrated[last],"2026-01-01","New care date survives restore");
+}
+o=amRun({oxygen:"yes",americoOxygenHistory:"yes",americoOxygenLastDate:"2026-09-01"});equal(o.status,"manual_review","Current oxygen/date conflict is not silently declined");ok(o.issues.some(i=>i.id==="americo_care_conflict_Oxygen"),"Oxygen conflict is explained");
+amScreen({oxygen:"yes",americoOxygenHistory:"yes",americoOxygenLastDate:asOf},"americo_recent_Oxygen");
+o=amRun({pendingCare:"yes",pendingDetails:"HIV test pending"});equal(o.status,"manual_review","HIV-related generic pending care does not bypass exception");ok(o.issues.some(i=>i.id==="americo_pending_scope"),"Pending care cites scoped review");
+for(const id of ["diabetes","stroke","tia","coronary_disease","asthma","copd"]){equal(amRun({...amMed(id),...smoke()}).status,"manual_review",id+" plus nicotine affects tier review, not a family knockout");}
+for(const product of ["cigarette","cigar","pipe","chew","nicotine","vape"]){
+ for(const [dt,basis] of [[asOf,"tobacco"],["2025-10-08","tobacco"],["2024-10-09","tobacco"],["2024-10-08","non_tobacco"],["2024-10-07","non_tobacco"]]){
+  o=amRun({nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product,current:dt===asOf?"yes":"no",lastDate:dt}]});equal(o.tobaccoBasis,basis,"Eagle Select 24 months: "+product+" "+dt);equal(o.domains.nicotine.ceiling,null,"No final-expense Preferred Plus ceiling");equal(o.healthClass,null,"Nicotine basis is not a health offer");equal(o.benefitTier,null,"Nicotine basis is not a tier");equal(o.domains.nicotine.source.pages.join(","),"6","Nicotine definition cites guide physical p6");
+ }
+}
+for(const changes of [{nicotineComplete:"no"},{nicotine:[{product:"cigarette",current:"yes",lastDate:"2024-01-01"}]},{nicotine:[{product:"cigarette",current:"no",lastDate:"2027-01-01"}]},{nicotine:[{product:"cigarette",current:"no",lastDate:"2026-02-30"}]},{nicotine:[{product:"cigarette",current:"unknown",lastDate:"2020-01-01"}]},{nicotine:[{product:"cessation",current:"no",lastDate:"2020-01-01"}]},{nicotine:[{product:"vape_no_nicotine",current:"no",lastDate:"2020-01-01"}]},{nicotine:[]},{nicotineHistory:"never",nicotine:[{product:"cigar",current:"no",lastDate:"2020-01-01"}]},{cotinineResult:"positive"},{nicotine:[true]}]){o=amRun({...smoke(),...changes});equal(o.tobaccoBasis,"unknown","Malformed/ambiguous nicotine evidence does not establish basis");equal(o.domains.nicotine.ceiling,null,"Unknown basis does not create class");}
+o=amRun(smoke());ok(o.issues.some(i=>i.id==="americo_qsa_scope"&&i.source.pages.join(",")==="6,7"),"QSA is separate post-issue explanation");equal(o.tobaccoBasis,"tobacco","QSA does not classify nicotine policy as non-nicotine");
+o=amRun();equal(o.tobaccoBasis,"non_tobacco","Explicit never use has preliminary non-nicotine basis");equal(o.domains.nicotine.ceiling,null,"Never use still has no health-class ceiling");
+const amSourceBuild=[[79,198],[81,205],[84,212],[87,220],[90,227],[93,235],[96,243],[99,251],[102,259],[106,267],[109,275],[112,284],[116,292],[119,301],[122,310],[126,319],[130,328],[133,337],[137,346],[141,356],[144,365],[148,375],[152,385],[156,395]];
+equal(Object.keys(BUILD_CHARTS.americo).length,24,"The source contains 24 whole-inch rows");
+for(const [i,r] of amSourceBuild.entries()){
+ const h=56+i;equal(BUILD_CHARTS.americo[h][0],r[0],"Source minimum transcribed correctly");equal(BUILD_CHARTS.americo[h][1],r[1],"Source maximum transcribed correctly");
+ for(const w of [r[0],r[1]]){o=amRun({heightIn:Number(h),weightLb:w});equal(o.domains.build.minWeight,r[0],"Recorded chart minimum "+h);equal(o.domains.build.maxWeight,r[1],"Recorded chart maximum "+h);ok(!o.issues.some(i=>i.id==="americo_build_range"),"Exact chart edges match "+h);equal(o.healthClass,null,"Chart does not create class");equal(o.benefitTier,null,"Chart does not create tier");}
+ for(const w of [r[0]-0.1,r[1]+0.1]){o=amRun({heightIn:Number(h),weightLb:w});ok(o.issues.some(i=>i.id==="americo_build_range"),"Outside chart requires review "+h);equal(o.status,"manual_review","Chart alone is not an automatic carrier declination");}
+}
+for(const h of [55,80,70.5]){o=amRun({heightIn:h});equal(o.status,"manual_review","Unpublished height/rounding remains review");ok(o.issues.some(i=>["americo_build_height","height_rounding"].includes(i.id)),"Unpublished height is explained");}
+equal(PRODUCT_RULES.americo.status,"partial","Selected screens do not certify complete Americo application/tier criteria");
+
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

@@ -68,3 +68,5 @@ The existing main-branch workflow tests/builds before syncing the Streamlit repo
 
 
 Release 74 adds separately scoped BeyondTermflex medical screens from D077 physical pages 7, 8, 10 and 11. New condition questions record asthma counts/restrictions, diabetes follow-up/control/kidney complications, cancer dates/spread/treatment and confirmed cardiomyopathy. AF and pending-apnea conflicts require explicit review. BeyondTerm does not inherit the Flex-only exclusions; its unverified tobacco lookbacks no longer assign a class ceiling. Both profiles remain partial.
+
+Release 75 adds selected Eagle Select medical exclusion screens from the January 2026 guide, dated twelve-month care history, its initial 24-month nicotine definition and the March 2026 build chart. Generic pending care and unspecified nicotine products remain review cases. Quit Smoking Advantage is separate from initial nicotine classification. No class/tier is inferred; Americo remains partial.

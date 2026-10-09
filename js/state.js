@@ -16,6 +16,8 @@ const InterviewState = (() => {
       bpTreatment: "", bpControl: "", cholTotal: "", cholHdl: "", cholDate: "", cholBasis: "",
       cholTreatment: "", medicalHistory: "", medicalComplete: "", conditions: [],
       hospitalHistory: "", hospitals: [], surgeryHistory: "", surgeries: [], pendingCare: "",
+      americoAdlHistory: "", americoAdlLastDate: "", americoHospiceHistory: "", americoHospiceLastDate: "",
+      americoOxygenHistory: "", americoOxygenLastDate: "", americoMobilityHistory: "", americoMobilityLastDate: "",
       pendingDetails: "", activeSymptoms: "", symptomDetails: "", oxygen: "", dialysis: "",
       adlAssistance: "", careFacility: "", homeHealth: "", terminalIllness: "", terminalMonths: "",
       substanceHistory: "", substanceLastDate: "", substanceDetails: "", marijuana: "",
@@ -55,3 +57,4 @@ const InterviewState = (() => {
   }
   return { schemaVersion, empty, migrate };
 })();
+
