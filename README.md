@@ -66,3 +66,5 @@ Update source identity, product scope, questions and source-derived boundary tes
 
 The existing main-branch workflow tests/builds before syncing the Streamlit repository. Pull-request checks verify the source and build without deployment. Review the change before merging: a main-branch push can trigger the configured deployment workflow.
 
+
+Release 74 adds separately scoped BeyondTermflex medical screens from D077 physical pages 7, 8, 10 and 11. New condition questions record asthma counts/restrictions, diabetes follow-up/control/kidney complications, cancer dates/spread/treatment and confirmed cardiomyopathy. AF and pending-apnea conflicts require explicit review. BeyondTerm does not inherit the Flex-only exclusions; its unverified tobacco lookbacks no longer assign a class ceiling. Both profiles remain partial.

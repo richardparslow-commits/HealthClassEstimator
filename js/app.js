@@ -148,6 +148,13 @@ const App = (() => {
       f("Treatment and follow-up (enter none if none)","treatment",null,{type:"textarea"});f("Any complications?","complications",yesNo);f("Any recurrence?","recurrence",yesNo);f("Hospitalized for this condition?","hospitalized",yesNo,{render:true});
       if(r.hospitalized === "yes")f("Most recent related hospitalization","hospitalDate",null,{type:"date"});
       if(r.id === "cancer")f("Cancer type","cancerType",[["basal_cell","Basal cell skin"],["squamous_cell","Squamous cell skin"],["breast","Breast"],["colon","Colon"],["prostate","Prostate"],["other","Another type"],["unknown","Unsure"]]);
+      if(state.productId === "banner_flex") {
+        if(r.id === "asthma") {f("Asthma attacks in the last 12 months","attacksLastYear",null,{type:"number",min:0,max:365,step:1});f("Days of work missed due to asthma in the last 12 months","missedWorkDays",null,{type:"number",min:0,max:365,step:1});f("Do asthma symptoms restrict daily activities?","activityRestricted",yesNo);}
+        if(r.id === "heart_failure")f("Has a clinician diagnosed cardiomyopathy?","cardiomyopathy",yesNo);
+        if(r.id === "hypertension")f("Has a clinician described current blood pressure as uncontrolled?","bpUncontrolled",yesNo);
+        if(r.id === "diabetes") {f("Physician follow-up for diabetes in the last 24 months?","diabetesFollowUp24mo",yesNo);f("Date of most recent diabetes physician follow-up","diabetesFollowUpDate",null,{type:"date"});f("Has a clinician described blood sugar or A1c as uncontrolled?","sugarUncontrolled",yesNo);f("Diabetic kidney or nephropathy complications?","kidneyComplications",yesNo);}
+        if(r.id === "cancer") {f("Most recent cancer diagnosis, recurrence or treatment date","lastCancerDate",null,{type:"date"});f("Any cancer spread, metastasis or lymph-node involvement?","metastasis",yesNo);f("Any past or pending chemotherapy/radiation?","chemoRadiation",yesNo);}
+      }
       if(r.id === "lupus")f("Lupus type","lupusType",[["systemic","Systemic (SLE)"],["discoid","Discoid / skin only"],["other","Another type"],["unknown","Unsure"]]);
       if(r.id === "diabetes"){f("Measured A1c","a1c",null,{type:"number",min:1,max:25,step:0.1});f("A1c test date","a1cDate",null,{type:"date"});f("Use insulin?","insulin",yesNo);}
       if(r.id === "atrial_fibrillation"){f("Diagnosed with chronic AF within the last 24 months?","chronic24mo",yesNo);f("Take a daily anticoagulant / blood thinner?","dailyAnticoagulant",yesNo);}
@@ -260,4 +267,3 @@ const App = (() => {
   }
   init();return {reset};
 })();
-

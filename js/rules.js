@@ -92,8 +92,13 @@ const RULE_SOURCES = {
     "edition": "September 2026",
     "pages": [
       3,
+      4,
       5,
+      6,
       7,
+      8,
+      9,
+      10,
       11,
       13
     ],
@@ -890,7 +895,7 @@ const PRODUCT_RULES = Object.fromEntries([
       "D084"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 20,
     "maxAge": 65,
     "minFace": 100000,
@@ -939,15 +944,12 @@ const PRODUCT_RULES = Object.fromEntries([
       ]
     },
     "build": "beyond",
-    "nicotine": [
-      36,
-      24,
-      12,
-      12
-    ],
     "excludeStates": [
       "NY"
-    ]
+    ],
+    "nicotineUnconfirmed": true,
+    "termTobaccoIndependent": true,
+    "scopeNote": "BeyondTerm uses its own published product limits and build chart. The Flex-only medical/criminal exclusions are not automatically applied to BeyondTerm. Its complete application, tobacco definitions and class-rating rules remain unconfirmed; no final class or benefit tier is assigned."
   },
   {
     "id": "banner_flex",
@@ -1017,7 +1019,8 @@ const PRODUCT_RULES = Object.fromEntries([
       ]
     },
     "termTobaccoIndependent": true,
-    "scopeNote": "BeyondTermflex screens only the published outer limits: ages 20\u201365, $25,000 minimum, maximum $500,000 at ages 20\u201344, $250,000 at 45\u201354 and $100,000 at 55\u201365. Level 2/3 maxima are $250,000, $100,000 and $50,000 respectively. Offered terms are 10 years through age 65, 15 years through 60, 20 years through 60 for Level 1 (55 for Level 2/3), and 25 years through 55 for Level 1 only. The carrier age basis and actual risk level must be confirmed; a BMI build level does not establish the policy level. Being within the outer limits does not confirm eligibility, a health class, rates or a benefit tier."
+    "scopeNote": "BeyondTermflex screens only the published outer limits: ages 20\u201365, $25,000 minimum, maximum $500,000 at ages 20\u201344, $250,000 at 45\u201354 and $100,000 at 55\u201365. Level 2/3 maxima are $250,000, $100,000 and $50,000 respectively. Offered terms are 10 years through age 65, 15 years through 60, 20 years through 60 for Level 1 (55 for Level 2/3), and 25 years through 55 for Level 1 only. The carrier age basis and actual risk level must be confirmed; a BMI build level does not establish the policy level. Being within the outer limits does not confirm eligibility, a health class, rates or a benefit tier. Selected explicit Flex medical and criminal exclusions are screened separately. Conflicting or qualitative guide statements require review; tobacco definitions and final class/level decisions remain unconfirmed.",
+    "nicotineUnconfirmed": true
   },
   {
     "id": "foresters_yourterm_med",

@@ -266,4 +266,103 @@ o=run("banner_opterm",{weightLb:185,heightIn:68,priorWeightLb:225,weightChange:"
 equal(o.domains.build.weight,205,"OPTerm's separate weight-loss rule is preserved");
 o=run("foresters_yourterm_med",{weightLb:185,heightIn:68,priorWeightLb:225,weightChange:"loss",weightChangeDate:"2026-09-01",weightCause:"intentional",stableSince:"2026-09-01"});
 equal(o.domains.build.weight,205,"Foresters' separate stability rule is preserved");
+// Release 74: D077's Flex medical screens do not establish BeyondTerm rules.
+const flexMedical=(conditions,extra={})=>run("banner_flex",{faceAmount:25000,termYears:10,medicalHistory:"yes",conditions,...extra});
+const flexScreen=(conds,flag,extra={})=>{
+  const result=flexMedical(conds,extra);
+  equal(result.status,"decline_screen",flag+" produces the published product screen");
+  equal(result.healthClass,null,flag+" is not a class offer");
+  equal(result.benefitTier,null,flag+" is not a benefit offer");
+  ok(result.issues.some(i=>i.id===flag && i.status==="decline" && i.source.id==="D077"),flag+" carries its source");
+  return result;
+};
+const noFlexScreen=(conds,flag,extra={})=>{
+  const result=flexMedical(conds,extra);
+  equal(result.status,"manual_review",flag+" remains review without independent exclusion");
+  ok(!result.issues.some(i=>i.id===flag && i.status==="decline"),flag+" not inferred");
+  equal(result.healthClass,null,"Partial source still withholds class");
+  return result;
+};
+for(const id of ["coronary_disease","stroke","als","parkinsons","alzheimers","dementia","end_stage_kidney","cirrhosis","hepatitis_b","hepatitis_c","hiv","transplant"]) {
+  const c=condition(id,{status:"resolved",treatmentEnd:"2010-01-01",diagnosisDate:"2009-01-01"});
+  flexScreen([c],"flex_history_"+id);
+  equal(run("banner_beyondterm",{medicalHistory:"yes",conditions:[c]}).status,"manual_review",id+" Flex exclusion not borrowed by BeyondTerm");
+}
+noFlexScreen([condition("kidney_disease")],"flex_history_end_stage_kidney");
+noFlexScreen([condition("heart_failure")],"flex_cardiomyopathy");
+flexScreen([condition("heart_failure",{cardiomyopathy:"yes"})],"flex_cardiomyopathy");
+for(const [id,months] of [["tia",24],["anxiety",24],["depression",60],["asthma",12],["hypertension",12]]) {
+  const key=id==="tia"?"diagnosisDate":"hospitalDate";
+  const flag=id==="tia"?"flex_tia_recent":"flex_"+id+"_hospital";
+  const common=id==="asthma"?{attacksLastYear:0,missedWorkDays:0,activityRestricted:"no"}:id==="hypertension"?{bpUncontrolled:"no"}:{};
+  const boundary=Engine.shift(asOf,-months);
+  const next=new Date(boundary+"T00:00:00Z");next.setUTCDate(next.getUTCDate()+1);
+  const recent=next.toISOString().slice(0,10);
+  flexScreen([condition(id,{...common,hospitalized:id==="tia"?"no":"yes",[key]:recent})],flag);
+  for(const d of [boundary,"2027-01-01","2026-02-30",""])noFlexScreen([condition(id,{...common,hospitalized:id==="tia"?"no":"yes",[key]:d})],flag);
+}
+flexScreen([condition("sleep_apnea")],"flex_apnea_oxygen",{oxygen:"yes"});
+noFlexScreen([condition("sleep_apnea")],"flex_apnea_oxygen",{oxygen:"no",pendingCare:"yes",pendingDetails:"Recommended apnea testing"});
+o=flexMedical([condition("sleep_apnea")],{pendingCare:"yes",pendingDetails:"Recommended apnea testing"});
+ok(o.issues.some(i=>i.id==="flex_pending_scope" && i.source.pages.join(",")==="5,11"),"Pending apnea testing cites the acceptance/exclusion conflict");
+const asthma=condition("asthma",{attacksLastYear:12,missedWorkDays:0,activityRestricted:"no"});
+noFlexScreen([asthma],"flex_attacksLastYear");
+flexScreen([{...asthma,attacksLastYear:13}],"flex_attacksLastYear");
+for(const n of ["",null,true,[13],13.5,-1,"NaN","Infinity"])noFlexScreen([{...asthma,attacksLastYear:n}],"flex_attacksLastYear");
+flexScreen([{...asthma,activityRestricted:"yes"}],"flex_asthma_activity");
+o=noFlexScreen([{...asthma,missedWorkDays:15}],"flex_missedWorkDays");
+ok(o.issues.some(i=>i.id==="flex_asthma_work_period"),"Undefined work-day counting period is explicitly reviewed");
+const hypertension=condition("hypertension",{bpUncontrolled:"yes"});
+noFlexScreen([hypertension],"flex_hypertension_uncontrolled",{bpControl:"no",bpSys:159,bpDia:104});
+flexScreen([hypertension],"flex_hypertension_uncontrolled",{bpControl:"no",bpSys:160,bpDia:104});
+flexScreen([hypertension],"flex_hypertension_uncontrolled",{bpControl:"no",bpSys:159,bpDia:105});
+for(const extra of [{bpControl:"yes",bpSys:180},{bpControl:"no",bpSys:180,bpDate:"2027-01-01"},{bpControl:"no",bpSys:300},{bpControl:"no",bpSys:[180]},{bpControl:"no",bpSys:180,bpDia:""}])noFlexScreen([hypertension],"flex_hypertension_uncontrolled",extra);
+noFlexScreen([{...hypertension,bpUncontrolled:"unknown"}],"flex_hypertension_uncontrolled",{bpControl:"no",bpSys:180});
+const diabetes=condition("diabetes",{a1c:7,a1cDate:"2026-09-01",insulin:"no",diabetesFollowUp24mo:"yes",diabetesFollowUpDate:"2026-09-01",sugarUncontrolled:"no",kidneyComplications:"no"});
+flexScreen([diabetes],"flex_diabetes_age",{dob:"1996-10-08"});
+noFlexScreen([diabetes],"flex_diabetes_age",{dob:"1995-10-08"});
+o=noFlexScreen([diabetes],"flex_diabetes_age",{dob:"1995-11-01"});
+ok(o.issues.some(i=>i.id==="flex_diabetes_age_review"),"Unknown issue-age basis at 30/31 is reviewed");
+flexScreen([{...diabetes,diabetesFollowUp24mo:"no",diabetesFollowUpDate:"2023-01-01"}],"flex_diabetes_followup");
+noFlexScreen([{...diabetes,diabetesFollowUp24mo:"no"}],"flex_diabetes_followup");
+for(const d of ["2024-10-08","2024-10-07","2027-01-01","", "2026-02-30"])noFlexScreen([{...diabetes,diabetesFollowUpDate:d}],"flex_diabetes_followup");
+flexScreen([{...diabetes,sugarUncontrolled:"yes"}],"flex_diabetes_sugarUncontrolled");
+flexScreen([{...diabetes,kidneyComplications:"yes"}],"flex_diabetes_kidneyComplications");
+noFlexScreen([{...diabetes,a1c:11,complications:"yes",kidneyComplications:"no"}],"flex_diabetes_sugarUncontrolled");
+noFlexScreen([{...diabetes,insulin:"yes"}],"flex_diabetes_sugarUncontrolled",{medicationHistory:"yes",medications:[rx("Insulin","diabetes")]});
+const cancer=condition("cancer",{diagnosisDate:"2010-01-01",status:"resolved",treatmentEnd:"2011-01-01",lastCancerDate:"2011-01-01",cancerType:"breast",metastasis:"no",chemoRadiation:"no"});
+noFlexScreen([cancer],"flex_cancer_recent_recurrent");
+flexScreen([{...cancer,lastCancerDate:"2026-09-01"}],"flex_cancer_recent_recurrent");
+flexScreen([{...cancer,treatmentEnd:"2026-09-01"}],"flex_cancer_recent_recurrent");
+flexScreen([{...cancer,recurrence:"yes"}],"flex_cancer_recent_recurrent");
+flexScreen([{...cancer,metastasis:"yes"}],"flex_cancer_spread");
+for(const type of ["basal_cell","squamous_cell"]) {
+  const skin={...cancer,cancerType:type,lastCancerDate:"2026-09-01",recurrence:"yes"};
+  noFlexScreen([skin],"flex_cancer_recent_recurrent");
+  flexScreen([{...skin,metastasis:"yes"}],"flex_cancer_spread");
+  flexScreen([{...skin,chemoRadiation:"yes"}],"flex_skin_treatment");
+}
+for(const type of ["unknown","","bad_saved_type"])noFlexScreen([{...cancer,cancerType:type,lastCancerDate:"2026-09-01"}],"flex_cancer_recent_recurrent");
+for(const date of ["2021-10-08","2027-01-01", "2026-02-30",""])noFlexScreen([{...cancer,lastCancerDate:date}],"flex_cancer_recent_recurrent");
+for(const date of ["2016-10-09","2016-10-08","2027-01-01", "2026-02-30",""]) {
+  o=run("banner_flex",{faceAmount:25000,termYears:10,substanceHistory:"yes",substanceLastDate:date});
+  equal(o.status,date==="2016-10-09"?"decline_screen":"manual_review","D077 substance abuse ten-year dated boundary "+date);
+}
+o=run("banner_flex",{faceAmount:25000,termYears:10,outstandingRestitution:"yes"});equal(o.status,"decline_screen","Flex criminal fines screen");
+for(const changes of [{outstandingRestitution:"yes"},{probationCurrent:"yes"},{criminalHistory:"yes",criminal:[criminal({convictionDate:"2024-01-01"})]}])equal(run("banner_beyondterm",changes).status,"manual_review","Flex criminal exclusions not borrowed by BeyondTerm");
+for(const id of ["banner_beyondterm","banner_flex"]) {
+  const extra={faceAmount:100000,termYears:10};
+  for(const date of ["2026-10-08","2025-10-08","2024-10-08","2020-01-01"]) {
+    o=run(id,{...extra,nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"cigarette",lastDate:date,current:date===asOf?"yes":"no"}]});
+    equal(o.tobaccoBasis,"unknown",id+" does not invent a tobacco cutoff");
+    equal(o.domains.nicotine.ceiling,null,id+" does not assign unsupported preferred ceilings");
+    equal(o.healthClass,null,id+" remains a partial review route");
+  }
+  o=run(id,{...extra,medicalHistory:"yes",conditions:[condition("atrial_fibrillation",{diagnosisDate:"2026-01-01",dailyAnticoagulant:"yes"})],dob:"1976-10-08"});
+  equal(o.status,"manual_review","AF acceptance/exclusion source conflict requires review");
+  ok(o.issues.some(i=>i.id==="beyond_af_source_conflict" && i.source.pages.join(",")==="4,7,10"),"AF conflict shows exact competing pages");
+}
+equal(PRODUCT_RULES.banner_flex.status,"partial","Adding selected screens does not certify full Flex criteria");
+equal(PRODUCT_RULES.banner_beyondterm.status,"partial","BeyondTerm still awaits full product application and classes");
+
 console.log(`Passed ${checks} source-derived underwriting assertions.`);
