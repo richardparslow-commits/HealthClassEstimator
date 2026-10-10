@@ -4,6 +4,45 @@
  */
 "use strict";
 const RULE_SOURCES = {
+  "F-SF-SPECS": {
+    "title": "Foresters Strong Foundation product guide",
+    "edition": "506308 US (04/25); supplied edition reviewed 2026-10-10",
+    "pages": [
+      3,
+      4
+    ],
+    "file": "Foresters/\\-foresters-strong-foundation-product-guidee.pdf",
+    "sha256": "616c28bbeda2b5d89bba5d4107360de2c2f4933b95c04430bd01dbb83e878b5c"
+  },
+  "F-SMART-SPECS": {
+    "title": "Foresters SMART UL product guide",
+    "edition": "503346 US (04/25); current official link checked 2026-10-10",
+    "pages": [
+      3
+    ],
+    "url": "https://ezbiz.foresters.com/foresters-smart-ul-product-guide",
+    "sha256": "3a5beb47621628a0927aba83b16b652f527c740ae65a6207935d683b78225287"
+  },
+  "FG-PS-SPECS": {
+    "title": "F&G Pathsetter at a glance",
+    "edition": "ADV2260; Rev. 03-2026 26-0211; current official link checked 2026-10-10",
+    "pages": [
+      1,
+      7
+    ],
+    "url": "https://assets.fglife.com/is/content/fglife/ad-reviewed-materials/adv/adv2200s/ADV2260%20FG%20Pathsetter%20%28AAG%29-Standard.pdf",
+    "sha256": "0b29de834aa5b735a720238cccd61088df6abaec9193678d4615454427a85dd4"
+  },
+  "UHL-PORTFOLIO": {
+    "title": "United Home Life product portfolio",
+    "edition": "200-691 3-26; current official link checked 2026-10-10",
+    "pages": [
+      1,
+      2
+    ],
+    "url": "https://www.unitedhomelife.com/docs/default-source/agent-portal-resources/documents/marketing-materials/marketing-support/product-portfolio-reference-guide.pdf?sfvrsn=b3b8137a_17",
+    "sha256": "9b53bb754c575d46b54e51d0445c70712a8f7c3e7e4b467a839bf9f8ead237c8"
+  },
   "B-FIELD": {
     "title": "Banner OPTerm field guide",
     "edition": "March 2026",
@@ -1242,17 +1281,18 @@ const PRODUCT_RULES = Object.fromEntries([
     "drivingPPMax": 2
   },
   {
-    "id": "foresters_smart_med",
+  "id": "foresters_smart_med",
     "carrier": "Foresters",
     "name": "SMART UL",
     "kind": "universal_life",
     "route": "Fully underwritten",
     "sources": [
       "D152",
-      "D199"
+      "D199",
+      "F-SMART-SPECS"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "family": "foresters",
     "build": "foresters",
     "vitals": "foresters",
@@ -1263,7 +1303,32 @@ const PRODUCT_RULES = Object.fromEntries([
       12
     ],
     "ageBasis": "nearest",
-    "drivingPPMax": 2
+    "drivingPPMax": 2,
+    "minAge": 0,
+    "maxAge": 85,
+    "minFaceBands": [
+      [
+        15,
+        50000
+      ],
+      [
+        70,
+        100000
+      ],
+      [
+        75,
+        50000
+      ],
+      [
+        85,
+        25000
+      ]
+    ],
+    "eligibilitySource": "F-SMART-SPECS",
+    "eligibilityPages": [
+      3
+    ],
+    "scopeNote": "This is the SMART UL medical route, not its non-medical route. The supplied/currently linked product guide uses age nearest birthday and medical minimums of $50,000 at 0\u201315, $100,000 at 16\u201370, $50,000 at 71\u201375 and $25,000 at 76\u201385. Adult class estimates are withheld for juveniles. At 71\u201385, the favorable classes require at least $100,000. The complete current application, class restrictions and state approval remain under review; no final class is assigned."
   },
   {
     "id": "foresters_yourterm_nonmed",
@@ -1316,17 +1381,18 @@ const PRODUCT_RULES = Object.fromEntries([
     ]
   },
   {
-    "id": "foresters_strong",
+  "id": "foresters_strong",
     "carrier": "Foresters",
     "name": "Strong Foundation",
     "kind": "term",
     "route": "Non-medical",
     "sources": [
       "D152",
-      "D199"
+      "D199",
+      "F-SF-SPECS"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "minAge": 18,
     "maxAge": 80,
     "ageBasis": "nearest",
@@ -1339,7 +1405,53 @@ const PRODUCT_RULES = Object.fromEntries([
         80,
         250000
       ]
-    ]
+    ],
+    "minFace": 50000,
+    "terms": {
+      "10": [
+        80,
+        80
+      ],
+      "15": [
+        70,
+        70
+      ],
+      "20": [
+        65,
+        60
+      ],
+      "25": [
+        55,
+        55
+      ],
+      "30": [
+        50,
+        50
+      ]
+    },
+    "maleTobaccoTermCaps": {
+      "25": 50,
+      "30": 45
+    },
+    "eligibilitySource": "F-SF-SPECS",
+    "eligibilityPages": [
+      3
+    ],
+    "maxFaceSource": "D152",
+    "maxFacePages": [
+      7
+    ],
+    "substandardFaceBands": [
+      [
+        55,
+        300000
+      ],
+      [
+        80,
+        150000
+      ]
+    ],
+    "scopeNote": "Strong Foundation screens its own term ages, including the lower male-tobacco ages for 25/30-year terms, and its $50,000 minimum. The April 2026 underwriting guide resolves the older product table overlap at age 55: the lower non-medical coverage band starts at 56. Existing Foresters coverage counts toward the limit. Amounts above the substandard band require confirmation of the carrier-assigned class; the amount never selects a class. Complete application, diabetes rating, medical combinations and state approval still require carrier review."
   },
   {
     "id": "moo_full",
@@ -1365,7 +1477,7 @@ const PRODUCT_RULES = Object.fromEntries([
     "scopeNote": "Base health criteria only. Confirm exact term/permanent plan, issue ages, term length, state and riders with the carrier."
   },
   {
-    "id": "moo_tle",
+  "id": "moo_tle",
     "carrier": "Mutual of Omaha",
     "name": "Term Life Express",
     "kind": "term",
@@ -1375,7 +1487,7 @@ const PRODUCT_RULES = Object.fromEntries([
       "D299"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "minAge": 18,
     "maxAge": 75,
     "ageBasis": "last",
@@ -1392,10 +1504,22 @@ const PRODUCT_RULES = Object.fromEntries([
         75,
         350000
       ]
-    ]
+    ],
+    "minFace": 25000,
+    "availableTerms": [
+      10,
+      15,
+      20,
+      30
+    ],
+    "eligibilitySource": "D299",
+    "eligibilityPages": [
+      2
+    ],
+    "scopeNote": "The April 2026 brochure supports a $25,000 minimum, age-dependent face limits and 10/15/20/30-year terms. It does not establish every term-specific issue-age or class rule. Confirm the current application, selected term at the issue age, medical combinations and state variations with Mutual of Omaha; a permitted duration does not establish eligibility."
   },
   {
-    "id": "moo_iule",
+  "id": "moo_iule",
     "carrier": "Mutual of Omaha",
     "name": "IUL Express",
     "kind": "universal_life",
@@ -1405,10 +1529,30 @@ const PRODUCT_RULES = Object.fromEntries([
       "D286"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "minAge": 18,
     "maxAge": 75,
-    "ageBasis": "last"
+    "ageBasis": "last",
+    "minFace": 25000,
+    "faceBands": [
+      [
+        50,
+        550000
+      ],
+      [
+        60,
+        450000
+      ],
+      [
+        75,
+        350000
+      ]
+    ],
+    "eligibilitySource": "D286",
+    "eligibilityPages": [
+      7
+    ],
+    "scopeNote": "The April 2026 IUL Express product guide supports age last birthday, issue ages 18\u201375 and $25,000 minimum coverage, with maximums of $550,000 through age 50, $450,000 at 51\u201360 and $350,000 at 61\u201375. This permanent product has no selected term duration. Current application/class criteria, medical combinations, illustration and state variations remain under review."
   },
   {
     "id": "fg_quantum",
@@ -1442,16 +1586,32 @@ const PRODUCT_RULES = Object.fromEntries([
     ]
   },
   {
-    "id": "fg_pathsetter",
+  "id": "fg_pathsetter",
     "carrier": "F&G",
     "name": "Pathsetter",
     "kind": "universal_life",
     "route": "Fully underwritten",
     "sources": [
-      "D121"
+      "D121",
+      "FG-PS-SPECS"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-10",
+    "minAge": 0,
+    "maxAge": 80,
+    "minFace": 50000,
+    "eligibilitySource": "FG-PS-SPECS",
+    "eligibilityPages": [
+      1
+    ],
+    "excludeStates": [
+      "NY"
+    ],
+    "stateSource": "FG-PS-SPECS",
+    "statePages": [
+      7
+    ],
+    "scopeNote": "The current March 2026 Pathsetter sheet supports ages 0\u201380 and a $50,000 minimum face amount. Its $500,000 maximum premium is not a maximum death benefit. Exam-free program limits do not establish the fully underwritten route maximum. The older general underwriting guide is retained as dated evidence only; age basis, current application, complete class criteria and state approval remain unresolved."
   },
   {
     "id": "transamerica_super",
@@ -1619,36 +1779,100 @@ const PRODUCT_RULES = Object.fromEntries([
     "reviewed": "2026-10-08"
   },
   {
-    "id": "uhl_simple20",
+  "id": "uhl_simple20",
     "carrier": "United Home Life",
     "name": "Simple Term 20 DLX",
     "kind": "term",
     "route": "Simplified issue \u2014 Texas application",
     "sources": [
       "D459",
-      "D404"
+      "D404",
+      "UHL-PORTFOLIO"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "onlyStates": [
       "TX"
-    ]
+    ],
+    "minAge": 20,
+    "maxAge": 60,
+    "minFace": 25000,
+    "maxFace": 50000,
+    "terms": {
+      "20": [
+        60,
+        60
+      ]
+    },
+    "termTobaccoIndependent": true,
+    "ageBasis": "last",
+    "eligibilitySource": "UHL-PORTFOLIO",
+    "eligibilityPages": [
+      1
+    ],
+    "stateSource": "D459",
+    "statePages": [
+      1,
+      5,
+      7
+    ],
+    "limitStates": [
+      "TX"
+    ],
+    "scopeNote": "The current March 2026 product portfolio supports Simple Term 20 DLX at age last birthday 20\u201360, $25,000\u2013$50,000 and a 20-year term. This profile is scoped to the supplied Texas application; other states require their own application/variations. The built-in table is a product design, not an individualized health-class estimate. Current application edition, complete medical combinations and state-specific carrier decisions remain under review."
   },
   {
-    "id": "uhl_otherterm",
+  "id": "uhl_otherterm",
     "carrier": "United Home Life",
-    "name": "Other term plans (Part B)",
+    "name": "Simple Term 20 / 30 / 20 ROP \u2014 Texas",
     "kind": "term",
     "route": "Simplified issue \u2014 Texas application",
     "sources": [
       "D459",
-      "D404"
+      "D404",
+      "UHL-PORTFOLIO"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "onlyStates": [
       "TX"
-    ]
+    ],
+    "minAge": 20,
+    "maxAge": 60,
+    "minFace": 25000,
+    "faceBands": [
+      [
+        45,
+        500000
+      ],
+      [
+        55,
+        375000
+      ],
+      [
+        60,
+        250000
+      ]
+    ],
+    "availableTerms": [
+      20,
+      30
+    ],
+    "ageBasis": "last",
+    "eligibilitySource": "UHL-PORTFOLIO",
+    "eligibilityPages": [
+      1
+    ],
+    "stateSource": "D459",
+    "statePages": [
+      1,
+      5,
+      7
+    ],
+    "limitStates": [
+      "TX"
+    ],
+    "scopeNote": "Choose the exact Simple Term 20, Simple Term 30 or Simple Term 20 ROP plan. The March 2026 portfolio supplies separate age, tobacco, duration and coverage limits; old saved drafts do not imply a plan choice. Screens use age last birthday and are scoped to Texas. ROP coverage bands do not assign a medical class or calculate a premium. The current application edition, complete medical combinations and carrier decisions remain under review."
   },
   {
     "id": "national_life",

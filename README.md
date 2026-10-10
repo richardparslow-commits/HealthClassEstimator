@@ -77,3 +77,28 @@ Release 76 corrects American Amicable QSFP to final-expense whole life. It no lo
 Release 77 adds EasyTrak's $100,000 minimum, $1,000 increments, age-based maximums and complete 10/15/20/30-year term screens using age nearest birthday. Income multiples and mortgage-only 1.5x quoting limits produce financial review; undefined income bases are never invented for nonworking applicants. New quote-income and mortgage answers start unanswered in saved drafts. The supplied replacement guides conflict, so replacement requests now require review instead of an unconditional exclusion. NY remains unavailable. The EasyTrak profile stays partial and never assigns a final class.
 
 EasyTrak nicotine history retains a disclosed basis for consistent never use or current nicotine use, without a health-class ceiling. Past use needs the current application; no generic twelve-month cutoff or mapping of Elite/Select to Preferred Plus is assumed.
+
+
+## Release 78 — documented limits and remaining evidence
+
+Seven partial profiles now screen additional documented product limits: Foresters
+Strong Foundation and SMART UL medical, MOO Term Life Express and IUL Express,
+F&G Pathsetter, and the two Texas UHL term routes. The UHL other-term route now
+requires an explicit Simple Term 20 / 30 / 20 ROP plan; old saved records do not
+infer a plan. Invalid existing Foresters coverage cannot reduce the total.
+
+The April 2026 Foresters underwriting guide resolves the older product-table
+overlap at age 55: the lower non-medical coverage band starts at age 56.
+Strong Foundation's male tobacco term ages are applied separately. Pathsetter's
+$500,000 maximum premium is not a face-amount cap. Texas application limits
+are not treated as exclusions for other states. Current source metadata records
+the physical PDF pages, editions, official URLs and hashes.
+
+Validation: 2,426 engine assertions (259 added), plus standalone build, version,
+asset, single-engine and script-order checks. All 14 partial and three unverified
+profiles continue to withhold final health classes and benefit tiers. Missing
+application editions, medical/rating combinations, tobacco definitions and
+state-specific evidence remain genuine blockers to complete underwriting rules.
+National Life needs an exact product and issuing company. John Hancock's general
+field guide excludes Simple Term; it cannot supply the missing Simple Term rules.
+The legacy QTP identifier must be reconfirmed before choosing BeyondTerm.
