@@ -5,7 +5,7 @@ const InterviewState = (() => {
   function empty() {
     return {
       schemaVersion, productId: "", dob: "", sex: "", state: "", faceAmount: "", termYears: "",
-      policyPurpose: "", income: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
+      policyPurpose: "", income: "", sbliIncome: "", sbliMortgageOnly: "", sbliMortgageAmount: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
       employment: "", occupation: "", hazardousOccupation: "", aviation: "", hazardousSports: "",
       militaryDeployment: "", forestersDeployment: "", exposureDetails: "", citizenship: "", usResident: "", usSince: "",
       intentStay: "", visaType: "", visaExpiry: "", visaRenewal: "", workAuthorization: "",
@@ -16,6 +16,8 @@ const InterviewState = (() => {
       bpTreatment: "", bpControl: "", cholTotal: "", cholHdl: "", cholDate: "", cholBasis: "",
       cholTreatment: "", medicalHistory: "", medicalComplete: "", conditions: [],
       hospitalHistory: "", hospitals: [], surgeryHistory: "", surgeries: [], pendingCare: "",
+      americoAdlHistory: "", americoAdlLastDate: "", americoHospiceHistory: "", americoHospiceLastDate: "",
+      americoOxygenHistory: "", americoOxygenLastDate: "", americoMobilityHistory: "", americoMobilityLastDate: "",
       pendingDetails: "", activeSymptoms: "", symptomDetails: "", oxygen: "", dialysis: "",
       adlAssistance: "", careFacility: "", homeHealth: "", terminalIllness: "", terminalMonths: "",
       substanceHistory: "", substanceLastDate: "", substanceDetails: "", marijuana: "",
@@ -55,3 +57,4 @@ const InterviewState = (() => {
   }
   return { schemaVersion, empty, migrate };
 })();
+

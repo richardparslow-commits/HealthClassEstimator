@@ -41,12 +41,23 @@ const RULE_SOURCES = {
   },
   "D085": {
     "title": "Banner BeyondTermflex product specifications",
-    "edition": "Supplied edition",
+    "edition": "CN08282026-6 (August 2026)",
     "pages": [
-      1
+      1,
+      2
     ],
     "file": "Banner Life/product-specifications_flex.pdf",
     "sha256": "5365bb79002e9a9783d2164c10683a43ed464df596464647c2bb669ee05e20b5"
+  },
+  "BF-INFO": {
+    "title": "Banner BeyondTermflex product information",
+    "edition": "CN08282026-5 (August 2026)",
+    "pages": [
+      1,
+      2
+    ],
+    "file": "Banner Life/product-information_flex.pdf",
+    "sha256": "005316a8b7a26c3639cb91c20f341479e38a041b2c3b5ed4564da5f83b336619"
   },
   "D235": {
     "title": "Foresters Your Term product guide",
@@ -81,8 +92,13 @@ const RULE_SOURCES = {
     "edition": "September 2026",
     "pages": [
       3,
+      4,
       5,
+      6,
       7,
+      8,
+      9,
+      10,
       11,
       13
     ],
@@ -232,6 +248,21 @@ const RULE_SOURCES = {
     "file": "Corebridge Financial/SIWL UW Guide_cXrbDfI.pdf",
     "sha256": "6d51fdd6ca8e59fac15d64424af32fcbf5c0cfc6bfd78a53cc62bc0937998844"
   },
+  "AM-QSFP-INFO": {
+    "title": "Quility Secure Future Preferred product information",
+    "edition": "Created by QMKTG 07-17-2026; reviewed 2026-10-09",
+    "pages": [1],
+    "file": "American Amicable/AM AM secure future.pdf",
+    "sha256": "72b4edc9bdc3fda0b4d83661d778549fee95518d35e47f49d2069ef5bca25551",
+    "url": "https://navigator-help.quility.com/hc/en-us/articles/46241491592219-Whole-Life-AmAm-UHL-vs-Term-Life-Banner-Life-SBLI-vs-IUL-F-G-in-Navigator"
+  },
+  "AM-QSFP-FAQ": {
+    "title": "Quility Secure Future Preferred FAQs",
+    "edition": "Created by QTG 10.2.2026; reviewed 2026-10-09",
+    "pages": [2],
+    "file": "American Amicable/QSFP_by_AmAm_FAQs_10.2026_ojEpXbK.pdf",
+    "sha256": "bac0b143f3706ac879964f8780e49566409af830daefa5b7abad8a7d01d056a0"
+  },
   "D017": {
     "title": "Quility Secure Future Preferred prescription reference",
     "edition": "November 18, 2025",
@@ -252,6 +283,32 @@ const RULE_SOURCES = {
     ],
     "file": "American Amicable/Quility_Secure_Future_Preferred_AmAm_DCL_Condition_Guide_11.18.25_MdTfdSd.pdf",
     "sha256": "e3fa429d2dcbc9aa5161eae947b0d9674e7181a096c682018b5f2a5083d4c4e8"
+  },
+  "SB-ET-SPECS": {
+    "title": "SBLI EasyTrak Digital Term at a glance",
+    "edition": "26-4107, May 2026; reviewed 2026-10-09",
+    "pages": [
+      1,
+      2
+    ],
+    "file": "SBLI/ET-at-a-glance-5-26-1.pdf",
+    "sha256": "d162dadf2d684f359d4611230d4c8f5e988129062a7b2b14f2ad145c4dc2df6b"
+  },
+  "SB-ET-GUIDE": {
+    "title": "SBLI EasyTrak Digital Term Quility agent guide",
+    "edition": "Supplied 26-4154 (Quility); reviewed 2026-10-09",
+    "pages": [
+      4,
+      5
+    ],
+    "file": "SBLI/-Quility-ET-agent-guide-PV-3.pdf",
+    "sha256": "7691a5a3f953d6d4fb2c5312df52042ba7421f5078394570541bf33d81aaeac5"
+  },
+  "SB-ET-FAQ": {
+    "title": "Quility Navigator SBLI EasyTrak FAQs",
+    "edition": "Updated May 12, 2026; checked 2026-10-09",
+    "pages": [],
+    "url": "https://navigator-support.quility.com/hc/en-us/articles/50288882119067-SBLI-EasyTrak-FAQs"
   },
   "D347": {
     "title": "SBLI EasyTrak Digital Term agent guide",
@@ -292,9 +349,159 @@ const RULE_SOURCES = {
     ],
     "file": "United Home Life/200-920-uw-guide-9-26.pdf",
     "sha256": "b896f8bea10c06d82159ff3286faf0d6976fbc6e91491f1eed439a4d94b8a8e1"
+  },
+  "AM-ES-SPECS": {
+    "title": "Americo Eagle Select reference sheet",
+    "edition": "24-275-8 (03/26); checked 2026-10-09",
+    "pages": [
+      1
+    ],
+    "url": "https://americofinalexpense.com/ES/FinalExpenseQuickReference.pdf",
+    "file": "Americo/FinalExpenseQuickReferenceSheet.pdf",
+    "sha256": "ee3522e7b485156a7a735dd077ad279d8664dbcf96033a66549bae0ae609474c"
+  },
+  "AM-ES-GUIDE": {
+    "title": "Americo Eagle Select agent guide",
+    "edition": "24-275-1 (01/26)",
+    "pages": [
+      6,
+      7,
+      10,
+      11
+    ],
+    "url": "https://americofinalexpense.com/ES/ESFinalExpenseAgentGuide.pdf",
+    "file": "Americo/AgentGuide.pdf",
+    "sha256": "066d798a0b1a14e7dca406f82da81482b8c2102b73358956f301683b410df4bc"
+  },
+  "QTP-LEGACY": {
+    "title": "Quility Term Plus legacy underwriting guide",
+    "edition": "Effective September 11, 2024; CN11182024-4; identity reference only",
+    "pages": [
+      1,
+      3,
+      7,
+      9
+    ],
+    "url": "https://www.bannerlife.com/docs/default-source/advisor/products/quility/quility-term-plus_underwriting-guide.pdf?sfvrsn=25620979_4"
+  },
+  "QTP-RENAME": {
+    "title": "Quility support: Banner Life application and BeyondTerm naming",
+    "edition": "Updated February 11, 2026; checked 2026-10-09; product identity only",
+    "pages": [],
+    "url": "https://navigator-support.quility.com/hc/en-us/articles/44242964353179-Download-Banner-Life-Application"
+  },
+  "NLG-PRODUCT": {
+    "title": "National Life Group consumer life insurance overview",
+    "edition": "Checked 2026-10-09; product reference only, no product-specific underwriting criteria",
+    "pages": [],
+    "url": "https://www.nationallife.com/Individuals-Families/Life-Insurance"
+  },
+  "JH-PRODUCT": {
+    "title": "John Hancock Vitality product overview",
+    "edition": "Checked 2026-10-09; Simple Term name reference only, no underwriting criteria",
+    "pages": [],
+    "url": "https://www.johnhancock.com/individual/life-insurance/vitality"
   }
 };
-const BUILD_CHARTS = {"banner":{"58":{"pp":134,"p":144,"sp":155,"stdCredit":181,"std":196,"min":89},"59":{"pp":139,"p":149,"sp":160,"stdCredit":188,"std":203,"min":92},"60":{"pp":144,"p":154,"sp":166,"stdCredit":194,"std":209,"min":95},"61":{"pp":149,"p":159,"sp":171,"stdCredit":201,"std":216,"min":98},"62":{"pp":153,"p":164,"sp":177,"stdCredit":207,"std":224,"min":101},"63":{"pp":158,"p":170,"sp":183,"stdCredit":214,"std":231,"min":104},"64":{"pp":164,"p":175,"sp":188,"stdCredit":221,"std":238,"min":108},"65":{"pp":169,"p":181,"sp":194,"stdCredit":228,"std":246,"min":111},"66":{"pp":174,"p":186,"sp":200,"stdCredit":235,"std":253,"min":115},"67":{"pp":179,"p":192,"sp":207,"stdCredit":242,"std":261,"min":118},"68":{"pp":185,"p":198,"sp":213,"stdCredit":249,"std":269,"min":122},"69":{"pp":190,"p":204,"sp":219,"stdCredit":257,"std":277,"min":125},"70":{"pp":196,"p":210,"sp":225,"stdCredit":264,"std":285,"min":129},"71":{"pp":201,"p":216,"sp":232,"stdCredit":272,"std":293,"min":133},"72":{"pp":207,"p":222,"sp":239,"stdCredit":279,"std":302,"min":136},"73":{"pp":213,"p":228,"sp":245,"stdCredit":287,"std":310,"min":140},"74":{"pp":219,"p":234,"sp":252,"stdCredit":295,"std":319,"min":144},"75":{"pp":225,"p":241,"sp":259,"stdCredit":303,"std":327,"min":148},"76":{"pp":231,"p":247,"sp":266,"stdCredit":311,"std":336,"min":152},"77":{"pp":237,"p":254,"sp":273,"stdCredit":320,"std":345,"min":156},"78":{"pp":243,"p":260,"sp":280,"stdCredit":328,"std":354,"min":160},"79":{"pp":249,"p":267,"sp":287,"stdCredit":336,"std":363,"min":164},"80":{"pp":256,"p":274,"sp":295,"stdCredit":345,"std":372,"min":168},"81":{"pp":262,"p":281,"sp":302,"stdCredit":354,"std":382,"min":173},"82":{"pp":268,"p":288,"sp":309,"stdCredit":363,"std":391,"min":177},"83":{"pp":275,"p":295,"sp":317,"stdCredit":371,"std":401,"min":181}},"foresters":{"56":{"pp":118,"p":125,"sp":143,"std":162},"57":{"pp":122,"p":130,"sp":150,"std":168},"58":{"pp":126,"p":135,"sp":155,"std":174},"59":{"pp":130,"p":137,"sp":160,"std":180},"60":{"pp":144,"p":152,"sp":167,"std":186},"61":{"pp":149,"p":158,"sp":175,"std":193},"62":{"pp":152,"p":162,"sp":180,"std":199},"63":{"pp":157,"p":166,"sp":185,"std":206},"64":{"pp":161,"p":172,"sp":190,"std":211},"65":{"pp":166,"p":178,"sp":195,"std":219},"66":{"pp":170,"p":182,"sp":200,"std":226},"67":{"pp":176,"p":190,"sp":205,"std":233},"68":{"pp":180,"p":195,"sp":210,"std":240},"69":{"pp":184,"p":200,"sp":215,"std":247},"70":{"pp":190,"p":205,"sp":222,"std":254},"71":{"pp":196,"p":210,"sp":227,"std":261},"72":{"pp":202,"p":220,"sp":234,"std":269},"73":{"pp":206,"p":225,"sp":242,"std":276},"74":{"pp":211,"p":230,"sp":247,"std":284},"75":{"pp":216,"p":240,"sp":252,"std":292},"76":{"pp":221,"p":244,"sp":258,"std":299},"77":{"pp":227,"p":251,"sp":264,"std":307},"78":{"pp":244,"p":260,"sp":270,"std":315},"79":{"pp":249,"p":265,"sp":276,"std":323},"80":{"pp":254,"p":270,"sp":281,"std":332},"81":{"pp":259,"p":273,"sp":285,"std":340}},"mutual_of_omaha":{"56":{"pp":125,"p":144,"sp":153,"stdCredit":158,"std":158,"t1":170,"t2":184,"t3":190,"t4":197,"t5":204,"t6":212,"t8":221,"t10":230,"t12":240},"57":{"pp":131,"p":150,"sp":160,"stdCredit":165,"std":165,"t1":176,"t2":189,"t3":195,"t4":202,"t5":209,"t6":216,"t8":225,"t10":234,"t12":244},"58":{"pp":135,"p":155,"sp":165,"stdCredit":170,"std":170,"t1":182,"t2":194,"t3":201,"t4":208,"t5":214,"t6":222,"t8":231,"t10":240,"t12":249},"59":{"pp":141,"p":160,"sp":170,"stdCredit":176,"std":176,"t1":187,"t2":199,"t3":207,"t4":214,"t5":220,"t6":228,"t8":237,"t10":245,"t12":254},"60":{"pp":146,"p":166,"sp":177,"stdCredit":184,"std":184,"t1":193,"t2":205,"t3":213,"t4":220,"t5":226,"t6":235,"t8":244,"t10":253,"t12":262},"61":{"pp":152,"p":173,"sp":185,"stdCredit":191,"std":191,"t1":199,"t2":211,"t3":218,"t4":226,"t5":233,"t6":242,"t8":250,"t10":259,"t12":269},"62":{"pp":158,"p":179,"sp":190,"stdCredit":197,"std":197,"t1":205,"t2":215,"t3":223,"t4":232,"t5":239,"t6":248,"t8":257,"t10":266,"t12":277},"63":{"pp":164,"p":184,"sp":195,"stdCredit":203,"std":203,"t1":213,"t2":220,"t3":228,"t4":238,"t5":246,"t6":255,"t8":264,"t10":275,"t12":284},"64":{"pp":169,"p":189,"sp":200,"stdCredit":209,"std":209,"t1":221,"t2":225,"t3":235,"t4":245,"t5":252,"t6":261,"t8":270,"t10":281,"t12":292},"65":{"pp":174,"p":194,"sp":205,"stdCredit":215,"std":215,"t1":226,"t2":231,"t3":242,"t4":251,"t5":259,"t6":268,"t8":277,"t10":286,"t12":299},"66":{"pp":180,"p":200,"sp":210,"stdCredit":222,"std":222,"t1":232,"t2":239,"t3":248,"t4":258,"t5":268,"t6":276,"t8":285,"t10":293,"t12":308},"67":{"pp":185,"p":205,"sp":215,"stdCredit":228,"std":228,"t1":239,"t2":245,"t3":254,"t4":265,"t5":275,"t6":284,"t8":293,"t10":303,"t12":316},"68":{"pp":189,"p":209,"sp":220,"stdCredit":235,"std":235,"t1":246,"t2":251,"t3":262,"t4":274,"t5":283,"t6":291,"t8":300,"t10":312,"t12":324},"69":{"pp":195,"p":215,"sp":225,"stdCredit":242,"std":242,"t1":254,"t2":258,"t3":270,"t4":282,"t5":291,"t6":299,"t8":309,"t10":319,"t12":331},"70":{"pp":200,"p":221,"sp":232,"stdCredit":250,"std":250,"t1":262,"t2":266,"t3":278,"t4":289,"t5":300,"t6":307,"t8":316,"t10":327,"t12":340},"71":{"pp":206,"p":227,"sp":237,"stdCredit":258,"std":258,"t1":269,"t2":274,"t3":287,"t4":298,"t5":307,"t6":315,"t8":325,"t10":339,"t12":349},"72":{"pp":211,"p":232,"sp":244,"stdCredit":265,"std":265,"t1":275,"t2":281,"t3":292,"t4":305,"t5":315,"t6":322,"t8":333,"t10":348,"t12":356},"73":{"pp":217,"p":239,"sp":252,"stdCredit":271,"std":271,"t1":282,"t2":289,"t3":300,"t4":313,"t5":322,"t6":330,"t8":340,"t10":355,"t12":365},"74":{"pp":222,"p":244,"sp":257,"stdCredit":279,"std":279,"t1":289,"t2":296,"t3":308,"t4":321,"t5":331,"t6":339,"t8":349,"t10":366,"t12":374},"75":{"pp":228,"p":250,"sp":262,"stdCredit":285,"std":285,"t1":296,"t2":303,"t3":317,"t4":329,"t5":339,"t6":348,"t8":358,"t10":376,"t12":383},"76":{"pp":233,"p":255,"sp":268,"stdCredit":292,"std":292,"t1":301,"t2":311,"t3":325,"t4":338,"t5":348,"t6":357,"t8":367,"t10":385,"t12":394},"77":{"pp":239,"p":261,"sp":274,"stdCredit":298,"std":298,"t1":307,"t2":319,"t3":334,"t4":347,"t5":357,"t6":366,"t8":376,"t10":393,"t12":402},"78":{"pp":246,"p":268,"sp":280,"stdCredit":307,"std":307,"t1":313,"t2":328,"t3":345,"t4":358,"t5":366,"t6":375,"t8":385,"t10":405,"t12":413},"79":{"pp":252,"p":274,"sp":286,"stdCredit":313,"std":313,"t1":320,"t2":336,"t3":354,"t4":367,"t5":375,"t6":384,"t8":394,"t10":413,"t12":422},"80":{"pp":258,"p":280,"sp":294,"stdCredit":320,"std":320,"t1":327,"t2":345,"t3":363,"t4":376,"t5":385,"t6":395,"t8":405,"t10":422,"t12":431},"81":{"pp":264,"p":287,"sp":302,"stdCredit":326,"std":326,"t1":335,"t2":352,"t3":372,"t4":385,"t5":395,"t6":406,"t8":415,"t10":435,"t12":444},"82":{"pp":270,"p":294,"sp":310,"stdCredit":334,"std":334,"t1":343,"t2":359,"t3":382,"t4":395,"t5":407,"t6":418,"t8":427,"t10":444,"t12":462}},"fg_quantum":{"56":{"male":{"pp":166,"std":183},"female":{"pp":152,"std":167},"min":74,"tableMax":198},"57":{"male":{"pp":170,"std":187},"female":{"pp":155,"std":171},"min":77,"tableMax":205},"58":{"male":{"pp":174,"std":191},"female":{"pp":157,"std":173},"min":79,"tableMax":212},"59":{"male":{"pp":178,"std":196},"female":{"pp":160,"std":176},"min":82,"tableMax":220},"60":{"male":{"pp":182,"std":200},"female":{"pp":163,"std":179},"min":85,"tableMax":227},"61":{"male":{"pp":186,"std":205},"female":{"pp":166,"std":183},"min":88,"tableMax":235},"62":{"male":{"pp":190,"std":209},"female":{"pp":169,"std":186},"min":91,"tableMax":243},"63":{"male":{"pp":196,"std":216},"female":{"pp":174,"std":191},"min":94,"tableMax":251},"64":{"male":{"pp":202,"std":222},"female":{"pp":179,"std":197},"min":97,"tableMax":259},"65":{"male":{"pp":207,"std":228},"female":{"pp":183,"std":201},"min":100,"tableMax":267},"66":{"male":{"pp":213,"std":234},"female":{"pp":189,"std":208},"min":103,"tableMax":275},"67":{"male":{"pp":217,"std":239},"female":{"pp":193,"std":212},"min":106,"tableMax":284},"68":{"male":{"pp":223,"std":245},"female":{"pp":198,"std":218},"min":109,"tableMax":292},"69":{"male":{"pp":228,"std":251},"female":{"pp":202,"std":222},"min":112,"tableMax":301},"70":{"male":{"pp":235,"std":259},"female":{"pp":208,"std":229},"min":115,"tableMax":310},"71":{"male":{"pp":241,"std":265},"female":{"pp":214,"std":235},"min":119,"tableMax":319},"72":{"male":{"pp":248,"std":273},"female":{"pp":221,"std":243},"min":122,"tableMax":328},"73":{"male":{"pp":253,"std":278},"female":{"pp":225,"std":248},"min":126,"tableMax":337},"74":{"male":{"pp":260,"std":286},"female":{"pp":232,"std":255},"min":129,"tableMax":346},"75":{"male":{"pp":267,"std":294},"female":{"pp":237,"std":261},"min":133,"tableMax":355},"76":{"male":{"pp":276,"std":304},"female":{"pp":246,"std":271},"min":136,"tableMax":365},"77":{"male":{"pp":284,"std":312},"female":{"pp":253,"std":278},"min":140,"tableMax":375},"78":{"male":{"pp":293,"std":322},"female":{"pp":261,"std":287},"min":143,"tableMax":385},"79":{"male":{"pp":301,"std":331},"female":{"pp":268,"std":295},"min":147,"tableMax":394},"80":{"male":{"pp":308,"std":341},"female":{"pp":274,"std":308},"min":151,"tableMax":405},"81":{"male":{"pp":315,"std":349},"female":{"pp":282,"std":316},"min":154,"tableMax":415},"82":{"male":{"pp":325,"std":359},"female":{"pp":288,"std":326},"min":157,"tableMax":425},"83":{"male":{"pp":336,"std":369},"female":{"pp":293,"std":336},"min":160,"tableMax":427},"84":{"male":{"pp":345,"std":378},"female":{"pp":298,"std":345},"min":164,"tableMax":440}},"beyond":{"58":[[89,134],[135,155],[156,196],[197,205]],"59":[[92,139],[140,160],[161,203],[204,212]],"60":[[95,144],[145,166],[167,209],[210,220]],"61":[[98,149],[150,171],[172,216],[217,227]],"62":[[101,153],[154,177],[178,224],[225,235]],"63":[[104,158],[159,183],[184,231],[232,242]],"64":[[108,164],[165,188],[189,238],[239,250]],"65":[[111,169],[170,194],[195,246],[247,258]],"66":[[115,174],[175,200],[201,253],[254,266]],"67":[[118,179],[180,207],[208,261],[261,274]],"68":[[122,185],[186,213],[214,269],[270,282]],"69":[[125,190],[191,219],[220,277],[278,291]],"70":[[129,196],[197,225],[226,285],[286,299]],"71":[[133,201],[202,232],[233,293],[294,308]],"72":[[136,207],[208,239],[240,302],[301,317]],"73":[[140,213],[214,245],[246,310],[311,325]],"74":[[144,219],[220,252],[253,319],[320,334]],"75":[[148,225],[226,259],[260,327],[328,344]],"76":[[152,231],[232,266],[267,336],[337,353]],"77":[[156,237],[238,273],[274,345],[346,362]],"78":[[160,243],[244,280],[281,354],[355,372]],"79":[[164,249],[250,287],[288,363],[363,381]],"80":[[168,256],[257,295],[296,372],[373,391]],"81":[[173,262],[263,302],[303,382],[383,401]],"82":[[177,268],[269,309],[310,391],[392,411]],"83":[[181,275],[276,317],[318,401],[402,421]]},"corebridge":{"56":{"graded":[74,203],"level":[79,189]},"57":{"graded":[77,210],"level":[81,196]},"58":{"graded":[79,217],"level":[84,203]},"59":{"graded":[82,225],"level":[87,210]},"60":{"graded":[85,232],"level":[90,217]},"61":{"graded":[88,240],"level":[93,224]},"62":{"graded":[91,248],"level":[96,232]},"63":{"graded":[94,256],"level":[99,239]},"64":{"graded":[97,265],"level":[103,247]},"65":{"graded":[100,273],"level":[106,255]},"66":{"graded":[103,281],"level":[109,263]},"67":{"graded":[106,290],"level":[112,271]},"68":{"graded":[109,299],"level":[116,279]},"69":{"graded":[112,307],"level":[119,287]},"70":{"graded":[116,316],"level":[123,296]},"71":{"graded":[119,326],"level":[126,304]},"72":{"graded":[122,335],"level":[130,313]},"73":{"graded":[126,344],"level":[133,321]},"74":{"graded":[129,354],"level":[137,330]},"75":{"graded":[133,363],"level":[141,339]},"76":{"graded":[136,373],"level":[145,348]},"77":{"graded":[140,383],"level":[148,358]},"78":{"graded":[144,393],"level":[152,367]},"79":{"graded":[147,403],"level":[156,376]},"80":{"graded":[151,413],"level":[160,386]},"81":{"graded":[155,424],"level":[164,396]},"82":{"graded":[159,434],"level":[168,406]}}};
+const BUILD_CHARTS = {
+  "americo": {
+    "56": [
+        79,
+        198
+    ],
+    "57": [
+        81,
+        205
+    ],
+    "58": [
+        84,
+        212
+    ],
+    "59": [
+        87,
+        220
+    ],
+    "60": [
+        90,
+        227
+    ],
+    "61": [
+        93,
+        235
+    ],
+    "62": [
+        96,
+        243
+    ],
+    "63": [
+        99,
+        251
+    ],
+    "64": [
+        102,
+        259
+    ],
+    "65": [
+        106,
+        267
+    ],
+    "66": [
+        109,
+        275
+    ],
+    "67": [
+        112,
+        284
+    ],
+    "68": [
+        116,
+        292
+    ],
+    "69": [
+        119,
+        301
+    ],
+    "70": [
+        122,
+        310
+    ],
+    "71": [
+        126,
+        319
+    ],
+    "72": [
+        130,
+        328
+    ],
+    "73": [
+        133,
+        337
+    ],
+    "74": [
+        137,
+        346
+    ],
+    "75": [
+        141,
+        356
+    ],
+    "76": [
+        144,
+        365
+    ],
+    "77": [
+        148,
+        375
+    ],
+    "78": [
+        152,
+        385
+    ],
+    "79": [
+        156,
+        395
+    ]
+},"banner":{"58":{"pp":134,"p":144,"sp":155,"stdCredit":181,"std":196,"min":89},"59":{"pp":139,"p":149,"sp":160,"stdCredit":188,"std":203,"min":92},"60":{"pp":144,"p":154,"sp":166,"stdCredit":194,"std":209,"min":95},"61":{"pp":149,"p":159,"sp":171,"stdCredit":201,"std":216,"min":98},"62":{"pp":153,"p":164,"sp":177,"stdCredit":207,"std":224,"min":101},"63":{"pp":158,"p":170,"sp":183,"stdCredit":214,"std":231,"min":104},"64":{"pp":164,"p":175,"sp":188,"stdCredit":221,"std":238,"min":108},"65":{"pp":169,"p":181,"sp":194,"stdCredit":228,"std":246,"min":111},"66":{"pp":174,"p":186,"sp":200,"stdCredit":235,"std":253,"min":115},"67":{"pp":179,"p":192,"sp":207,"stdCredit":242,"std":261,"min":118},"68":{"pp":185,"p":198,"sp":213,"stdCredit":249,"std":269,"min":122},"69":{"pp":190,"p":204,"sp":219,"stdCredit":257,"std":277,"min":125},"70":{"pp":196,"p":210,"sp":225,"stdCredit":264,"std":285,"min":129},"71":{"pp":201,"p":216,"sp":232,"stdCredit":272,"std":293,"min":133},"72":{"pp":207,"p":222,"sp":239,"stdCredit":279,"std":302,"min":136},"73":{"pp":213,"p":228,"sp":245,"stdCredit":287,"std":310,"min":140},"74":{"pp":219,"p":234,"sp":252,"stdCredit":295,"std":319,"min":144},"75":{"pp":225,"p":241,"sp":259,"stdCredit":303,"std":327,"min":148},"76":{"pp":231,"p":247,"sp":266,"stdCredit":311,"std":336,"min":152},"77":{"pp":237,"p":254,"sp":273,"stdCredit":320,"std":345,"min":156},"78":{"pp":243,"p":260,"sp":280,"stdCredit":328,"std":354,"min":160},"79":{"pp":249,"p":267,"sp":287,"stdCredit":336,"std":363,"min":164},"80":{"pp":256,"p":274,"sp":295,"stdCredit":345,"std":372,"min":168},"81":{"pp":262,"p":281,"sp":302,"stdCredit":354,"std":382,"min":173},"82":{"pp":268,"p":288,"sp":309,"stdCredit":363,"std":391,"min":177},"83":{"pp":275,"p":295,"sp":317,"stdCredit":371,"std":401,"min":181}},"foresters":{"56":{"pp":118,"p":125,"sp":143,"std":162},"57":{"pp":122,"p":130,"sp":150,"std":168},"58":{"pp":126,"p":135,"sp":155,"std":174},"59":{"pp":130,"p":137,"sp":160,"std":180},"60":{"pp":144,"p":152,"sp":167,"std":186},"61":{"pp":149,"p":158,"sp":175,"std":193},"62":{"pp":152,"p":162,"sp":180,"std":199},"63":{"pp":157,"p":166,"sp":185,"std":206},"64":{"pp":161,"p":172,"sp":190,"std":211},"65":{"pp":166,"p":178,"sp":195,"std":219},"66":{"pp":170,"p":182,"sp":200,"std":226},"67":{"pp":176,"p":190,"sp":205,"std":233},"68":{"pp":180,"p":195,"sp":210,"std":240},"69":{"pp":184,"p":200,"sp":215,"std":247},"70":{"pp":190,"p":205,"sp":222,"std":254},"71":{"pp":196,"p":210,"sp":227,"std":261},"72":{"pp":202,"p":220,"sp":234,"std":269},"73":{"pp":206,"p":225,"sp":242,"std":276},"74":{"pp":211,"p":230,"sp":247,"std":284},"75":{"pp":216,"p":240,"sp":252,"std":292},"76":{"pp":221,"p":244,"sp":258,"std":299},"77":{"pp":227,"p":251,"sp":264,"std":307},"78":{"pp":244,"p":260,"sp":270,"std":315},"79":{"pp":249,"p":265,"sp":276,"std":323},"80":{"pp":254,"p":270,"sp":281,"std":332},"81":{"pp":259,"p":273,"sp":285,"std":340}},"mutual_of_omaha":{"56":{"pp":125,"p":144,"sp":153,"stdCredit":158,"std":158,"t1":170,"t2":184,"t3":190,"t4":197,"t5":204,"t6":212,"t8":221,"t10":230,"t12":240},"57":{"pp":131,"p":150,"sp":160,"stdCredit":165,"std":165,"t1":176,"t2":189,"t3":195,"t4":202,"t5":209,"t6":216,"t8":225,"t10":234,"t12":244},"58":{"pp":135,"p":155,"sp":165,"stdCredit":170,"std":170,"t1":182,"t2":194,"t3":201,"t4":208,"t5":214,"t6":222,"t8":231,"t10":240,"t12":249},"59":{"pp":141,"p":160,"sp":170,"stdCredit":176,"std":176,"t1":187,"t2":199,"t3":207,"t4":214,"t5":220,"t6":228,"t8":237,"t10":245,"t12":254},"60":{"pp":146,"p":166,"sp":177,"stdCredit":184,"std":184,"t1":193,"t2":205,"t3":213,"t4":220,"t5":226,"t6":235,"t8":244,"t10":253,"t12":262},"61":{"pp":152,"p":173,"sp":185,"stdCredit":191,"std":191,"t1":199,"t2":211,"t3":218,"t4":226,"t5":233,"t6":242,"t8":250,"t10":259,"t12":269},"62":{"pp":158,"p":179,"sp":190,"stdCredit":197,"std":197,"t1":205,"t2":215,"t3":223,"t4":232,"t5":239,"t6":248,"t8":257,"t10":266,"t12":277},"63":{"pp":164,"p":184,"sp":195,"stdCredit":203,"std":203,"t1":213,"t2":220,"t3":228,"t4":238,"t5":246,"t6":255,"t8":264,"t10":275,"t12":284},"64":{"pp":169,"p":189,"sp":200,"stdCredit":209,"std":209,"t1":221,"t2":225,"t3":235,"t4":245,"t5":252,"t6":261,"t8":270,"t10":281,"t12":292},"65":{"pp":174,"p":194,"sp":205,"stdCredit":215,"std":215,"t1":226,"t2":231,"t3":242,"t4":251,"t5":259,"t6":268,"t8":277,"t10":286,"t12":299},"66":{"pp":180,"p":200,"sp":210,"stdCredit":222,"std":222,"t1":232,"t2":239,"t3":248,"t4":258,"t5":268,"t6":276,"t8":285,"t10":293,"t12":308},"67":{"pp":185,"p":205,"sp":215,"stdCredit":228,"std":228,"t1":239,"t2":245,"t3":254,"t4":265,"t5":275,"t6":284,"t8":293,"t10":303,"t12":316},"68":{"pp":189,"p":209,"sp":220,"stdCredit":235,"std":235,"t1":246,"t2":251,"t3":262,"t4":274,"t5":283,"t6":291,"t8":300,"t10":312,"t12":324},"69":{"pp":195,"p":215,"sp":225,"stdCredit":242,"std":242,"t1":254,"t2":258,"t3":270,"t4":282,"t5":291,"t6":299,"t8":309,"t10":319,"t12":331},"70":{"pp":200,"p":221,"sp":232,"stdCredit":250,"std":250,"t1":262,"t2":266,"t3":278,"t4":289,"t5":300,"t6":307,"t8":316,"t10":327,"t12":340},"71":{"pp":206,"p":227,"sp":237,"stdCredit":258,"std":258,"t1":269,"t2":274,"t3":287,"t4":298,"t5":307,"t6":315,"t8":325,"t10":339,"t12":349},"72":{"pp":211,"p":232,"sp":244,"stdCredit":265,"std":265,"t1":275,"t2":281,"t3":292,"t4":305,"t5":315,"t6":322,"t8":333,"t10":348,"t12":356},"73":{"pp":217,"p":239,"sp":252,"stdCredit":271,"std":271,"t1":282,"t2":289,"t3":300,"t4":313,"t5":322,"t6":330,"t8":340,"t10":355,"t12":365},"74":{"pp":222,"p":244,"sp":257,"stdCredit":279,"std":279,"t1":289,"t2":296,"t3":308,"t4":321,"t5":331,"t6":339,"t8":349,"t10":366,"t12":374},"75":{"pp":228,"p":250,"sp":262,"stdCredit":285,"std":285,"t1":296,"t2":303,"t3":317,"t4":329,"t5":339,"t6":348,"t8":358,"t10":376,"t12":383},"76":{"pp":233,"p":255,"sp":268,"stdCredit":292,"std":292,"t1":301,"t2":311,"t3":325,"t4":338,"t5":348,"t6":357,"t8":367,"t10":385,"t12":394},"77":{"pp":239,"p":261,"sp":274,"stdCredit":298,"std":298,"t1":307,"t2":319,"t3":334,"t4":347,"t5":357,"t6":366,"t8":376,"t10":393,"t12":402},"78":{"pp":246,"p":268,"sp":280,"stdCredit":307,"std":307,"t1":313,"t2":328,"t3":345,"t4":358,"t5":366,"t6":375,"t8":385,"t10":405,"t12":413},"79":{"pp":252,"p":274,"sp":286,"stdCredit":313,"std":313,"t1":320,"t2":336,"t3":354,"t4":367,"t5":375,"t6":384,"t8":394,"t10":413,"t12":422},"80":{"pp":258,"p":280,"sp":294,"stdCredit":320,"std":320,"t1":327,"t2":345,"t3":363,"t4":376,"t5":385,"t6":395,"t8":405,"t10":422,"t12":431},"81":{"pp":264,"p":287,"sp":302,"stdCredit":326,"std":326,"t1":335,"t2":352,"t3":372,"t4":385,"t5":395,"t6":406,"t8":415,"t10":435,"t12":444},"82":{"pp":270,"p":294,"sp":310,"stdCredit":334,"std":334,"t1":343,"t2":359,"t3":382,"t4":395,"t5":407,"t6":418,"t8":427,"t10":444,"t12":462}},"fg_quantum":{"56":{"male":{"pp":166,"std":183},"female":{"pp":152,"std":167},"min":74,"tableMax":198},"57":{"male":{"pp":170,"std":187},"female":{"pp":155,"std":171},"min":77,"tableMax":205},"58":{"male":{"pp":174,"std":191},"female":{"pp":157,"std":173},"min":79,"tableMax":212},"59":{"male":{"pp":178,"std":196},"female":{"pp":160,"std":176},"min":82,"tableMax":220},"60":{"male":{"pp":182,"std":200},"female":{"pp":163,"std":179},"min":85,"tableMax":227},"61":{"male":{"pp":186,"std":205},"female":{"pp":166,"std":183},"min":88,"tableMax":235},"62":{"male":{"pp":190,"std":209},"female":{"pp":169,"std":186},"min":91,"tableMax":243},"63":{"male":{"pp":196,"std":216},"female":{"pp":174,"std":191},"min":94,"tableMax":251},"64":{"male":{"pp":202,"std":222},"female":{"pp":179,"std":197},"min":97,"tableMax":259},"65":{"male":{"pp":207,"std":228},"female":{"pp":183,"std":201},"min":100,"tableMax":267},"66":{"male":{"pp":213,"std":234},"female":{"pp":189,"std":208},"min":103,"tableMax":275},"67":{"male":{"pp":217,"std":239},"female":{"pp":193,"std":212},"min":106,"tableMax":284},"68":{"male":{"pp":223,"std":245},"female":{"pp":198,"std":218},"min":109,"tableMax":292},"69":{"male":{"pp":228,"std":251},"female":{"pp":202,"std":222},"min":112,"tableMax":301},"70":{"male":{"pp":235,"std":259},"female":{"pp":208,"std":229},"min":115,"tableMax":310},"71":{"male":{"pp":241,"std":265},"female":{"pp":214,"std":235},"min":119,"tableMax":319},"72":{"male":{"pp":248,"std":273},"female":{"pp":221,"std":243},"min":122,"tableMax":328},"73":{"male":{"pp":253,"std":278},"female":{"pp":225,"std":248},"min":126,"tableMax":337},"74":{"male":{"pp":260,"std":286},"female":{"pp":232,"std":255},"min":129,"tableMax":346},"75":{"male":{"pp":267,"std":294},"female":{"pp":237,"std":261},"min":133,"tableMax":355},"76":{"male":{"pp":276,"std":304},"female":{"pp":246,"std":271},"min":136,"tableMax":365},"77":{"male":{"pp":284,"std":312},"female":{"pp":253,"std":278},"min":140,"tableMax":375},"78":{"male":{"pp":293,"std":322},"female":{"pp":261,"std":287},"min":143,"tableMax":385},"79":{"male":{"pp":301,"std":331},"female":{"pp":268,"std":295},"min":147,"tableMax":394},"80":{"male":{"pp":308,"std":341},"female":{"pp":274,"std":308},"min":151,"tableMax":405},"81":{"male":{"pp":315,"std":349},"female":{"pp":282,"std":316},"min":154,"tableMax":415},"82":{"male":{"pp":325,"std":359},"female":{"pp":288,"std":326},"min":157,"tableMax":425},"83":{"male":{"pp":336,"std":369},"female":{"pp":293,"std":336},"min":160,"tableMax":427},"84":{"male":{"pp":345,"std":378},"female":{"pp":298,"std":345},"min":164,"tableMax":440}},"beyond":{"58":[[89,134],[135,155],[156,196],[197,205]],"59":[[92,139],[140,160],[161,203],[204,212]],"60":[[95,144],[145,166],[167,209],[210,220]],"61":[[98,149],[150,171],[172,216],[217,227]],"62":[[101,153],[154,177],[178,224],[225,235]],"63":[[104,158],[159,183],[184,231],[232,242]],"64":[[108,164],[165,188],[189,238],[239,250]],"65":[[111,169],[170,194],[195,246],[247,258]],"66":[[115,174],[175,200],[201,253],[254,266]],"67":[[118,179],[180,207],[208,261],[261,274]],"68":[[122,185],[186,213],[214,269],[270,282]],"69":[[125,190],[191,219],[220,277],[278,291]],"70":[[129,196],[197,225],[226,285],[286,299]],"71":[[133,201],[202,232],[233,293],[294,308]],"72":[[136,207],[208,239],[240,302],[301,317]],"73":[[140,213],[214,245],[246,310],[311,325]],"74":[[144,219],[220,252],[253,319],[320,334]],"75":[[148,225],[226,259],[260,327],[328,344]],"76":[[152,231],[232,266],[267,336],[337,353]],"77":[[156,237],[238,273],[274,345],[346,362]],"78":[[160,243],[244,280],[281,354],[355,372]],"79":[[164,249],[250,287],[288,363],[363,381]],"80":[[168,256],[257,295],[296,372],[373,391]],"81":[[173,262],[263,302],[303,382],[383,401]],"82":[[177,268],[269,309],[310,391],[392,411]],"83":[[181,275],[276,317],[318,401],[402,421]]},"corebridge":{"56":{"graded":[74,203],"level":[79,189]},"57":{"graded":[77,210],"level":[81,196]},"58":{"graded":[79,217],"level":[84,203]},"59":{"graded":[82,225],"level":[87,210]},"60":{"graded":[85,232],"level":[90,217]},"61":{"graded":[88,240],"level":[93,224]},"62":{"graded":[91,248],"level":[96,232]},"63":{"graded":[94,256],"level":[99,239]},"64":{"graded":[97,265],"level":[103,247]},"65":{"graded":[100,273],"level":[106,255]},"66":{"graded":[103,281],"level":[109,263]},"67":{"graded":[106,290],"level":[112,271]},"68":{"graded":[109,299],"level":[116,279]},"69":{"graded":[112,307],"level":[119,287]},"70":{"graded":[116,316],"level":[123,296]},"71":{"graded":[119,326],"level":[126,304]},"72":{"graded":[122,335],"level":[130,313]},"73":{"graded":[126,344],"level":[133,321]},"74":{"graded":[129,354],"level":[137,330]},"75":{"graded":[133,363],"level":[141,339]},"76":{"graded":[136,373],"level":[145,348]},"77":{"graded":[140,383],"level":[148,358]},"78":{"graded":[144,393],"level":[152,367]},"79":{"graded":[147,403],"level":[156,376]},"80":{"graded":[151,413],"level":[160,386]},"81":{"graded":[155,424],"level":[164,396]},"82":{"graded":[159,434],"level":[168,406]}}};
 const VITAL_RULES = {
   "banner": {
     "bp": {
@@ -828,7 +1035,7 @@ const PRODUCT_RULES = Object.fromEntries([
       "D084"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 20,
     "maxAge": 65,
     "minFace": 100000,
@@ -877,15 +1084,12 @@ const PRODUCT_RULES = Object.fromEntries([
       ]
     },
     "build": "beyond",
-    "nicotine": [
-      36,
-      24,
-      12,
-      12
-    ],
     "excludeStates": [
       "NY"
-    ]
+    ],
+    "nicotineUnconfirmed": true,
+    "termTobaccoIndependent": true,
+    "scopeNote": "BeyondTerm uses its own published product limits and build chart. The Flex-only medical/criminal exclusions are not automatically applied to BeyondTerm. Its complete application, tobacco definitions and class-rating rules remain unconfirmed; no final class or benefit tier is assigned."
   },
   {
     "id": "banner_flex",
@@ -895,17 +1099,68 @@ const PRODUCT_RULES = Object.fromEntries([
     "route": "Digital simplified with risk levels",
     "sources": [
       "D077",
-      "D085"
+      "D085",
+      "BF-INFO"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 20,
     "maxAge": 65,
     "minFace": 25000,
     "build": "flex",
     "excludeStates": [
       "NY"
-    ]
+    ],
+    "eligibilitySource": "BF-INFO",
+    "faceBands": [
+      [
+        44,
+        500000
+      ],
+      [
+        54,
+        250000
+      ],
+      [
+        65,
+        100000
+      ]
+    ],
+    "level23FaceBands": [
+      [
+        44,
+        250000
+      ],
+      [
+        54,
+        100000
+      ],
+      [
+        65,
+        50000
+      ]
+    ],
+    "terms": {
+      "10": [
+        65,
+        65
+      ],
+      "15": [
+        60,
+        60
+      ],
+      "20": [
+        60,
+        60
+      ],
+      "25": [
+        55,
+        55
+      ]
+    },
+    "termTobaccoIndependent": true,
+    "scopeNote": "BeyondTermflex screens only the published outer limits: ages 20\u201365, $25,000 minimum, maximum $500,000 at ages 20\u201344, $250,000 at 45\u201354 and $100,000 at 55\u201365. Level 2/3 maxima are $250,000, $100,000 and $50,000 respectively. Offered terms are 10 years through age 65, 15 years through 60, 20 years through 60 for Level 1 (55 for Level 2/3), and 25 years through 55 for Level 1 only. The carrier age basis and actual risk level must be confirmed; a BMI build level does not establish the policy level. Being within the outer limits does not confirm eligibility, a health class, rates or a benefit tier. Selected explicit Flex medical and criminal exclusions are screened separately. Conflicting or qualitative guide statements require review; tobacco definitions and final class/level decisions remain unconfirmed.",
+    "nicotineUnconfirmed": true
   },
   {
     "id": "foresters_yourterm_med",
@@ -1275,14 +1530,17 @@ const PRODUCT_RULES = Object.fromEntries([
     "id": "amam_qsfp",
     "carrier": "American Amicable",
     "name": "Quility Secure Future Preferred",
-    "kind": "term",
-    "route": "Simplified issue",
-    "sources": [
-      "D016",
-      "D017"
-    ],
+    "kind": "final_expense",
+    "route": "Instant-decision simplified issue whole life",
+    "sources": ["AM-QSFP-INFO", "AM-QSFP-FAQ", "D016", "D017"],
     "status": "partial",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-09",
+    "eligibilitySource": "AM-QSFP-INFO",
+    "minAge": 50,
+    "maxAge": 85,
+    "maxFace": 100000,
+    "excludeStates": ["NY"],
+    "scopeNote": "QSFP is final-expense whole life, with permanent coverage rather than a selected term. The July 2026 product sheet lists a $5,000 minimum and the October 2026 FAQ lists $2,500; requests in that difference require current carrier confirmation. Standard/Preferred/Preferred Plus limits depend on the carrier's actual class, which this partial profile does not assign. Current application, age basis, rating criteria, state approvals and appointment remain unconfirmed."
   },
   {
     "id": "sbli_easytrak",
@@ -1291,14 +1549,62 @@ const PRODUCT_RULES = Object.fromEntries([
     "kind": "term",
     "route": "Simplified issue",
     "sources": [
-      "D347"
+      "D347",
+      "SB-ET-SPECS",
+      "SB-ET-GUIDE",
+      "SB-ET-FAQ"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 18,
     "maxAge": 60,
+    "minFace": 100000,
     "maxFace": 1000000,
-    "ageBasis": "nearest"
+    "faceBands": [
+      [
+        40,
+        1000000
+      ],
+      [
+        50,
+        1000000
+      ],
+      [
+        55,
+        500000
+      ],
+      [
+        60,
+        150000
+      ]
+    ],
+    "terms": {
+      "10": [
+        60,
+        60
+      ],
+      "15": [
+        60,
+        60
+      ],
+      "20": [
+        60,
+        60
+      ],
+      "30": [
+        50,
+        50
+      ]
+    },
+    "termTobaccoIndependent": true,
+    "eligibilitySource": "SB-ET-SPECS",
+    "stateSource": "SB-ET-FAQ",
+    "statePages": [],
+    "excludeStates": [
+      "NY"
+    ],
+    "ageBasis": "nearest",
+    "scopeNote": "Published face, term and financial screens are recorded. Income definitions, replacement-edition differences, complete class criteria and current application/state approvals still require SBLI review."
   },
   {
     "id": "royal",
@@ -1347,45 +1653,79 @@ const PRODUCT_RULES = Object.fromEntries([
   {
     "id": "national_life",
     "carrier": "National Life",
-    "name": "Term \u2014 source edition unresolved",
-    "kind": "unverified",
+    "name": "Term \u2014 exact product and issuing company needed",
+    "kind": "term",
     "route": "Unverified",
-    "sources": [],
+    "sources": [
+      "NLG-PRODUCT"
+    ],
     "status": "unverified",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-09",
+    "scopeNote": "The National Life Group overview describes term life insurance but does not identify the exact plan, issuing company, application or product-specific underwriting criteria for this selection. Obtain those current materials before applying age, amount, term or health-class rules. This overview is an identity reference, not underwriting evidence."
   },
   {
     "id": "john_hancock",
     "carrier": "John Hancock",
-    "name": "Simple Term with Vitality \u2014 source edition unresolved",
-    "kind": "unverified",
+    "name": "Simple Term with Vitality \u2014 underwriting source pending",
+    "kind": "term",
     "route": "Unverified",
-    "sources": [],
+    "sources": [
+      "JH-PRODUCT"
+    ],
     "status": "unverified",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-09",
+    "scopeNote": "John Hancock\u2019s current Vitality overview references Simple Term with Vitality, but does not supply its eligibility or medical underwriting rules. The indexed April 2023 Simple Term guide was not available at its official URL when checked. A current product-specific application and underwriting guide are needed. General John Hancock term or fully underwritten rules are not substituted; no conclusion about discontinuation is drawn."
   },
   {
     "id": "quility",
     "carrier": "Legal & General America",
-    "name": "Quility Term Plus \u2014 source edition unresolved",
-    "kind": "unverified",
-    "route": "Unverified",
-    "sources": [],
+    "name": "Quility Term Plus \u2014 legacy name; confirm BeyondTerm",
+    "kind": "term",
+    "route": "Legacy product identity \u2014 carrier review",
+    "sources": [
+      "QTP-RENAME",
+      "QTP-LEGACY"
+    ],
     "status": "unverified",
-    "reviewed": "2026-10-08"
+    "reviewed": "2026-10-09",
+    "scopeNote": "Quility support identifies BeyondTerm as the product previously known as LGA Quility Term Plus (QTP). This saved legacy selection is retained for review and is not automatically converted to the separate BeyondTerm profile. Reconfirm the current application, product, state and underwriting route before selecting BeyondTerm. The 2024 QTP guide establishes historical identity; its medical rating rules are not applied to current BeyondTerm."
   },
   {
     "id": "americo",
     "carrier": "Americo",
-    "name": "Eagle Select \u2014 benefit rules pending reconciliation",
-    "kind": "unverified",
-    "route": "Unverified",
-    "sources": [],
-    "status": "unverified",
-    "reviewed": "2026-10-08"
+    "name": "Eagle Select \u2014 benefit tier requires carrier review",
+    "kind": "final_expense",
+    "route": "Instant-decision simplified issue",
+    "sources": [
+      "AM-ES-SPECS",
+      "AM-ES-GUIDE"
+    ],
+    "status": "partial",
+    "reviewed": "2026-10-09",
+    "ageBasis": "last",
+    "build": "americo",
+    "minAge": 40,
+    "maxAge": 85,
+    "minFace": 5000,
+    "maxFace": 50000,
+    "faceBands": [
+      [
+        75,
+        50000
+      ],
+      [
+        85,
+        40000
+      ]
+    ],
+    "excludeStates": [
+      "NY"
+    ],
+    "scopeNote": "Eagle Select screens the published family age/coverage limits and selected January 2026 medical exclusions. Its build chart is recorded without a class or tier offer; out-of-chart or uncertain measurements require review. Initial nicotine classification uses at least 24 nicotine-free months. Quit Smoking Advantage is a separate post-issue program and does not make a nicotine policy non-nicotine. The carrier uses its current application and third-party evidence to select Eagle Select 1/2/3 or decline; initial medical questions are not blanket knock-outs. Eagle Select 3 ends at age 75/$25,000, and Eagle Select 2 nicotine issue ages end at 75. Pending-care wording, state-specific terms, complete medical combinations and actual benefit/tier decisions still require carrier review."
   }
 ].map(p => [p.id,p]));
 const CLASS_ORDER = ["preferred_plus","preferred","standard_plus","standard","table"];
 const CLASS_LABELS = {preferred_plus:"Preferred Plus",preferred:"Preferred",standard_plus:"Standard Plus",standard:"Standard",table:"Substandard"};
 function freezeRules(value) { Object.values(value).forEach(v => { if (v && typeof v === "object") freezeRules(v); }); return Object.freeze(value); }
 [PRODUCT_RULES, RULE_SOURCES, BUILD_CHARTS, VITAL_RULES, CLASS_ORDER, CLASS_LABELS].forEach(freezeRules);
+

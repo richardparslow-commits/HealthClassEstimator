@@ -5,7 +5,7 @@
 "use strict";
 const Engine = (() => {
   const present = v => v !== "" && v != null;
-  const numeric = v => present(v) && Number.isFinite(Number(v)) ? Number(v) : null;
+  const numeric = v => (typeof v === "number" || typeof v === "string" && v.trim()!=="") && Number.isFinite(Number(v)) ? Number(v) : null;
   function date(v) {
     if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
     const d = new Date(v + "T00:00:00Z");
@@ -98,17 +98,18 @@ const Engine = (() => {
     need("policyPurpose","purpose of coverage",["income","mortgage","family","estate","business","final_expense","other"]);
     yn("replacement","whether coverage replaces a policy");yn("financing","whether premiums are financed");
     if (age !== null && age < 18) issue("juvenile","Juvenile risks require the separate carrier application and growth charts; adult classes are withheld.");
-    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable");
-    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable");
+    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
+    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.stateSource || p.eligibilitySource || p.sources[0],p.statePages || (p.eligibilitySource ? [1] : undefined));
     if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
     const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
-    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable");
+    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && numeric(d.existingCarrierCoverage) === null) issue("carrier_total","Confirm total existing Foresters coverage; non-medical limits include coverage already in force.","review","D152",[7]);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && face + (numeric(d.existingCarrierCoverage)||0) > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
     if (p.id === "fg_quantum" && face + (numeric(d.existingCoverage)||0) > 1000000) issue("total_line","Total in-force and requested coverage exceeds Quantum's $1 million total line.","unavailable","D141",[9]);
-    if (["fg_quantum","sbli_easytrak"].includes(p.id) && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],p.id === "fg_quantum" ? [5] : [4]);
+    if (p.id === "fg_quantum" && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],[5]);
+    if (p.id === "sbli_easytrak" && d.replacement === "yes") issue("sbli_replacement_conflict","The supplied 42325 guide disallows replacements, while the supplied 26-4154 Quility guide accepts them. Confirm the current application and replacement rules with SBLI.","review","SB-ET-GUIDE",[5]);
     if (d.financing === "yes" || ["estate","business","other"].includes(d.policyPurpose)) issue("financial","Coverage purpose or premium financing needs financial and ownership review.");
-    if (d.policyPurpose === "income") {
+    if (d.policyPurpose === "income" && p.id !== "sbli_easytrak") {
       const income = num("income","annual earned income",0,1000000000);
       if (p.id.startsWith("foresters_") && age >= 18 && income !== null) {
         const factor = age <= 35 ? 30 : age <= 45 ? 25 : age <= 55 ? 20 : age <= 60 ? 15 : age <= 70 ? 10 : null;
@@ -155,19 +156,43 @@ const Engine = (() => {
       if (p.kind === "term") {
         need("termYears","term length");
         const term=Number(d.termYears),entry=p.terms?.[term];
-        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",p.sources[p.sources.length-1]);
-        if (entry && age!==null && out.tobaccoBasis!=="unknown") {
+        const termSource=p.eligibilitySource || p.sources[p.sources.length-1],termPages=p.eligibilitySource ? [1] : undefined;
+        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",termSource,termPages);
+        if (entry && age!==null && (p.termTobaccoIndependent || out.tobaccoBasis!=="unknown")) {
           let cap=entry[out.tobaccoBasis === "tobacco"?1:0];
           if (p.id === "transamerica_super" && face<100000) cap=({10:[80,80],15:[75,70],20:[65,65],25:[60,55],30:[50,45]})[term][out.tobaccoBasis === "tobacco"?1:0];
-          if(age>cap)issue("term_age","Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",p.sources[p.sources.length-1]);
+          if(age>cap)issue("term_age",p.termTobaccoIndependent ? "Age exceeds the selected term's published limit." : "Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",termSource,termPages);
         }
+        if (p.id === "banner_flex" && age!==null) {
+          const level23Max=p.level23FaceBands.find(([to])=>age<=to)?.[1];
+          if ((face!==null && level23Max && face>level23Max && face<=maxFace) || (term===25 && age<=55) || (term===20 && age>55 && age<=60)) issue("flex_level_limits","The requested amount or term may require Level 1. The carrier must confirm the actual Flex level; the build component alone cannot establish it.","review","BF-INFO",[1]);
+          const alternateMax=p.faceBands.find(([to])=>alternateAge<=to)?.[1];
+          if ((face!==null && alternateMax && face>alternateMax && face<=maxFace) || (entry && age<=entry[0] && alternateAge>entry[0])) issue("flex_age_limits","The requested amount or term crosses a published limit under age nearest birthday. Confirm the carrier age basis before relying on availability.","review","BF-INFO",[1]);
+        }
+      }
+      if (p.id === "amam_qsfp" && face !== null) {
+        if (face < 2500) issue("qsfp_face_minimum","Requested coverage is below both supplied QSFP minimums.","unavailable","AM-QSFP-FAQ",[2]);
+        else if (face < 5000) issue("qsfp_minimum_conflict","The July 2026 product sheet lists a $5,000 minimum, while the October 2026 FAQ lists $2,500. Confirm the current minimum before relying on this request.","review","AM-QSFP-FAQ",[2]);
+        if (face > 50000 && face <= 100000) issue("qsfp_class_amount","This amount requires a carrier-assigned Preferred or Preferred Plus class under the supplied limits. The partial profile does not infer a class from the amount requested.","review","AM-QSFP-INFO",[1]);
       }
       if (p.id === "sbli_easytrak") {
         need("employment","work status",["employed","spouse","student","seeking","retired","other"]);
         if (["student","seeking"].includes(d.employment) && (face>100000 || d.employment === "student" && age>=26)) issue("sbli_employment","EasyTrak student/seeking-work limits are not met.","unavailable","D347",[4]);
         if (d.employment === "retired" && (age<49 || face>250000)) issue("sbli_retired","EasyTrak retired eligibility requires age49+ and coverage at most $250,000.","unavailable","D347",[4]);
         if (d.employment === "other") issue("sbli_work_review","This work status requires EasyTrak eligibility review.","review","D347",[4]);
-        if (age>50 && Number(d.termYears)===30) issue("sbli_term","EasyTrak30-year term ends at issue age50.","unavailable","D347",[5]);
+        if (face !== null && face % 1000 !== 0) issue("sbli_face_increment","EasyTrak coverage is offered in $1,000 increments. Confirm a supported amount; no rounding is assumed.","unavailable","SB-ET-SPECS",[1]);
+        if (d.employment === "employed") {
+          const income = num("sbliIncome","annual income for the EasyTrak quote",0,1000000000);
+          const factor = age !== null && age >=18 && age<=60 ? age<=40 ? 20 : age<=50 ? 15 : 10 : null;
+          if (factor && income !== null && face !== null && face > factor * income) issue("sbli_income_limit","Requested coverage exceeds the published "+factor+" times income screen. Confirm the income definition and financial justification with SBLI.","review","SB-ET-SPECS",[1]);
+        } else issue("sbli_income_basis","Confirm SBLI's income basis for this work status. The supplied materials allow some nonworking applicants but do not define how spouse, student, seeking-work or retirement income is counted; zero earned income is not an automatic exclusion.","review","SB-ET-GUIDE",[4,5]);
+        if (d.policyPurpose === "mortgage") {
+          yn("sbliMortgageOnly","whether this is mortgage coverage only");
+          if (d.sbliMortgageOnly === "yes") {
+            const mortgage = num("sbliMortgageAmount","mortgage amount",0,1000000000);
+            if (mortgage !== null && face !== null && face > 1.5 * mortgage) issue("sbli_mortgage_limit","Requested mortgage-only coverage exceeds 1.5 times the entered mortgage amount. Confirm a supported quote and financial basis with SBLI.","review","SB-ET-SPECS",[2]);
+          }
+        }
       }
       if (p.id === "corebridge_legacy") {
         const existing=num("existingCarrierCoverage","existing AGL GIWL/SIWL coverage",0,1000000000);
@@ -235,11 +260,11 @@ const Engine = (() => {
       const active = ["incarcerated","pendingCharges","probationCurrent","paroleCurrent"].some(k=>d[k] === "yes");
       const foresters = p.id.startsWith("foresters_");
       if (active) {
-        if (foresters || p.id === "transamerica_super" || p.id.startsWith("banner_") && p.id !== "banner_opterm" || p.id === "fg_quantum") issue("criminal_active","Current incarceration, pending charges, probation or parole fails this product's criminal screen.","decline",foresters ? "D152" : p.sources[0],foresters ? [18] : p.id === "transamerica_super" ? [26] : p.id === "fg_quantum" ? [8] : [11]);
+        if (foresters || p.id === "transamerica_super" || p.id === "banner_flex" || p.id === "fg_quantum") issue("criminal_active","Current incarceration, pending charges, probation or parole fails this product's criminal screen.","decline",foresters ? "D152" : p.sources[0],foresters ? [18] : p.id === "transamerica_super" ? [26] : p.id === "fg_quantum" ? [8] : [11]);
         else if (p.id === "corebridge_legacy" && d.incarcerated === "yes") issue("incarcerated","Current incarceration fails the SimpliNow Legacy screen.","decline","D106",[4]);
         else issue("criminal_current_review","Current criminal status needs carrier review.");
       }
-      if (d.outstandingRestitution === "yes") issue("restitution","Outstanding fines/restitution need carrier review.");
+      if (d.outstandingRestitution === "yes") issue("restitution",p.id === "banner_flex" ? "Outstanding criminal fines or restitution meet the published Flex exclusion screen." : "Outstanding fines/restitution need carrier review.",p.id === "banner_flex" ? "decline" : "review",p.sources[0],p.id === "banner_flex" ? [11] : undefined);
       for (const r of rows) {
         if (!["felony","misdemeanor","arrest"].includes(r.type) || !["convicted","pending","dismissed","other"].includes(r.disposition)) issue("criminal_detail","Confirm offense type and outcome for each criminal event.","missing");
         past(r.date,"charge or arrest");
@@ -250,7 +275,7 @@ const Engine = (() => {
         }
         if (r.disposition !== "convicted") {issue("criminal_disposition","A charge or arrest is not assumed to be a conviction; the carrier must assess the disclosed outcome.");continue;}
         if (r.type === "felony") {
-          if (["banner_beyondterm","banner_flex","sbli_easytrak"].includes(p.id) && within(r.convictionDate,120,asOf)) issue("felony_10","Felony conviction within ten years fails this product's screen.","decline",p.sources[0],p.id === "sbli_easytrak" ? [11] : [11]);
+          if (["banner_flex","sbli_easytrak"].includes(p.id) && within(r.convictionDate,120,asOf)) issue("felony_10","Felony conviction within ten years fails this product's screen.","decline",p.sources[0],p.id === "sbli_easytrak" ? [11] : [11]);
           if (p.id === "moo_full" && within(r.convictionDate,120,asOf)) issue("moo_felony","MOO preferred and Standard Plus criteria exclude felony convictions within ten years; Standard/substandard requires review.","review","D282",[11,12,13]);
           if (p.id === "corebridge_legacy" && within(r.convictionDate,24,asOf)) issue("core_felony","Felony conviction within 24 months fails the SimpliNow Legacy screen.","decline","D106",[4]);
           if (p.id.startsWith("uhl_") && within(r.convictionDate,84,asOf)) issue("uhl_felony","Felony conviction within seven years fails the Texas term application screen.","decline","D459",[7]);
@@ -285,7 +310,11 @@ const Engine = (() => {
       if (d.pendingCare === "yes" && !present(d.pendingDetails)) issue("pending_detail","Describe the pending care.","missing");
       if (d.activeSymptoms === "yes" && !present(d.symptomDetails)) issue("symptom_detail","Describe the unexplained symptoms.","missing");
       yn("substanceHistory","any history of alcohol/drug abuse or treatment");
-      if (d.substanceHistory === "yes") {past(d.substanceLastDate,"last substance use or treatment");issue("substances","Alcohol or drug abuse/treatment needs the selected carrier's medical review.");}
+      if (d.substanceHistory === "yes") {
+        const valid=past(d.substanceLastDate,"last substance use or treatment");
+        issue("substances","Alcohol or drug abuse/treatment needs the selected carrier's medical review.");
+        if(p.id === "banner_flex" && valid && within(d.substanceLastDate,120,asOf))issue("flex_substance_recent","Disclosed substance abuse or treatment in the last ten years meets the published Flex exclusion screen.","decline","D077",[11]);
+      }
       need("marijuana","marijuana use",["none","past","current","medical"]);
       if (d.marijuana !== "none" && present(d.marijuana)) issue("marijuana","Marijuana use needs frequency, form and any underlying condition reviewed; a favorable class is withheld.");
       yn("priorInsuranceAdverse","past rated, declined or postponed life insurance");
@@ -307,12 +336,98 @@ const Engine = (() => {
         if (r.status === "resolved") past(r.treatmentEnd,"last treatment for "+r.name);
         if (r.hospitalized === "yes") past(r.hospitalDate,"condition hospitalization");
         if (!present(r.treatment)) issue("treatment_detail","Describe treatment (or explicitly enter none) for "+r.name+".","missing");
+        if (p.id === "americo") americoCondition(r);
+        if (p.id === "banner_flex") flexCondition(r);
+        if (["banner_beyondterm","banner_flex"].includes(p.id) && r.id === "atrial_fibrillation") issue("beyond_af_source_conflict","The guide gives different atrial-fibrillation timing scenarios in its accepted and declinable sections. The carrier must reconcile the applicable product, age, episode, treatment and procedure history; no AF-only decline or favorable class is inferred.","review","D077",[4,7,10]);
         if (p.id === "corebridge_legacy") coreCondition(r,rows);
         else if (!["hypertension","cholesterol"].includes(r.id)) issue("condition_review_"+r.id,(r.name||"This condition")+" needs condition-specific carrier review; no mild/good-control default or guessed table is applied.");
         if (r.complications === "yes" || r.recurrence === "yes") issue("condition_complex_"+r.id,"Complications/recurrence for "+r.name+" need review before a final class is estimated.");
       }
+      if (p.id === "americo") americoRecentCare();
       if (hospitals.length || surgeries.length) issue("care_history","Hospitalizations and procedures require review of cause, treatment and recovery.");
       return rows;
+    }
+    function americoCondition(r) {
+      const ids=["transplant","tissue_transplant","multiple_sclerosis","als","alzheimers","dementia","huntington","brain_tumor","parkinsons","liver_disease","cirrhosis"];
+      const qualified=ids.includes(r.id) || r.id === "lupus" && r.lupusType === "systemic" || r.id === "amputation" && r.dueToDisease === "yes" || r.id === "cancer" && r.cancerType === "leukemia" || ["hepatitis_b","hepatitis_c"].includes(r.id) && r.liverDisease === "yes";
+      const invalidDiagnosis=present(r.diagnosisDate) && (!date(r.diagnosisDate) || r.diagnosisDate>asOf);
+      if(qualified && !invalidDiagnosis)issue("americo_knockout_"+r.id,"The disclosed "+(r.name||r.id)+" meets a listed Eagle Select medical exclusion screen.","decline","AM-ES-GUIDE",[11]);
+      if(r.id === "lupus" && !["systemic","discoid"].includes(r.lupusType))issue("americo_lupus_type","Confirm whether the lupus diagnosis is systemic; a generic lupus label does not establish this exclusion.","review","AM-ES-GUIDE",[11]);
+      if(r.id === "amputation" && !["yes","no"].includes(r.dueToDisease))issue("americo_amputation_cause","Confirm whether the amputation was due to disease before applying the listed exclusion.","review","AM-ES-GUIDE",[11]);
+    }
+    function americoRecentCare() {
+      for(const [key,label,current] of [["Adl","disease-related assistance with bathing, toileting or dressing / bed-bound care",null],["Hospice","hospice care",null],["Oxygen","supplemental oxygen for breathing","oxygen"],["Mobility","wheelchair or motorized-mobility dependence",null]]) {
+        const flag="americo"+key+"History",last="americo"+key+"LastDate";
+        yn(flag,"Eagle Select history of "+label);
+        if(d[flag] === "yes") {
+          if(!past(d[last],"most recent "+label))continue;
+          if(current && d[current] === "yes" && d[last]!==asOf){issue("americo_care_conflict_"+key,"Current care and its last-occurrence date conflict. Reconcile them before applying a dated exclusion.","review","AM-ES-GUIDE",[11]);continue;}
+          if(within(d[last],12,asOf))issue("americo_recent_"+key,"The dated history of "+label+" meets the Eagle Select twelve-month medical exclusion screen.","decline","AM-ES-GUIDE",[11]);
+          else if(d[last] === shift(asOf,-12))issue("americo_care_boundary_"+key,"This event lies on the twelve-month boundary. Confirm the carrier's applicable date window.","review","AM-ES-GUIDE",[11]);
+        } else if(present(d[last]) || current && d[current] === "yes")issue("americo_care_conflict_"+key,"The care history, date or current-care answer conflicts. Confirm the Eagle Select question.","review","AM-ES-GUIDE",[11]);
+      }
+      if(d.pendingCare === "yes" || d.careFacility === "yes")issue("americo_pending_scope","The Eagle Select pending-care screen includes specific advice, results and hospitalization wording, with an HIV/AIDS-related exception. Reconcile the actual application question; this generic answer alone is not an automatic exclusion.","review","AM-ES-GUIDE",[11]);
+    }
+    function flexCondition(r) {
+      // These screens belong to Flex's explicit declinable section. Do not
+      // copy them into BeyondTerm, or turn qualitative acceptance into a class.
+      const exclude=(id,text,pages)=>issue("flex_"+id,text+" meets the published Flex exclusion screen.","decline","D077",pages);
+      const confirmedDate=v=>!!date(v) && v<=asOf;
+      const lifetime={coronary_disease:10,stroke:10,als:10,parkinsons:10,alzheimers:10,dementia:10,end_stage_kidney:11,cirrhosis:11,hepatitis_b:11,hepatitis_c:11,hiv:11,aids:11,transplant:11};
+      if(Object.prototype.hasOwnProperty.call(lifetime,r.id))exclude("history_"+r.id,"The disclosed history of "+r.name,[lifetime[r.id]]);
+      if(r.id === "heart_failure" && r.cardiomyopathy === "yes")exclude("cardiomyopathy","Confirmed cardiomyopathy",[10]);
+      if(r.id === "tia" && within(r.diagnosisDate,24,asOf))exclude("tia_recent","TIA in the last two years",[10]);
+      if(r.id === "sleep_apnea" && d.oxygen === "yes")exclude("apnea_oxygen","Sleep apnea with prescribed oxygen use (not CPAP)",[7]);
+      if(r.id === "asthma") {
+        if(r.hospitalized === "yes" && within(r.hospitalDate,12,asOf))exclude("asthma_hospital","Asthma hospitalization in the last twelve months",[7]);
+        for(const [key,label,max,threshold] of [["attacksLastYear","asthma attacks in the last twelve months",365,13],["missedWorkDays","days of work missed due to asthma in the last twelve months",365,15]]) {
+          const n=numeric(r[key]);
+          if(n===null || !Number.isInteger(n) || n<0 || n>max)issue("flex_"+key,"Confirm a whole-number count for "+label+".","missing","D077",[7]);
+          else if(n>=threshold) {
+            if(key === "missedWorkDays")issue("flex_asthma_work_period","The disclosed asthma time off reaches the guide's 15-day screen, but the guide does not specify its counting period. Confirm that period and application scope before assigning a decline.","review","D077",[7]);
+            else exclude(key,"The disclosed count of "+label,[7]);
+          }
+        }
+        if(!["yes","no"].includes(r.activityRestricted))issue("flex_asthma_activity","Confirm whether asthma symptoms restrict daily activities.","missing","D077",[7]);
+        else if(r.activityRestricted === "yes")exclude("asthma_activity","Asthma restricting daily activities",[7]);
+      }
+      if(["anxiety","depression"].includes(r.id) && r.hospitalized === "yes" && within(r.hospitalDate,r.id === "anxiety" ? 24 : 60,asOf))exclude(r.id+"_hospital","The disclosed recent hospitalization for "+r.name,[8]);
+      if(r.id === "hypertension") {
+        if(r.hospitalized === "yes" && within(r.hospitalDate,12,asOf))exclude("hypertension_hospital","Hypertension hospitalization in the last twelve months",[8]);
+        const sys=numeric(d.bpSys),dia=numeric(d.bpDia),validReading=sys!==null && sys>=60 && sys<=260 && dia!==null && dia>=30 && dia<=160 && confirmedDate(d.bpDate);
+        if(!["yes","no"].includes(r.bpUncontrolled))issue("flex_hypertension_control_missing","Confirm whether a clinician has described current blood pressure as uncontrolled.","missing","D077",[8]);
+        if(r.bpUncontrolled === "yes" && d.bpControl === "yes")issue("flex_hypertension_conflict","Controlled and uncontrolled blood-pressure answers conflict. Reconcile the clinician's assessment before applying the numerical screen.","review","D077",[8]);
+        else if(r.bpUncontrolled === "yes" && validReading && (sys>159 || dia>104))exclude("hypertension_uncontrolled","Clinician-reported uncontrolled blood pressure above the printed threshold",[8]);
+        else if(r.bpUncontrolled === "yes")issue("flex_hypertension_reading_review","Confirm dated readings and the carrier's uncontrolled-pressure screen; a qualitative answer alone does not establish the numerical exclusion.","review","D077",[8]);
+      }
+      if(r.id === "diabetes") {
+        if(age!==null && Math.max(age,alternateAge)<31)exclude("diabetes_age","Diabetes below age 31 under either candidate age basis",[8,10]);
+        else if(age!==null && age<31)issue("flex_diabetes_age_review","Diabetes is on the age-31 boundary under the unconfirmed age basis; confirm carrier treatment.","review","D077",[8,10]);
+        if(!["yes","no"].includes(r.diabetesFollowUp24mo))issue("flex_diabetes_followup_missing","Confirm physician follow-up for diabetes in the last 24 months.","missing","D077",[8,10]);
+        else if(r.diabetesFollowUp24mo === "no") {
+          if(within(r.diabetesFollowUpDate,24,asOf,true))issue("flex_diabetes_followup_conflict","The no-follow-up answer conflicts with the entered recent visit. Reconcile the evidence before applying the screen.","review","D077",[8,10]);
+          else exclude("diabetes_followup","No physician follow-up for diabetes in the last 24 months",[8,10]);
+        }
+        else if(!confirmedDate(r.diabetesFollowUpDate) || !within(r.diabetesFollowUpDate,24,asOf,true))issue("flex_diabetes_followup_date","The follow-up answer needs a valid date within the last 24 months; reconcile conflicting or missing evidence.","review","D077",[8,10]);
+        for(const [key,label] of [["sugarUncontrolled","clinician-reported uncontrolled blood sugar/A1c"],["kidneyComplications","diabetic kidney/nephropathy complications"]]) {
+          if(!["yes","no"].includes(r[key]))issue("flex_diabetes_"+key,"Confirm "+label+".","missing","D077",[8,10]);
+          else if(r[key] === "yes")exclude("diabetes_"+key,"The disclosed "+label,[8,10]);
+        }
+      }
+      if(r.id === "cancer") {
+        const skin=["basal_cell","squamous_cell"].includes(r.cancerType);
+        const knownType=["basal_cell","squamous_cell","breast","colon","prostate","other"].includes(r.cancerType);
+        const lastOK=confirmedDate(r.lastCancerDate) && confirmedDate(r.diagnosisDate) && r.lastCancerDate>=r.diagnosisDate && (!confirmedDate(r.treatmentEnd) || r.lastCancerDate>=r.treatmentEnd);
+        if(!knownType || !lastOK)issue("flex_cancer_evidence","Confirm cancer type and the most recent diagnosis, recurrence or treatment date.","missing","D077",[7,10]);
+        if(knownType && !skin && (within(r.diagnosisDate,60,asOf) || within(r.treatmentEnd,60,asOf) || lastOK && within(r.lastCancerDate,60,asOf) || r.recurrence === "yes"))exclude("cancer_recent_recurrent","The disclosed non-skin-exception cancer timing or recurrence",[10]);
+        if(!["yes","no"].includes(r.metastasis))issue("flex_cancer_spread_missing","Confirm any cancer spread, metastasis or lymph-node involvement.","missing","D077",[7,10]);
+        else if(r.metastasis === "yes")exclude("cancer_spread","The disclosed cancer spread/metastasis",skin ? [7] : [10]);
+        if(skin) {
+          if(!["yes","no"].includes(r.chemoRadiation))issue("flex_skin_treatment_missing","Confirm any past or pending chemotherapy/radiation for skin cancer.","missing","D077",[7]);
+          else if(r.chemoRadiation === "yes")exclude("skin_treatment","The disclosed chemotherapy/radiation for basal or squamous cell cancer",[7]);
+        }
+      }
+      if(d.pendingCare === "yes" && r.id === "sleep_apnea")issue("flex_pending_scope","The guide permits some pending sleep-apnea testing but also lists pending investigations as declinable. Confirm the exact test and applicable exception; no blanket pending-care decline is inferred.","review","D077",[5,11]);
     }
     function coreCondition(r,rows) {
       const alwaysDecline = ["alzheimers","dementia","als","huntington","hiv","aids","transplant","cirrhosis","suicide_attempt","end_stage_kidney"];
@@ -349,6 +464,32 @@ const Engine = (() => {
         if (!["yes","no"].includes(r.current)) issue("nicotine_current","Confirm whether each product is still used.","missing");
       }
       if (d.cotinineResult === "positive")issue("cotinine_conflict","A positive cotinine result needs reconciliation with all disclosed use before a class is estimated.");
+      if(p.nicotineUnconfirmed) {
+        const noUse=d.nicotineHistory === "never" && rows.length===0 && d.cotinineResult!=="positive";
+        out.tobaccoBasis=noUse ? "non_tobacco" : "unknown";
+        out.domains.nicotine={ceiling:null,detail:noUse ? "Applicant reports no lifetime tobacco/nicotine use; no carrier health-class ceiling is assigned." : "The supplied product guide does not establish tobacco definitions or class lookbacks. The carrier must assess all disclosed use; no generic 12-month cutoff is applied.",source:source("D077",[4,5,13])};
+        if(!noUse)issue("beyond_nicotine_scope","Confirm this product's tobacco definitions and class lookbacks with the current application; OPTerm rules are not substituted.","review","D077",[4,5,13]);
+        return;
+      }
+      if(p.id === "americo") {
+        const validProducts=["cigarette","cigar","pipe","chew","nicotine","vape"];
+        const invalid=invalidLists.includes("nicotine") || d.cotinineResult === "positive" || d.nicotineHistory === "never" && rows.length>0 || d.nicotineHistory === "yes" && (d.nicotineComplete!=="yes" || !rows.length) || rows.some(r=>!validProducts.includes(r.product) || !date(r.lastDate) || r.lastDate>asOf || !["yes","no"].includes(r.current) || r.current === "yes" && r.lastDate!==asOf);
+        const known=d.nicotineHistory === "never" || d.nicotineHistory === "yes";
+        out.tobaccoBasis=!known || invalid ? "unknown" : rows.some(r=>r.current === "yes" || within(r.lastDate,24,asOf)) ? "tobacco" : "non_tobacco";
+        out.domains.nicotine={ceiling:null,detail:out.tobaccoBasis === "unknown" ? "Confirm every product, nicotine content, use date and conflicting evidence against Eagle Select's 24-month definition; no class or tier is assigned." : out.tobaccoBasis === "tobacco" ? "Disclosed nicotine use falls within Eagle Select's 24-month initial classification window; this is a nicotine basis, not a premium or tier offer." : "Disclosed history meets Eagle Select's at-least-24-month nicotine-free definition; carrier records and the current application must confirm it.",source:source("AM-ES-GUIDE",[6])};
+        if(out.tobaccoBasis === "unknown")issue("americo_nicotine_evidence","The nicotine classification requires complete, consistent product and date evidence. Unspecified cessation products and zero-nicotine vape claims need the current application reviewed.","review","AM-ES-GUIDE",[6]);
+        if(out.tobaccoBasis === "tobacco")issue("americo_qsa_scope","Quit Smoking Advantage applies to eligible Eagle Select 1/2 nicotine policies after issue. Initial non-nicotine rates do not change the nicotine policy classification; the separate twelve-month quit requirement and benefit options need carrier confirmation.","review","AM-ES-GUIDE",[6,7]);
+        return;
+      }
+      if(p.id === "sbli_easytrak") {
+        const noUse=d.nicotineHistory === "never" && rows.length===0 && !invalidLists.includes("nicotine") && d.cotinineResult!=="positive";
+        const knownProducts=["cigarette","cigar","pipe","chew","nicotine","vape"];
+        const active=d.nicotineHistory === "yes" && d.nicotineComplete === "yes" && rows.length>0 && !invalidLists.includes("nicotine") && d.cotinineResult!=="positive" && rows.every(r=>knownProducts.includes(r.product) && date(r.lastDate) && r.lastDate<=asOf && ["yes","no"].includes(r.current) && (r.current!=="yes" || r.lastDate===asOf)) && rows.some(r=>r.current === "yes");
+        out.tobaccoBasis=noUse ? "non_tobacco" : active ? "tobacco" : "unknown";
+        out.domains.nicotine={ceiling:null,detail:noUse ? "Applicant reports no lifetime nicotine/tobacco use. The supplied editions use different class names; no health-class ceiling is assigned." : active ? "Current nicotine/tobacco use is disclosed. No final health class or generic class ceiling is assigned." : "Confirm EasyTrak's current nicotine definitions and lookbacks; a generic twelve-month cutoff is not assumed.",source:source("SB-ET-SPECS",[1])};
+        if(!noUse && !active)issue("sbli_nicotine_scope","The supplied editions do not establish a reconciled nicotine lookback. Confirm the current application for all past use and unspecified products.","review","SB-ET-SPECS",[1]);
+        return;
+      }
       if (d.nicotineHistory === "never") {out.tobaccoBasis="non_tobacco";out.domains.nicotine={ceiling:p.kind === "final_expense" ? null : "preferred_plus",detail:"Explicitly reported no lifetime tobacco/nicotine/vaping use.",source:source(p.sources[0])};return;}
       if (!rows.length) return;
       const relevant = p.id === "foresters_strong" ? rows.filter(r=>r.product === "cigarette") : rows;
@@ -361,12 +502,15 @@ const Engine = (() => {
       let exception = false;
       if (cigar.length && ["banner_opterm","moo_full","transamerica_super","foresters_yourterm_med","foresters_advantage_med","foresters_smart_med"].includes(p.id)) {
         const maxMonth = p.id === "moo_full" ? 2 : 1, maxYear = p.id === "moo_full" ? 24 : 12;
-        const countOK = cigar.every(r=>numeric(r.perMonth) !== null && numeric(r.perYear) !== null && Number(r.perMonth)>=0 && Number(r.perYear)>=0 && Number(r.perMonth)<=maxMonth && Number(r.perYear)<=maxYear);
+        // Frequency fields are applicant totals: highest monthly count and annual total.
+        // Multiple recent cigar rows may duplicate or split those totals; do not
+        // accept each row independently or silently add potentially duplicate use.
+        const countOK = cigar.length === 1 && cigar.every(r=>numeric(r.perMonth) !== null && numeric(r.perYear) !== null && Number.isInteger(Number(r.perMonth)) && Number.isInteger(Number(r.perYear)) && Number(r.perMonth)>0 && Number(r.perYear)>0 && Number(r.perMonth)<=maxMonth && Number(r.perYear)<=maxYear && Number(r.perYear)>=Number(r.perMonth) && Number(r.perYear)<=12*Number(r.perMonth));
         const tested = d.cotinineResult === "negative" && date(d.cotinineDate) && within(d.cotinineDate,12,asOf);
         const otherWindow = 12;
         const otherOK = !relevant.some(r=>r.product !== "cigar" && within(r.lastDate,otherWindow,asOf));
         exception = countOK && tested && otherOK;
-        if (!countOK || !tested) issue("cigar_evidence","An occasional-cigar exception needs admitted monthly/annual use and dated negative cotinine evidence. Non-tobacco status is withheld until confirmed.");
+        if (!countOK || !tested) issue("cigar_evidence","An occasional-cigar exception needs one confirmed applicant-total record, consistent positive whole-number monthly/annual counts, and dated negative cotinine evidence. Multiple recent cigar records require reconciliation; non-tobacco status is withheld until confirmed.");
       }
       let tobaccoMonths = p.id === "transamerica_super" ? 24 : 12;
       const recent = relevant.some(r=>within(r.lastDate,tobaccoMonths,asOf));
@@ -387,32 +531,48 @@ const Engine = (() => {
     function build() {
       const h = num("heightIn","height in inches",36,100), w = num("weightLb","weight in pounds",30,1000);
       need("weightChange","weight change in the last 12 months",["none","loss","gain"]);
-      let ratedWeight=w;
+      let ratedWeight=w,possibleWeight=null;
       if (d.weightChange === "loss" || d.weightChange === "gain") {
-        const prior = num("priorWeightLb","previous weight",30,1000);past(d.weightChangeDate,"weight change");
+        const prior = num("priorWeightLb","previous weight",30,1000),changeDateOK=past(d.weightChangeDate,"weight change");
         need("weightCause","weight-change cause",["intentional","illness","pregnancy","surgery","unknown"]);
         if (d.weightCause !== "intentional") {
           if (p.id === "corebridge_legacy" && d.weightCause === "unknown" && d.weightChange === "loss" && within(d.weightChangeDate,12,asOf)) benefit("graded","Unexplained weight loss within 12 months supports Graded screening.","D106",[6]);
           else issue("weight_cause","Weight change due to illness, pregnancy, surgery or an unknown cause requires review.");
         }
         if (w !== null && prior !== null && ((d.weightChange === "loss" && prior <= w) || (d.weightChange === "gain" && prior >= w))) issue("weight_conflict","The reported weight change conflicts with the current/previous weights.");
-        if (d.weightChange === "loss" && prior > w && d.weightCause === "intentional") {
+        if (d.weightChange === "loss" && w!==null && prior!==null && prior > w && d.weightCause === "intentional") {
           if (p.build === "banner" && prior-w>20 && within(d.weightChangeDate,12,asOf)) ratedWeight=w+(prior-w)/2;
           else if (p.build === "foresters") {
             if (!past(d.stableSince,"weight stability")) return;
             if (d.stableSince > shift(asOf,-12)) ratedWeight=w+(prior-w)/2;
-          } else if (["beyond","flex"].includes(p.build)) {ratedWeight=w+(prior-w)/2;out.notes.push("September guide permits adding back half of intentional weight loss; carrier discretion still applies.");}
+          } else if (["beyond","flex"].includes(p.build)) {
+            if (changeDateOK && within(d.weightChangeDate,12,asOf,true)) {
+              possibleWeight=w+(prior-w)/2;
+              issue("beyond_weight_adjustment","The carrier may add back half of intentional weight loss over the last 12 months. The adjusted weight is a possibility requiring review, not a confirmed rating weight.","review","D077",[3]);
+            } else if (changeDateOK) issue("beyond_weight_window","The reported loss date is more than 12 months ago. Confirm the answer about weight change in the last 12 months; no half-loss adjustment has been applied.","review","D077",[3]);
+          }
           else issue("weight_loss_review","This product's weight-loss adjustment has not been reconciled; underwriting must review it.");
         }
       }
       if (h === null || w === null || !p.build) return;
-      const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0])};
+      const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0],["beyond","flex"].includes(p.build) ? [3] : undefined)};
+      if (possibleWeight!==null) {
+        const possibleBmi=possibleWeight*703/(h*h);
+        Object.assign(out.domains.build,{possibleWeight,possibleBmi,adjustmentPending:true,detail:`Current weight: ${w} lb; BMI ${bmi.toFixed(2)}. The carrier may use ${possibleWeight} lb (BMI ${possibleBmi.toFixed(2)}) after a discretionary weight-loss adjustment; this is not a confirmed rating weight.`});
+        if(p.build === "flex" && bmi<=55 && possibleBmi>55)issue("flex_weight_limit_review","Only the possible discretionary adjustment exceeds BMI 55. The carrier must confirm the weight it will use; that possibility alone does not establish a decline screen.","review","D077",[3]);
+      }
       let height = h;
       if (h % 1) {
         if (p.build === "banner" && h % 1 === 0.5) height=Math.ceil(h);
         else {issue("height_rounding","A fractional height needs carrier confirmation; this product's rounding rule is not fully published.");return;}
       }
-      if (p.build === "bmi") {
+      if(p.build === "americo") {
+        const row=BUILD_CHARTS.americo[height];
+        out.domains.build.source=source("AM-ES-SPECS",[1]);out.domains.build.ceiling=null;
+        if(!row){issue("americo_build_height","Height is outside the published Eagle Select chart; no range is extrapolated.","review","AM-ES-SPECS",[1]);return;}
+        Object.assign(out.domains.build,{minWeight:row[0],maxWeight:row[1],detail:`Current weight: ${w} lb; published range at ${height} inches: ${row[0]}–${row[1]} lb. A chart match does not establish an Eagle Select tier.`});
+        if(w<row[0]||w>row[1])issue("americo_build_range","Weight falls outside the published Eagle Select build range. Confirm the carrier's application outcome; no class or benefit tier is inferred.","review","AM-ES-SPECS",[1]);
+      } else if (p.build === "bmi") {
         const edges=[16,age>=60?18:17,28,30,32,35,37,39,41,42,43,44];
         if(edges.some(edge=>bmi>edge&&bmi<edge+0.0001)){issue("bmi_precision","BMI falls between printed four-decimal bands; carrier rounding must be confirmed.","review","D370",[12]);return;}
         if (bmi <= 16 || bmi > 46) issue("bmi_decline","BMI is outside the published adult build range.","decline","D370",[12]);
@@ -423,12 +583,13 @@ const Engine = (() => {
         } else out.domains.build.ceiling=bmi <= (age>=60?18:17) ? "standard" : bmi<=28 ? "preferred_plus" : bmi<=30 ? "preferred" : bmi<=32 ? "standard_plus" : "standard";
       } else if (p.build === "flex") {
         if (bmi>55) issue("flex_bmi_decline","BMI exceeds the BeyondTermflex maximum.","decline","D077",[3]);
-        else {out.domains.build.level=bmi>=43 && bmi<=45.99?1:bmi>=46&&bmi<=48?2:bmi>=48.1&&bmi<=55?3:null;issue("flex_level","The printed BMI intervals and all other Flex risks need carrier confirmation; a build level is not a health-class offer.","review","D077",[3]);}
+        else {const level=bmi>=43 && bmi<=45.99?1:bmi>=46&&bmi<=48?2:bmi>=48.1&&bmi<=55?3:null;if(possibleWeight===null)out.domains.build.level=level;else out.domains.build.currentLevel=level;issue("flex_level","The printed BMI intervals and all other Flex risks need carrier confirmation; a build level is not a health-class offer.","review","D077",[3]);}
       } else if (p.build === "beyond") {
         const row=BUILD_CHARTS.beyond[height];
         const hits=row?.map((range,i)=>ratedWeight>=range[0]&&ratedWeight<=range[1]?CLASS_ORDER[i]:null).filter(Boolean)||[];
         if (hits.length!==1) issue("beyond_build","Build is outside a single unambiguous published BeyondTerm band; overlapping/gapped chart cells need review.","review","D077",[3]);
-        else out.domains.build.ceiling=hits[0];
+        else if(possibleWeight===null)out.domains.build.ceiling=hits[0];
+        else out.domains.build.currentCeiling=hits[0];
       } else if (p.build === "corebridge") {
         const row=BUILD_CHARTS.corebridge[height];
         if (!row) issue("core_height","Height is outside the source build chart.","review","D106",[7]);
