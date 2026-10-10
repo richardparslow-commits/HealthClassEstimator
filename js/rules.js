@@ -284,6 +284,32 @@ const RULE_SOURCES = {
     "file": "American Amicable/Quility_Secure_Future_Preferred_AmAm_DCL_Condition_Guide_11.18.25_MdTfdSd.pdf",
     "sha256": "e3fa429d2dcbc9aa5161eae947b0d9674e7181a096c682018b5f2a5083d4c4e8"
   },
+  "SB-ET-SPECS": {
+    "title": "SBLI EasyTrak Digital Term at a glance",
+    "edition": "26-4107, May 2026; reviewed 2026-10-09",
+    "pages": [
+      1,
+      2
+    ],
+    "file": "SBLI/ET-at-a-glance-5-26-1.pdf",
+    "sha256": "d162dadf2d684f359d4611230d4c8f5e988129062a7b2b14f2ad145c4dc2df6b"
+  },
+  "SB-ET-GUIDE": {
+    "title": "SBLI EasyTrak Digital Term Quility agent guide",
+    "edition": "Supplied 26-4154 (Quility); reviewed 2026-10-09",
+    "pages": [
+      4,
+      5
+    ],
+    "file": "SBLI/-Quility-ET-agent-guide-PV-3.pdf",
+    "sha256": "7691a5a3f953d6d4fb2c5312df52042ba7421f5078394570541bf33d81aaeac5"
+  },
+  "SB-ET-FAQ": {
+    "title": "Quility Navigator SBLI EasyTrak FAQs",
+    "edition": "Updated May 12, 2026; checked 2026-10-09",
+    "pages": [],
+    "url": "https://navigator-support.quility.com/hc/en-us/articles/50288882119067-SBLI-EasyTrak-FAQs"
+  },
   "D347": {
     "title": "SBLI EasyTrak Digital Term agent guide",
     "edition": "Supplied 42325 file",
@@ -1523,14 +1549,62 @@ const PRODUCT_RULES = Object.fromEntries([
     "kind": "term",
     "route": "Simplified issue",
     "sources": [
-      "D347"
+      "D347",
+      "SB-ET-SPECS",
+      "SB-ET-GUIDE",
+      "SB-ET-FAQ"
     ],
     "status": "partial",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-09",
     "minAge": 18,
     "maxAge": 60,
+    "minFace": 100000,
     "maxFace": 1000000,
-    "ageBasis": "nearest"
+    "faceBands": [
+      [
+        40,
+        1000000
+      ],
+      [
+        50,
+        1000000
+      ],
+      [
+        55,
+        500000
+      ],
+      [
+        60,
+        150000
+      ]
+    ],
+    "terms": {
+      "10": [
+        60,
+        60
+      ],
+      "15": [
+        60,
+        60
+      ],
+      "20": [
+        60,
+        60
+      ],
+      "30": [
+        50,
+        50
+      ]
+    },
+    "termTobaccoIndependent": true,
+    "eligibilitySource": "SB-ET-SPECS",
+    "stateSource": "SB-ET-FAQ",
+    "statePages": [],
+    "excludeStates": [
+      "NY"
+    ],
+    "ageBasis": "nearest",
+    "scopeNote": "Published face, term and financial screens are recorded. Income definitions, replacement-edition differences, complete class criteria and current application/state approvals still require SBLI review."
   },
   {
     "id": "royal",

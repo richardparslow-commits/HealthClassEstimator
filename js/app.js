@@ -64,7 +64,14 @@ const App = (() => {
     number(c,"Coverage requested ($)","faceAmount",{min:1,step:1000});
     if(p?.kind === "term")field(c,"Requested term length","termYears",[[10,"10 years"],[15,"15 years"],[20,"20 years"],[25,"25 years"],[30,"30 years"],[35,"35 years"],[40,"40 years"]],{hint:"Term availability must be confirmed for your age and product."});
     field(c,"Main purpose of coverage","policyPurpose",[["income","Replace earned income"],["mortgage","Mortgage / debt"],["family","Family support"],["estate","Estate planning"],["business","Business"],["final_expense","Final expenses"],["other","Other"]],{render:true});
-    if(state.policyPurpose === "income")number(c,"Annual earned income ($)","income");
+    if(state.policyPurpose === "income" && p?.id !== "sbli_easytrak")number(c,"Annual earned income ($)","income");
+    if(p?.id === "sbli_easytrak") {
+      number(c,"Annual income for the EasyTrak quote ($)","sbliIncome",{min:0,hint:"Confirm the income definition with SBLI. Nonworking applicants need a carrier-confirmed financial basis."});
+      if(state.policyPurpose === "mortgage") {
+        field(c,"Is this coverage solely for a mortgage?","sbliMortgageOnly",yesNo,{render:true});
+        if(state.sbliMortgageOnly === "yes")number(c,"Mortgage amount ($)","sbliMortgageAmount",{min:0,hint:"Mortgage-only quotes should not exceed 1.5 times this amount."});
+      }
+    }
     number(c,"Existing life insurance with all carriers ($)","existingCoverage");
     if(p?.id.startsWith("foresters_")||p?.id === "corebridge_legacy")number(c,p.id === "corebridge_legacy" ? "Existing AGL GIWL/SIWL coverage ($)" : "Existing Foresters life coverage ($)","existingCarrierCoverage");
     yn(c,"Will this coverage replace an existing life policy?","replacement");yn(c,"Will the premiums be financed or paid with a loan?","financing");

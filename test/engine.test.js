@@ -450,4 +450,61 @@ equal(qsfp({state:"NY"}).status,"unavailable","QSFP excludes New York");
 ok(qsfp({state:"NY"}).issues.some(i=>i.id==="state_limit"&&i.source.id==="AM-QSFP-INFO"),"NY screen uses product information");
 equal(qsfp({medicalHistory:"yes",conditions:[condition("stroke")],medicationHistory:"yes",medications:[rx("warfarin","stroke")]}).status,"decline_screen","Corrected product family preserves scoped drug/indication exclusion");
 
+// Release 77: EasyTrak product limits and financial ambiguity.
+const easytrak=(changes={})=>run("sbli_easytrak",{sbliIncome:120000,...changes});
+const dobForAge=age=>(2026-age)+"-10-08";
+for(const [age,cap] of [[18,1000000],[40,1000000],[41,1000000],[50,1000000],[51,500000],[55,500000],[56,150000],[60,150000]]) {
+ for(const [faceAmount,exceeded] of [[cap,false],[cap+1000,true]]) {
+  o=easytrak({dob:dobForAge(age),faceAmount});equal(o.age,age,"SBLI uses nearest age at birthday");
+  equal(o.issues.some(i=>i.id==="face_limit"),exceeded,"SBLI age "+age+" face "+faceAmount);
+  equal(o.status,exceeded?"unavailable":"manual_review","SBLI cap boundary status");
+  equal(o.healthClass,null,"A valid amount never creates a final SBLI class");
+  if(exceeded)ok(o.issues.some(i=>i.id==="face_limit"&&i.source.id==="SB-ET-SPECS"&&i.source.pages.join(",")==="1"),"Age/face cap cites spec page 1");
+ }
+}
+for(const [faceAmount,flag] of [[99000,"face_limit"],[100000,null],[100001,"sbli_face_increment"],[101000,null]]) {
+ o=easytrak({faceAmount});equal(o.issues.some(i=>i.id==="sbli_face_increment"),flag==="sbli_face_increment","SBLI does not round unsupported face amounts");
+ equal(o.status,flag?"unavailable":"manual_review","SBLI minimum / increment status");
+}
+for(const [age,term,available] of [[18,10,true],[50,30,true],[51,30,false],[60,20,true],[60,15,true],[61,10,false],[35,25,false],[35,35,false],[35,40,false],[35,0,false],[35,20,true]]) {
+ o=easytrak({dob:dobForAge(age),faceAmount:100000,termYears:term,nicotineHistory:""});equal(o.status,available?"manual_review":"unavailable","SBLI selected term "+age+"/"+term+" independent of unanswered nicotine");
+ equal(o.healthClass,null,"Term screen never fabricates class");
+}
+for(const [age,factor] of [[18,20],[40,20],[41,15],[50,15],[51,10],[55,10],[56,10],[60,10]]) {
+ for(const income of [10000,9999]) {
+  o=easytrak({dob:dobForAge(age),faceAmount:10000*factor,sbliIncome:income,policyPurpose:"family"});
+  equal(o.issues.some(i=>i.id==="sbli_income_limit"),income===9999,"Income multiple applies at age "+age+" for family purpose");
+  equal(o.status,age>=56&&factor*10000>150000?"unavailable":"manual_review","Financial screen remains review");
+  if(income===9999)ok(o.issues.some(i=>i.id==="sbli_income_limit"&&i.source.id==="SB-ET-SPECS"&&i.status==="review"),"Income excess cites published spec without final rejection");
+ }
+}
+for(const income of ["",null,"unknown","NaN",-1,1000000001]) {
+ o=easytrak({sbliIncome:income});ok(o.issues.some(i=>i.id==="invalid_sbliIncome"),"Invalid EasyTrak income is unanswered: "+income);equal(o.healthClass,null,"Missing financial input withholds class");
+}
+for(const [employment,age,face] of [["spouse",35,100000],["student",25,100000],["seeking",35,100000],["retired",55,250000],["retired",60,150000]]) {
+ o=easytrak({employment,dob:dobForAge(age),faceAmount:face,sbliIncome:0});equal(o.status,"manual_review","Permitted nonworking status not rejected for zero earned income");
+ ok(o.issues.some(i=>i.id==="sbli_income_basis"),"Nonworking income basis needs carrier review");ok(!o.issues.some(i=>i.id==="sbli_income_limit"),"No invented nonworking income multiple");
+}
+for(const changes of [{employment:"student",dob:dobForAge(26),faceAmount:100000},{employment:"seeking",faceAmount:101000},{employment:"retired",dob:dobForAge(48),faceAmount:100000},{employment:"retired",dob:dobForAge(55),faceAmount:251000},{employment:"retired",dob:dobForAge(60),faceAmount:151000}])equal(easytrak(changes).status,"unavailable","Employment and global face caps intersect");
+for(const [mortgageAmount,flag] of [[100000,false],[99999,true]]) {
+ o=easytrak({policyPurpose:"mortgage",faceAmount:150000,sbliMortgageOnly:"yes",sbliMortgageAmount:mortgageAmount});equal(o.issues.some(i=>i.id==="sbli_mortgage_limit"),flag,"Mortgage-only 1.5x exact/over boundary");
+ if(flag)ok(o.issues.some(i=>i.id==="sbli_mortgage_limit"&&i.status==="review"&&i.source.pages.join(",")==="2"),"Mortgage quote limit cites footnote on physical page 2");
+}
+for(const amount of ["",null,-1,"invalid"])ok(easytrak({policyPurpose:"mortgage",sbliMortgageOnly:"yes",sbliMortgageAmount:amount}).issues.some(i=>i.id==="invalid_sbliMortgageAmount"),"Missing or invalid mortgage amount is not treated as zero");
+for(const sbliMortgageOnly of ["","unknown"])ok(easytrak({policyPurpose:"mortgage",sbliMortgageOnly}).issues.some(i=>i.id==="missing_sbliMortgageOnly"),"Old mortgage/debt selection does not imply mortgage-only");
+for(const changes of [{policyPurpose:"mortgage",sbliMortgageOnly:"no",sbliMortgageAmount:0},{policyPurpose:"family",sbliMortgageOnly:"yes",sbliMortgageAmount:0}])ok(!easytrak(changes).issues.some(i=>i.id==="sbli_mortgage_limit"),"Unrelated debt/purpose ignores stale mortgage limit");
+o=easytrak({replacement:"yes"});equal(o.status,"manual_review","Conflicting replacement editions no longer force unavailability");ok(o.issues.some(i=>i.id==="sbli_replacement_conflict"&&i.source.id==="SB-ET-GUIDE"),"Replacement difference is explicit source conflict");
+equal(easytrak({state:"NY"}).status,"unavailable","SBLI NY excluded");ok(easytrak({state:"NY"}).issues.some(i=>i.id==="state_limit"&&i.source.id==="SB-ET-FAQ"&&i.source.pages.length===0),"Web FAQ citation has no invented PDF page");
+// A six-month birthday boundary must use age nearest rather than attained age.
+o=easytrak({dob:"1971-04-01",faceAmount:151000});equal(o.age,56,"Nearest birthday feeds EasyTrak caps");equal(o.status,"unavailable","Nearest-age cap screens request");
+const oldEasyDraft=InterviewState.migrate({schemaVersion:2,productId:"sbli_easytrak",policyPurpose:"mortgage",income:45000,faceAmount:150000});
+for(const k of ["sbliIncome","sbliMortgageOnly","sbliMortgageAmount"])equal(oldEasyDraft[k],"","New financial answer remains unanswered in old v2 draft: "+k);
+const restoredEasy=InterviewState.migrate({...oldEasyDraft,sbliIncome:50000,sbliMortgageOnly:"yes",sbliMortgageAmount:100000});
+equal(restoredEasy.sbliIncome,50000,"New explicit income survives reload");equal(restoredEasy.sbliMortgageOnly,"yes","New explicit mortgage purpose survives reload");equal(restoredEasy.sbliMortgageAmount,100000,"New explicit mortgage amount survives reload");
+for(const id of ["banner_opterm","amam_qsfp"])ok(!run(id,{sbliIncome:0,sbliMortgageOnly:"yes",sbliMortgageAmount:0}).issues.some(i=>i.id.startsWith("sbli_")),"EasyTrak financial data cannot affect "+id);
+equal(run("fg_quantum",{replacement:"yes"}).status,"unavailable","Quantum replacement exclusion preserved");
+
+o=easytrak();equal(o.domains.nicotine.ceiling,null,"EasyTrak never-use answer does not infer Preferred Plus from differing class editions");equal(o.tobaccoBasis,"non_tobacco","Consistent never use keeps disclosed basis");
+o=easytrak({nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"cigarette",lastDate:"2020-01-01",current:"no"}]});equal(o.tobaccoBasis,"unknown","No generic twelve-month SBLI lookback");equal(o.domains.nicotine.ceiling,null,"Old nicotine use does not infer a favorable ceiling");ok(o.issues.some(i=>i.id==="sbli_nicotine_scope"),"Past nicotine use requires current application");
+o=easytrak({nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"vape",lastDate:asOf,current:"yes"}]});equal(o.tobaccoBasis,"tobacco","Current vaping aligns with FAQ nicotine definition");equal(o.domains.nicotine.ceiling,null,"Current nicotine basis is not a class offer");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

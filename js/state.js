@@ -5,7 +5,7 @@ const InterviewState = (() => {
   function empty() {
     return {
       schemaVersion, productId: "", dob: "", sex: "", state: "", faceAmount: "", termYears: "",
-      policyPurpose: "", income: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
+      policyPurpose: "", income: "", sbliIncome: "", sbliMortgageOnly: "", sbliMortgageAmount: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
       employment: "", occupation: "", hazardousOccupation: "", aviation: "", hazardousSports: "",
       militaryDeployment: "", forestersDeployment: "", exposureDetails: "", citizenship: "", usResident: "", usSince: "",
       intentStay: "", visaType: "", visaExpiry: "", visaRenewal: "", workAuthorization: "",

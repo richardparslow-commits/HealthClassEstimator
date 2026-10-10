@@ -99,16 +99,17 @@ const Engine = (() => {
     yn("replacement","whether coverage replaces a policy");yn("financing","whether premiums are financed");
     if (age !== null && age < 18) issue("juvenile","Juvenile risks require the separate carrier application and growth charts; adult classes are withheld.");
     if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
-    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
+    if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.stateSource || p.eligibilitySource || p.sources[0],p.statePages || (p.eligibilitySource ? [1] : undefined));
     if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
     const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
     if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && numeric(d.existingCarrierCoverage) === null) issue("carrier_total","Confirm total existing Foresters coverage; non-medical limits include coverage already in force.","review","D152",[7]);
     if (p.id.startsWith("foresters_") && p.route === "Non-medical" && face + (numeric(d.existingCarrierCoverage)||0) > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
     if (p.id === "fg_quantum" && face + (numeric(d.existingCoverage)||0) > 1000000) issue("total_line","Total in-force and requested coverage exceeds Quantum's $1 million total line.","unavailable","D141",[9]);
-    if (["fg_quantum","sbli_easytrak"].includes(p.id) && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],p.id === "fg_quantum" ? [5] : [4]);
+    if (p.id === "fg_quantum" && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],[5]);
+    if (p.id === "sbli_easytrak" && d.replacement === "yes") issue("sbli_replacement_conflict","The supplied 42325 guide disallows replacements, while the supplied 26-4154 Quility guide accepts them. Confirm the current application and replacement rules with SBLI.","review","SB-ET-GUIDE",[5]);
     if (d.financing === "yes" || ["estate","business","other"].includes(d.policyPurpose)) issue("financial","Coverage purpose or premium financing needs financial and ownership review.");
-    if (d.policyPurpose === "income") {
+    if (d.policyPurpose === "income" && p.id !== "sbli_easytrak") {
       const income = num("income","annual earned income",0,1000000000);
       if (p.id.startsWith("foresters_") && age >= 18 && income !== null) {
         const factor = age <= 35 ? 30 : age <= 45 ? 25 : age <= 55 ? 20 : age <= 60 ? 15 : age <= 70 ? 10 : null;
@@ -179,7 +180,19 @@ const Engine = (() => {
         if (["student","seeking"].includes(d.employment) && (face>100000 || d.employment === "student" && age>=26)) issue("sbli_employment","EasyTrak student/seeking-work limits are not met.","unavailable","D347",[4]);
         if (d.employment === "retired" && (age<49 || face>250000)) issue("sbli_retired","EasyTrak retired eligibility requires age49+ and coverage at most $250,000.","unavailable","D347",[4]);
         if (d.employment === "other") issue("sbli_work_review","This work status requires EasyTrak eligibility review.","review","D347",[4]);
-        if (age>50 && Number(d.termYears)===30) issue("sbli_term","EasyTrak30-year term ends at issue age50.","unavailable","D347",[5]);
+        if (face !== null && face % 1000 !== 0) issue("sbli_face_increment","EasyTrak coverage is offered in $1,000 increments. Confirm a supported amount; no rounding is assumed.","unavailable","SB-ET-SPECS",[1]);
+        if (d.employment === "employed") {
+          const income = num("sbliIncome","annual income for the EasyTrak quote",0,1000000000);
+          const factor = age !== null && age >=18 && age<=60 ? age<=40 ? 20 : age<=50 ? 15 : 10 : null;
+          if (factor && income !== null && face !== null && face > factor * income) issue("sbli_income_limit","Requested coverage exceeds the published "+factor+" times income screen. Confirm the income definition and financial justification with SBLI.","review","SB-ET-SPECS",[1]);
+        } else issue("sbli_income_basis","Confirm SBLI's income basis for this work status. The supplied materials allow some nonworking applicants but do not define how spouse, student, seeking-work or retirement income is counted; zero earned income is not an automatic exclusion.","review","SB-ET-GUIDE",[4,5]);
+        if (d.policyPurpose === "mortgage") {
+          yn("sbliMortgageOnly","whether this is mortgage coverage only");
+          if (d.sbliMortgageOnly === "yes") {
+            const mortgage = num("sbliMortgageAmount","mortgage amount",0,1000000000);
+            if (mortgage !== null && face !== null && face > 1.5 * mortgage) issue("sbli_mortgage_limit","Requested mortgage-only coverage exceeds 1.5 times the entered mortgage amount. Confirm a supported quote and financial basis with SBLI.","review","SB-ET-SPECS",[2]);
+          }
+        }
       }
       if (p.id === "corebridge_legacy") {
         const existing=num("existingCarrierCoverage","existing AGL GIWL/SIWL coverage",0,1000000000);
@@ -466,6 +479,15 @@ const Engine = (() => {
         out.domains.nicotine={ceiling:null,detail:out.tobaccoBasis === "unknown" ? "Confirm every product, nicotine content, use date and conflicting evidence against Eagle Select's 24-month definition; no class or tier is assigned." : out.tobaccoBasis === "tobacco" ? "Disclosed nicotine use falls within Eagle Select's 24-month initial classification window; this is a nicotine basis, not a premium or tier offer." : "Disclosed history meets Eagle Select's at-least-24-month nicotine-free definition; carrier records and the current application must confirm it.",source:source("AM-ES-GUIDE",[6])};
         if(out.tobaccoBasis === "unknown")issue("americo_nicotine_evidence","The nicotine classification requires complete, consistent product and date evidence. Unspecified cessation products and zero-nicotine vape claims need the current application reviewed.","review","AM-ES-GUIDE",[6]);
         if(out.tobaccoBasis === "tobacco")issue("americo_qsa_scope","Quit Smoking Advantage applies to eligible Eagle Select 1/2 nicotine policies after issue. Initial non-nicotine rates do not change the nicotine policy classification; the separate twelve-month quit requirement and benefit options need carrier confirmation.","review","AM-ES-GUIDE",[6,7]);
+        return;
+      }
+      if(p.id === "sbli_easytrak") {
+        const noUse=d.nicotineHistory === "never" && rows.length===0 && !invalidLists.includes("nicotine") && d.cotinineResult!=="positive";
+        const knownProducts=["cigarette","cigar","pipe","chew","nicotine","vape"];
+        const active=d.nicotineHistory === "yes" && d.nicotineComplete === "yes" && rows.length>0 && !invalidLists.includes("nicotine") && d.cotinineResult!=="positive" && rows.every(r=>knownProducts.includes(r.product) && date(r.lastDate) && r.lastDate<=asOf && ["yes","no"].includes(r.current) && (r.current!=="yes" || r.lastDate===asOf)) && rows.some(r=>r.current === "yes");
+        out.tobaccoBasis=noUse ? "non_tobacco" : active ? "tobacco" : "unknown";
+        out.domains.nicotine={ceiling:null,detail:noUse ? "Applicant reports no lifetime nicotine/tobacco use. The supplied editions use different class names; no health-class ceiling is assigned." : active ? "Current nicotine/tobacco use is disclosed. No final health class or generic class ceiling is assigned." : "Confirm EasyTrak's current nicotine definitions and lookbacks; a generic twelve-month cutoff is not assumed.",source:source("SB-ET-SPECS",[1])};
+        if(!noUse && !active)issue("sbli_nicotine_scope","The supplied editions do not establish a reconciled nicotine lookback. Confirm the current application for all past use and unspecified products.","review","SB-ET-SPECS",[1]);
         return;
       }
       if (d.nicotineHistory === "never") {out.tobaccoBasis="non_tobacco";out.domains.nicotine={ceiling:p.kind === "final_expense" ? null : "preferred_plus",detail:"Explicitly reported no lifetime tobacco/nicotine/vaping use.",source:source(p.sources[0])};return;}

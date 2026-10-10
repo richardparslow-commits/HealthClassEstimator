@@ -73,3 +73,7 @@ Release 75 adds selected Eagle Select medical exclusion screens from the January
 
 
 Release 76 corrects American Amicable QSFP to final-expense whole life. It no longer requires a term or appears among term-product comparisons. Published family age/maximum-face/New York limits are recorded; the July/October 2026 minimum-face conflict stays under review. Amount-dependent classes, current application/rating rules and age basis remain unconfirmed, and no class or tier is assigned.
+
+Release 77 adds EasyTrak's $100,000 minimum, $1,000 increments, age-based maximums and complete 10/15/20/30-year term screens using age nearest birthday. Income multiples and mortgage-only 1.5x quoting limits produce financial review; undefined income bases are never invented for nonworking applicants. New quote-income and mortgage answers start unanswered in saved drafts. The supplied replacement guides conflict, so replacement requests now require review instead of an unconditional exclusion. NY remains unavailable. The EasyTrak profile stays partial and never assigns a final class.
+
+EasyTrak nicotine history retains a disclosed basis for consistent never use or current nicotine use, without a health-class ceiling. Past use needs the current application; no generic twelve-month cutoff or mapping of Elite/Select to Preferred Plus is assumed.
