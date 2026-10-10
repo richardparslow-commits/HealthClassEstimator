@@ -7,7 +7,7 @@ const {Engine,InterviewState,PRODUCT_RULES,BUILD_CHARTS}=ctx.api;
 const asOf="2026-10-08";
 const base={...InterviewState.empty(),productId:"banner_opterm",dob:"1991-10-08",sex:"male",state:"TX",faceAmount:500000,termYears:20,existingCoverage:0,existingCarrierCoverage:0,policyPurpose:"income",income:120000,replacement:"no",financing:"no",employment:"employed",occupation:"Office worker",hazardousOccupation:"no",aviation:"no",hazardousSports:"no",militaryDeployment:"no",forestersDeployment:"no",citizenship:"citizen",usResident:"yes",usSince:"1991-10-08",intentStay:"yes",foreignResidence:"no",travelHistory:"no",healthInsurance:"yes",nicotineHistory:"never",heightIn:70,weightLb:165,weightChange:"none",bpSys:120,bpDia:78,bpDate:"2026-09-01",bpBasis:"average_2yr",bpTreatment:"no",bpControl:"yes",cholTotal:190,cholHdl:60,cholDate:"2026-09-01",cholBasis:"average_2yr",cholTreatment:"no",medicalHistory:"no",medicalComplete:"yes",hospitalHistory:"no",surgeryHistory:"no",pendingCare:"no",activeSymptoms:"no",oxygen:"no",dialysis:"no",adlAssistance:"no",careFacility:"no",homeHealth:"no",terminalIllness:"no",substanceHistory:"no",marijuana:"none",priorInsuranceAdverse:"no",disabled:"no",medicationHistory:"no",medicationsComplete:"yes",drivingHistory:"no",drivingComplete:"yes",licenseStatus:"valid",criminalHistory:"no",criminalComplete:"yes",incarcerated:"no",pendingCharges:"no",probationCurrent:"no",paroleCurrent:"no",outstandingRestitution:"no",familyHistory:"no",familyComplete:"yes",historyConfirmed:"yes"};
 const clone=x=>JSON.parse(JSON.stringify(x));
-const run=(id="banner_opterm",changes={})=>Engine.run(id,{...clone(base),...changes,productId:id},{asOf});
+const run=(id="banner_opterm",changes={})=>Engine.run(id,{...clone(base),...(id === "uhl_simple20" ? {faceAmount:25000} : {}),...changes,productId:id},{asOf});
 let checks=0;
 function equal(actual,expected,label){assert.equal(actual,expected,label);checks++;}
 function ok(actual,label){assert.ok(actual,label);checks++;}
@@ -507,4 +507,98 @@ equal(run("fg_quantum",{replacement:"yes"}).status,"unavailable","Quantum replac
 o=easytrak();equal(o.domains.nicotine.ceiling,null,"EasyTrak never-use answer does not infer Preferred Plus from differing class editions");equal(o.tobaccoBasis,"non_tobacco","Consistent never use keeps disclosed basis");
 o=easytrak({nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"cigarette",lastDate:"2020-01-01",current:"no"}]});equal(o.tobaccoBasis,"unknown","No generic twelve-month SBLI lookback");equal(o.domains.nicotine.ceiling,null,"Old nicotine use does not infer a favorable ceiling");ok(o.issues.some(i=>i.id==="sbli_nicotine_scope"),"Past nicotine use requires current application");
 o=easytrak({nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"vape",lastDate:asOf,current:"yes"}]});equal(o.tobaccoBasis,"tobacco","Current vaping aligns with FAQ nicotine definition");equal(o.domains.nicotine.ceiling,null,"Current nicotine basis is not a class offer");
+
+// Release 78: source-derived product limits. Passing an outer screen never
+// promotes these partial profiles or supplies a carrier class/benefit tier.
+const birthday78=age=>`${2026-age}-10-08`;
+const has78=(result,flag)=>result.flags.includes(flag);
+for(const sex of ["male","female"]) for(const tobacco of [false,true]) {
+  const limits=tobacco ? {10:80,15:70,20:60,25:sex==="male"?50:55,30:sex==="male"?45:50} : {10:80,15:70,20:65,25:55,30:50};
+  for(const [term,cap] of Object.entries(limits)) {
+    const answers={dob:birthday78(cap),sex,termYears:Number(term),faceAmount:50000,...(tobacco?smoke():{})};
+    let at=run("foresters_strong",answers),over=run("foresters_strong",{...answers,dob:birthday78(cap+1)});
+    equal(has78(at,"term_age"),false,`Strong Foundation ${sex}/${tobacco?"T":"NT"}/${term} at cap`);
+    equal(has78(over,"term_age"),true,`Strong Foundation ${sex}/${tobacco?"T":"NT"}/${term} over cap`);
+    equal(at.healthClass,null,"Strong Foundation at cap still withholds a final class");
+  }
+}
+o=run("foresters_strong",{faceAmount:49999});equal(has78(o,"face_limit"),true,"Strong Foundation below $50k");
+equal(o.issues.find(i=>i.id==="face_limit").source.id,"F-SF-SPECS","Strong minimum cites product guide");
+equal(JSON.stringify(o.issues.find(i=>i.id==="face_limit").source.pages),'[3]',"Strong minimum cites physical page 3");
+equal(has78(run("foresters_strong",{faceAmount:50000}),"face_limit"),false,"Strong $50k minimum included");
+equal(has78(run("foresters_strong",{dob:birthday78(55),termYears:10,faceAmount:500000}),"face_limit"),false,"April 2026 age-55 upper band resolves older table overlap");
+o=run("foresters_strong",{dob:birthday78(56),termYears:10,faceAmount:250001});
+equal(has78(o,"face_limit"),true,"Strong lower coverage band starts at 56");equal(o.issues.find(i=>i.id==="face_limit").source.id,"D152","Strong maximum cites newer underwriting guide");
+equal(has78(run("foresters_strong",{termYears:35,faceAmount:50000}),"term_unavailable"),true,"Strong unsupported 35-year term");
+o=run("foresters_strong",smoke({dob:birthday78(46),sex:"unknown",termYears:30,faceAmount:50000}));
+equal(has78(o,"term_sex_basis"),true,"Unknown sex crossing male/female term limit requires review");equal(has78(o,"term_age"),false,"Unknown sex does not invent male tobacco exclusion");
+for(const id of ["foresters_strong","foresters_yourterm_nonmed"]) {
+  for(const value of [-1,"bad",null,Infinity]) {
+    o=run(id,{faceAmount:100000,existingCarrierCoverage:value});
+    equal(has78(o,"invalid_existingCarrierCoverage"),true,`${id} rejects invalid existing carrier total`);
+    equal(o.healthClass,null,`${id} never estimates from invalid total`);
+  }
+  o=run(id,{faceAmount:100000,existingCarrierCoverage:400000});equal(has78(o,"face_total"),id==="foresters_yourterm_nonmed",`${id} applies its own total limit`);
+}
+equal(has78(run("foresters_strong",{faceAmount:300001,existingCarrierCoverage:0}),"foresters_substandard_amount"),true,"Strong amount above substandard band needs carrier class confirmation");
+equal(has78(run("foresters_strong",{faceAmount:300000,existingCarrierCoverage:0}),"foresters_substandard_amount"),false,"Strong substandard upper band inclusive");
+for(const [age,minimum] of [[18,100000],[70,100000],[71,50000],[75,50000],[76,25000],[85,25000]]) {
+  o=run("foresters_smart_med",{dob:birthday78(age),faceAmount:minimum});
+  equal(has78(o,"face_limit"),false,`SMART medical age ${age} minimum included`);
+  equal(has78(run("foresters_smart_med",{dob:birthday78(age),faceAmount:minimum-1}),"face_limit"),true,`SMART medical age ${age} below minimum`);
+  equal(o.healthClass,null,"SMART profile remains partial despite known product minimum");
+}
+equal(has78(run("foresters_smart_med",{dob:birthday78(86),faceAmount:100000}),"age_limit"),true,"SMART above medical issue age 85");
+for(const id of ["moo_tle","moo_iule"]) {
+  equal(has78(run(id,{faceAmount:24999}),"face_limit"),true,id+" below $25k");
+  for(const [age,maximum] of [[50,550000],[51,450000],[60,450000],[61,350000],[75,350000]]) {
+    o=run(id,{dob:birthday78(age),faceAmount:maximum,termYears:10});
+    equal(has78(o,"face_limit"),false,id+` age ${age} at face maximum`);
+    equal(has78(run(id,{dob:birthday78(age),faceAmount:maximum+1,termYears:10}),"face_limit"),true,id+` age ${age} above face maximum`);
+  }
+}
+for(const term of [10,15,20,30]) equal(has78(run("moo_tle",{faceAmount:25000,termYears:term}),"term_unavailable"),false,"TLE published duration "+term);
+for(const term of [25,35,40]) equal(has78(run("moo_tle",{faceAmount:25000,termYears:term}),"term_unavailable"),true,"TLE unsupported duration "+term);
+equal(has78(run("fg_pathsetter",{faceAmount:49999}),"face_limit"),true,"Pathsetter minimum face $50k");
+equal(has78(run("fg_pathsetter",{faceAmount:500001}),"face_limit"),false,"Pathsetter $500k premium cap is never used as face maximum");
+equal(has78(run("fg_pathsetter",{dob:birthday78(81)}),"age_limit"),true,"Pathsetter outside both possible age bases");
+o=run("fg_pathsetter",{dob:"1946-04-01"});equal(has78(o,"age_basis"),true,"Pathsetter crossing nearest-birthday boundary retains review");equal(has78(o,"age_limit"),false,"Unknown Pathsetter age basis does not fabricate age-81 exclusion");
+equal(has78(run("fg_pathsetter",{state:"NY"}),"state_limit"),true,"Pathsetter issuing-company NY exclusion");
+for(const [age,face,flag] of [[19,25000,"age_limit"],[61,25000,"age_limit"],[35,24999,"face_limit"],[35,50001,"face_limit"]]) equal(has78(run("uhl_simple20",{dob:birthday78(age),faceAmount:face}),flag),true,"DLX source boundary "+age+"/"+face);
+for(const age of [20,60]) for(const face of [25000,50000]) {
+  o=run("uhl_simple20",{dob:birthday78(age),faceAmount:face,termYears:20});
+  equal(has78(o,"age_limit")||has78(o,"face_limit")||has78(o,"term_age"),false,"DLX inclusive valid bounds");equal(o.ageBasis,"last","DLX uses verified last birthday");equal(o.healthClass,null,"DLX does not convert built-in rating to applicant class");
+}
+equal(has78(run("uhl_simple20",{dob:"1966-04-01",faceAmount:25000}),"age_limit"),false,"DLX age last 60 remains in age band despite age nearest 61");
+equal(has78(run("uhl_simple20",{termYears:30}),"term_unavailable"),true,"DLX only offers 20-year term");
+for(const [plan,term,min,maxNT,maxT] of [["simple20",20,20,60,60],["simple30",30,20,55,50],["simple20rop",20,25,60,45]]) {
+  for(const tobacco of [false,true]) {
+    const max=tobacco?maxT:maxNT;
+    for(const [age,expected] of [[min-1,true],[min,false],[max,false],[max+1,true]]) {
+      o=run("uhl_otherterm",{uhlTermPlan:plan,termYears:term,dob:birthday78(age),faceAmount:25000,...(tobacco?smoke():{})});
+      equal(has78(o,"uhl_plan_age"),expected,`UHL ${plan}/${tobacco?"T":"NT"} age ${age}`);
+      equal(o.healthClass,null,"UHL selected plan still withholds class");
+    }
+  }
+  equal(has78(run("uhl_otherterm",{uhlTermPlan:plan,termYears:term===20?30:20,faceAmount:25000}),"uhl_plan_term"),true,"UHL plan/duration mismatch "+plan);
+}
+o=run("uhl_otherterm",{uhlTermPlan:"simple30",termYears:30,dob:birthday78(53),faceAmount:25000,nicotineHistory:"unknown"});
+equal(has78(o,"uhl_plan_tobacco"),true,"Unknown UHL tobacco basis at conditional age requires review");equal(has78(o,"uhl_plan_age"),false,"Unknown tobacco does not invent a tobacco exclusion");
+equal(has78(run("uhl_otherterm",{uhlTermPlan:"",faceAmount:25000}),"missing_uhlTermPlan"),true,"Unspecified UHL plan is not inferred from duration");
+equal(has78(run("uhl_otherterm",{uhlTermPlan:"unsupported",faceAmount:25000}),"missing_uhlTermPlan"),true,"Unsupported UHL plan requires confirmation");
+for(const id of ["uhl_simple20","uhl_otherterm"]) {
+  o=run(id,{state:"WA",dob:birthday78(19),faceAmount:500001,termYears:40,uhlTermPlan:"simple30"});
+  equal(has78(o,"state_limit"),true,"UHL non-Texas application requires review");
+  equal(o.issues.find(i=>i.id==="state_limit").status,"review","UHL state variation is never a blanket exclusion");
+  equal(has78(o,"age_limit")||has78(o,"face_limit")||has78(o,"term_unavailable")||has78(o,"uhl_plan_age"),false,"Texas limits are not applied to another state");
+}
+const old78=clone(base);delete old78.uhlTermPlan;
+equal(InterviewState.migrate(old78).uhlTermPlan,"","Old draft starts with no UHL plan choice");
+equal(InterviewState.migrate({...old78,uhlTermPlan:"simple20rop"}).uhlTermPlan,"simple20rop","Explicit UHL choice survives saved-draft migration");
+for(const profile of Object.values(PRODUCT_RULES).filter(p=>p.status!=="criteria")) {
+  o=run(profile.id,{uhlTermPlan:"simple20",faceAmount:profile.id==="uhl_simple20"?25000:100000});
+  equal(o.healthClass,null,profile.id+" incomplete profile never supplies health class");
+  equal(o.benefitTier,null,profile.id+" incomplete profile never supplies benefit tier");
+}
+
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

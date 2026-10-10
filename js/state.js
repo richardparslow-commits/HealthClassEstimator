@@ -4,7 +4,7 @@ const InterviewState = (() => {
   const schemaVersion = 2;
   function empty() {
     return {
-      schemaVersion, productId: "", dob: "", sex: "", state: "", faceAmount: "", termYears: "",
+      schemaVersion, productId: "", dob: "", sex: "", state: "", faceAmount: "", termYears: "", uhlTermPlan: "",
       policyPurpose: "", income: "", sbliIncome: "", sbliMortgageOnly: "", sbliMortgageAmount: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
       employment: "", occupation: "", hazardousOccupation: "", aviation: "", hazardousSports: "",
       militaryDeployment: "", forestersDeployment: "", exposureDetails: "", citizenship: "", usResident: "", usSince: "",

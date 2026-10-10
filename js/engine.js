@@ -98,13 +98,22 @@ const Engine = (() => {
     need("policyPurpose","purpose of coverage",["income","mortgage","family","estate","business","final_expense","other"]);
     yn("replacement","whether coverage replaces a policy");yn("financing","whether premiums are financed");
     if (age !== null && age < 18) issue("juvenile","Juvenile risks require the separate carrier application and growth charts; adult classes are withheld.");
-    if (age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
+    const limitsApplicable = !p.limitStates || p.limitStates.includes(d.state);
+    if (limitsApplicable && age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? (p.eligibilityPages || [1]) : undefined);
     if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.stateSource || p.eligibilitySource || p.sources[0],p.statePages || (p.eligibilitySource ? [1] : undefined));
     if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
     const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
-    if (face !== null && ((p.minFace && face < p.minFace) || (maxFace && face > maxFace))) issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? [1] : undefined);
-    if (p.id.startsWith("foresters_") && p.route === "Non-medical" && numeric(d.existingCarrierCoverage) === null) issue("carrier_total","Confirm total existing Foresters coverage; non-medical limits include coverage already in force.","review","D152",[7]);
-    if (p.id.startsWith("foresters_") && p.route === "Non-medical" && face + (numeric(d.existingCarrierCoverage)||0) > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
+    const minFace = (age !== null ? p.minFaceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.minFace;
+    if (limitsApplicable && face !== null && ((minFace && face < minFace) || (maxFace && face > maxFace))) {
+      const above = maxFace && face > maxFace;
+      issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",above ? p.maxFaceSource || p.eligibilitySource || p.sources[0] : p.eligibilitySource || p.sources[0],above && p.maxFacePages ? p.maxFacePages : p.eligibilitySource ? p.eligibilityPages || [1] : undefined);
+    }
+    if (p.id.startsWith("foresters_") && p.route === "Non-medical") {
+      const existing = num("existingCarrierCoverage","total existing Foresters coverage",0,1000000000);
+      if (face !== null && existing !== null && maxFace && face + existing > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
+      const substandardMax = age !== null ? p.substandardFaceBands?.find(([to])=>age<=to)?.[1] : null;
+      if (substandardMax && face !== null && existing !== null && face + existing > substandardMax && face + existing <= maxFace) issue("foresters_substandard_amount","This total exceeds the published substandard coverage band. Confirm the carrier-assigned class and supported amount; the requested amount does not establish a Standard class.","review","D152",[7]);
+    }
     if (p.id === "fg_quantum" && face + (numeric(d.existingCoverage)||0) > 1000000) issue("total_line","Total in-force and requested coverage exceeds Quantum's $1 million total line.","unavailable","D141",[9]);
     if (p.id === "fg_quantum" && d.replacement === "yes") issue("replacement","Replacement is not permitted for this product.","unavailable",p.sources[0],[5]);
     if (p.id === "sbli_easytrak" && d.replacement === "yes") issue("sbli_replacement_conflict","The supplied 42325 guide disallows replacements, while the supplied 26-4154 Quility guide accepts them. Confirm the current application and replacement rules with SBLI.","review","SB-ET-GUIDE",[5]);
@@ -155,13 +164,32 @@ const Engine = (() => {
     function productLimits() {
       if (p.kind === "term") {
         need("termYears","term length");
+        if (limitsApplicable && p.availableTerms && present(d.termYears) && !p.availableTerms.includes(Number(d.termYears))) issue("term_unavailable","This term duration is not offered by the product.","unavailable",p.eligibilitySource || p.sources[p.sources.length-1],p.eligibilityPages);
         const term=Number(d.termYears),entry=p.terms?.[term];
-        const termSource=p.eligibilitySource || p.sources[p.sources.length-1],termPages=p.eligibilitySource ? [1] : undefined;
-        if (p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",termSource,termPages);
-        if (entry && age!==null && (p.termTobaccoIndependent || out.tobaccoBasis!=="unknown")) {
+        const termSource=p.eligibilitySource || p.sources[p.sources.length-1],termPages=p.eligibilitySource ? (p.eligibilityPages || [1]) : undefined;
+        if (limitsApplicable && p.terms && present(d.termYears) && !entry) issue("term_unavailable","This term duration is not offered by the product.","unavailable",termSource,termPages);
+        if (limitsApplicable && entry && age!==null && (p.termTobaccoIndependent || out.tobaccoBasis!=="unknown")) {
           let cap=entry[out.tobaccoBasis === "tobacco"?1:0];
+          if (out.tobaccoBasis === "tobacco" && p.maleTobaccoTermCaps?.[term] !== undefined) {
+            if (d.sex === "male") cap=p.maleTobaccoTermCaps[term];
+            else if (d.sex !== "female" && age>p.maleTobaccoTermCaps[term] && age<=cap) issue("term_sex_basis","The selected term crosses a sex-specific tobacco age limit. Confirm the sex used by the carrier before screening availability.","review",termSource,termPages);
+          }
           if (p.id === "transamerica_super" && face<100000) cap=({10:[80,80],15:[75,70],20:[65,65],25:[60,55],30:[50,45]})[term][out.tobaccoBasis === "tobacco"?1:0];
           if(age>cap)issue("term_age",p.termTobaccoIndependent ? "Age exceeds the selected term's published limit." : "Age exceeds the selected term's limit for the disclosed tobacco basis.","unavailable",termSource,termPages);
+        }
+        if (p.id === "uhl_otherterm") {
+          const planOK=need("uhlTermPlan","the exact United Home Life term plan",["simple20","simple30","simple20rop"]);
+          if (planOK && limitsApplicable) {
+            const selectedTerm=d.uhlTermPlan === "simple30" ? 30 : 20;
+            if (present(d.termYears) && term!==selectedTerm) issue("uhl_plan_term","The selected UHL plan and requested duration do not match.","unavailable","UHL-PORTFOLIO",[1]);
+            if (age!==null) {
+              const minimum=d.uhlTermPlan === "simple20rop" ? 25 : 20;
+              const outer=d.uhlTermPlan === "simple30" ? 55 : 60;
+              const tobaccoMax=d.uhlTermPlan === "simple30" ? 50 : d.uhlTermPlan === "simple20rop" ? 45 : 60;
+              if(age<minimum || age>outer || out.tobaccoBasis === "tobacco" && age>tobaccoMax) issue("uhl_plan_age","Age is outside the selected Texas UHL plan's published limits for the disclosed tobacco basis.","unavailable","UHL-PORTFOLIO",[1]);
+              if(out.tobaccoBasis === "unknown" && age>tobaccoMax && age<=outer) issue("uhl_plan_tobacco","Confirm the tobacco basis before screening this UHL plan's age limit.","review","UHL-PORTFOLIO",[1]);
+            }
+          }
         }
         if (p.id === "banner_flex" && age!==null) {
           const level23Max=p.level23FaceBands.find(([to])=>age<=to)?.[1];
