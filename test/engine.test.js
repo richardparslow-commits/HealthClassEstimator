@@ -17,6 +17,53 @@ const criminal=(extra={})=>({type:"felony",offense:"Theft",date:"2016-01-01",con
 const condition=(id,extra={})=>({id,name:id,diagnosisDate:"2020-01-01",status:"current",treatment:"Documented treatment",complications:"no",recurrence:"no",hospitalized:"no",...extra});
 const rx=(name,conditionId,extra={})=>({name,conditionId,indication:conditionId,dose:"As prescribed daily",current:"yes",start:"2020-01-01",lastFill:"2026-09-01",...extra});
 const cigar={product:"cigar",lastDate:asOf,current:"yes",perMonth:1,perYear:12};
+// Quantum ADV4682, Rev. 09-2026, physical page 1: separate juvenile face cap.
+let oQuantum;
+for (const dob of ["2010-10-08","2009-10-08","2009-10-09"]) {
+  oQuantum=run("fg_quantum",{dob,faceAmount:500000});
+  equal(oQuantum.status,"manual_review","Quantum juvenile exact cap still needs carrier review");
+  equal(oQuantum.healthClass,null,"Quantum juvenile cap never establishes an adult class");
+  ok(!oQuantum.issues.some(i=>i.id==="face_limit"),"Quantum juvenile exact cap passes amount screen");
+  oQuantum=run("fg_quantum",{dob,faceAmount:500001});
+  equal(oQuantum.status,"unavailable","Quantum certain juvenile above $500k fails amount screen");
+  equal(oQuantum.issues.find(i=>i.id==="face_limit")?.source?.id,"FG-QT-SPECS","Quantum juvenile cap cites current product sheet");
+  equal(oQuantum.issues.find(i=>i.id==="face_limit")?.source?.pages[0],1,"Quantum juvenile cap cites physical page 1");
+}
+for(const [dob,faceAmount] of [["2009-01-01",500001],["2009-01-01",1000000],["2008-10-08",1000000],["1966-01-01",1000000]]) {
+  oQuantum=run("fg_quantum",{dob,faceAmount});
+  equal(oQuantum.status,"manual_review","Quantum unknown-age boundary or adult cap remains review");
+  equal(oQuantum.healthClass,null,"Quantum unresolved age basis withholds class");
+  ok(!oQuantum.issues.some(i=>i.id==="face_limit"),"Quantum possible adult is not excluded by juvenile cap");
+  ok(oQuantum.issues.some(i=>i.id==="age_basis"),"Quantum age basis review preserved");
+}
+equal(run("fg_quantum",{dob:"2009-01-01",faceAmount:1000001}).status,"unavailable","Quantum age uncertainty cannot permit above adult maximum");
+equal(run("fg_quantum",{dob:"2008-10-08",faceAmount:49999}).status,"unavailable","Quantum minimum $50k preserved");
+equal(run("fg_quantum",{dob:"",faceAmount:600000}).status,"manual_review","Quantum missing DOB cannot establish juvenile cap");
+// Quantum's conflicting state statements require a separate NY review gate.
+const quantumNY=review("fg_quantum",{state:"NY"},"Quantum NY source conflict requires review");
+const quantumNYIssue=quantumNY.issues.find(i=>i.id==="quantum_state_conflict");
+ok(quantumNYIssue,"Quantum NY result explains the source conflict");
+equal(quantumNYIssue.status,"review","Quantum conflict is a review, not an inferred exclusion");
+equal(quantumNYIssue.source.id,"FG-QT-SPECS","Quantum state conflict cites its own current sheet");
+equal(quantumNYIssue.source.pages[0],4,"Quantum state conflict cites issuer disclosure on physical page 4");
+ok(!quantumNY.issues.some(i=>i.id==="state_limit"),"Quantum NY is not assigned another product's state exclusion");
+ok(quantumNY.sources.find(s=>s.id==="FG-QT-SPECS").pages.includes(4),"Result source list includes the state disclosure page");
+for(const state of ["TX","NJ","CT",""])ok(!run("fg_quantum",{state}).issues.some(i=>i.id==="quantum_state_conflict"),"Quantum NY conflict does not affect other or unanswered state: "+state);
+// Isolated test prerequisite only: production rules remain immutable/unconfirmed.
+const quantumRulesSource=fs.readFileSync(path.join(root,"js/rules.js"),"utf8");
+const quantumAgeControlRules=quantumRulesSource.replace(/("id": "fg_quantum",[\s\S]*?"ageBasis": )"unconfirmed"/,'$1"last"');
+ok(quantumAgeControlRules!==quantumRulesSource,"Independent state-guard test changes only its isolated age prerequisite");
+const quantumAgeContext=vm.createContext({Date,console});
+vm.runInContext([quantumAgeControlRules,...["state","engine"].map(n=>fs.readFileSync(path.join(root,"js",n+".js"),"utf8"))].join("\n")+"\nglobalThis.controlEngine=Engine;",quantumAgeContext);
+const quantumKnownAge=state=>quantumAgeContext.controlEngine.run("fg_quantum",{...clone(base),productId:"fg_quantum",state},{asOf});
+const quantumNYKnownAge=quantumKnownAge("NY"),quantumTXKnownAge=quantumKnownAge("TX");
+ok(!quantumNYKnownAge.issues.some(i=>i.id==="age_basis"),"NY guard test isolates state conflict from age review");
+equal(quantumNYKnownAge.status,"manual_review","Quantum NY still requires review after age prerequisite is satisfied");
+equal(quantumNYKnownAge.healthClass,null,"State conflict independently withholds a favorable class");
+ok(quantumTXKnownAge.healthClass!==null,"Control case confirms state gate is the remaining NY limitation");
+equal(PRODUCT_RULES.fg_quantum.ageBasis,"unconfirmed","Controlled test never promotes the actual Quantum age basis");
+equal(run("fg_pathsetter",{state:"NY"}).status,"unavailable","Pathsetter's independently documented NY exclusion is preserved");
+ok(!run("fg_pathsetter",{state:"NY"}).issues.some(i=>i.id==="quantum_state_conflict"),"Quantum conflict does not leak to another F&G product");
 function smoke(extra={}){return {nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[{product:"cigarette",lastDate:asOf,current:"yes",packsPerDay:0.5}],...extra};}
 // Audit P1: missing answers, ignored review flags and optimistic ranges.
 equal(run().healthClass,"preferred_plus","B-FIELD pp.4–7 healthy explicit history");
@@ -600,5 +647,252 @@ for(const profile of Object.values(PRODUCT_RULES).filter(p=>p.status!=="criteria
   equal(o.healthClass,null,profile.id+" incomplete profile never supplies health class");
   equal(o.benefitTier,null,profile.id+" incomplete profile never supplies benefit tier");
 }
+
+// Express guide 618352_0426, physical page 7: convictions and state application periods.
+for(const id of ["moo_tle","moo_iule"]) {
+  for(const state of ["TX","CA","NJ",""])for(const eventDate of ["2021-10-09","2024-01-01","2026-10-08"]) {
+    const result=run(id,{state,faceAmount:100000,drivingHistory:"yes",driving:[{type:"dui",date:eventDate}]});
+    const guard=result.issues.find(i=>i.id==="moo_driving_application");
+    equal(result.status,"manual_review","MOO Express DUI event requires application review: "+id+state+eventDate);
+    equal(result.healthClass,null,"MOO driving review withholds class");
+    equal(result.benefitTier,null,"MOO driving review withholds benefit tier");
+    equal(guard?.status,"review","MOO event is not an application-confirmed exclusion");
+    equal(guard?.source?.id,"M-SI-2026","MOO driving review cites current guide");
+    equal(guard?.source?.pages[0],7,"MOO driving review cites physical page 7");
+    ok(/conviction.*application.*state/.test(guard?.text||""),"MOO review identifies unconfirmed conviction and state application");
+    ok(!result.issues.some(i=>i.id==="simplified_dui"&&i.status==="decline"),"MOO does not inherit SBLI's exclusion");
+  }
+  for(const eventDate of ["2021-10-08","2021-10-07","2027-01-01","2026-02-30",""]) {
+    const result=run(id,{faceAmount:100000,drivingHistory:"yes",driving:[{type:"dui",date:eventDate}]});
+    equal(result.issues.some(i=>i.id==="moo_driving_application"),false,"MOO five-year trigger preserves date boundaries: "+eventDate);
+    equal(result.healthClass,null,"MOO old/invalid date cannot promote a partial profile");
+  }
+  for(const faceAmount of [24999,550001]) {
+    const result=run(id,{faceAmount,drivingHistory:"yes",driving:[{type:"dui",date:"2024-01-01"}]});
+    equal(result.status,"unavailable","Independent MOO amount exclusion still governs");
+    ok(result.issues.some(i=>i.id==="moo_driving_application"),"MOO application uncertainty remains explicit beside known exclusion");
+  }
+  equal(run(id,{faceAmount:100000,drivingHistory:"no"}).issues.some(i=>i.id==="moo_driving_application"),false,"MOO no-DUI case does not receive new warning");
+  equal(PRODUCT_RULES[id].status,"partial","MOO source update does not certify complete class criteria");
+  ok(PRODUCT_RULES[id].sources.includes("M-SI-2026"),"MOO active source list includes current guide");
+}
+const sbliDuiControl=run("sbli_easytrak",{faceAmount:100000,drivingHistory:"yes",driving:[{type:"dui",date:"2024-01-01"}]});
+equal(sbliDuiControl.status,"decline_screen","SBLI separate five-year screen is preserved");
+equal(sbliDuiControl.issues.find(i=>i.id==="simplified_dui")?.source?.id,"D347","SBLI retains its own source");
+equal(sbliDuiControl.issues.some(i=>i.id==="moo_driving_application"),false,"MOO review does not leak to SBLI");
+
+// Incomplete/contradictory nicotine evidence cannot establish a basis or ceiling.
+const nicotineEvidenceRow={product:"cigarette",current:"no",lastDate:"2020-01-01"};
+const nicotineEvidenceHistory={nicotineHistory:"yes",nicotineComplete:"yes",nicotine:[nicotineEvidenceRow]};
+const nicotineEvidenceInvalid=[
+  {nicotineHistory:""}, {nicotineHistory:"unknown"}, {nicotineHistory:"invalid"},
+  {nicotineComplete:""}, {nicotineComplete:"no"}, {nicotineComplete:"unknown"},
+  {nicotine:[]}, {nicotine:null}, {nicotine:{}}, {nicotine:[null]}, {nicotine:[true]},
+  {nicotine:[nicotineEvidenceRow,null]}, {nicotineHistory:"never"},
+  {nicotine:[{...nicotineEvidenceRow,product:"unknown"}]},
+  {nicotine:[{...nicotineEvidenceRow,lastDate:""}]},
+  {nicotine:[{...nicotineEvidenceRow,lastDate:"2026-02-30"}]},
+  {nicotine:[{...nicotineEvidenceRow,lastDate:"2027-01-01"}]},
+  {nicotine:[{...nicotineEvidenceRow,current:""}]},
+  {nicotine:[{...nicotineEvidenceRow,current:"unknown"}]},
+  {nicotine:[{...nicotineEvidenceRow,current:"yes"}]},
+  {cotinineResult:"positive"},
+  {nicotine:[nicotineEvidenceRow,{...nicotineEvidenceRow,lastDate:"2027-01-01"}]},
+  {nicotineHistory:"never",nicotine:[],cotinineResult:"positive"},
+  {nicotineHistory:"never",nicotine:[null]},
+];
+for(const id of Object.keys(PRODUCT_RULES))for(const [index,changes] of nicotineEvidenceInvalid.entries()){
+  const result=run(id,{...nicotineEvidenceHistory,...changes});
+  equal(result.tobaccoBasis,"unknown",id+" invalid nicotine case "+index+" withholds basis");
+  equal(result.domains.nicotine.ceiling,null,id+" invalid nicotine case "+index+" withholds component ceiling");
+  equal(result.healthClass,null,id+" invalid nicotine case "+index+" withholds final class");
+  ok(result.issues.some(i=>i.id==="nicotine_evidence"&&i.status==="review"),id+" requests evidence reconciliation");
+}
+for(const id of ["banner_opterm","moo_full","transamerica_super","foresters_yourterm_med","foresters_strong","moo_tle","moo_iule"]){
+  const result=run(id,{nicotineHistory:"never",nicotine:[],nicotineComplete:""});
+  equal(result.tobaccoBasis,"non_tobacco",id+" consistent never use remains valid without unused completeness answer");
+  equal(result.issues.some(i=>i.id==="nicotine_evidence"),false,id+" consistent never use adds no uncertainty");
+}
+const nicotineExclusion=run("moo_tle",{faceAmount:10000000,...nicotineEvidenceHistory,nicotine:[{...nicotineEvidenceRow,lastDate:"2027-01-01"}]});
+equal(nicotineExclusion.status,"unavailable","Independent amount exclusion still governs invalid nicotine evidence");
+equal(nicotineExclusion.tobaccoBasis,"unknown","Independent exclusion cannot fabricate tobacco basis");
+const nicotineDui=run("sbli_easytrak",{faceAmount:100000,...nicotineEvidenceHistory,nicotineComplete:"",drivingHistory:"yes",driving:[{type:"dui",date:"2024-01-01"}]});
+equal(nicotineDui.status,"decline_screen","Independent SBLI DUI screen still governs incomplete nicotine evidence");
+equal(nicotineDui.tobaccoBasis,"unknown","Decline screen cannot fabricate tobacco basis");
+
+// Vitals require complete, consistent, current evidence before a component limit.
+const vitalProfiles=Object.values(PRODUCT_RULES).filter(p=>p.status==="criteria"&&p.kind!=="final_expense").map(p=>p.id);
+const vitalInvalid=[
+ {bpDate:""},{bpDate:"2026-02-30"},{bpDate:"2027-01-01"},{bpDate:"2024-01-01"},{bpDate:"2025-10-08"},
+ {cholDate:""},{cholDate:"2026-02-30"},{cholDate:"2027-01-01"},{cholDate:"2024-01-01"},{cholDate:"2025-10-08"},
+ {bpSys:""},{bpSys:"invalid"},{bpSys:59},{bpSys:261},{bpDia:29},{bpDia:161},
+ {cholTotal:39},{cholTotal:701},{cholHdl:4},{cholHdl:201},
+ {bpBasis:""},{bpBasis:"unknown"},{cholBasis:""},{cholBasis:"unknown"},
+ {bpTreatment:""},{bpTreatment:"unknown"},{bpControl:""},{bpControl:"unknown"},{bpControl:"no"},
+ {cholTreatment:""},{cholTreatment:"unknown"},{bpSys:70,bpDia:80},{cholTotal:120,cholHdl:160},
+ {bpTreatment:"yes"},{cholTreatment:"yes"},
+ {bpTreatment:"yes",medicalHistory:"yes",conditions:[condition("hypertension")]},
+ {cholTreatment:"yes",medicalHistory:"yes",conditions:[condition("cholesterol")]},
+];
+for(const id of vitalProfiles)for(const [index,changes] of vitalInvalid.entries()){
+ const result=run(id,changes);
+ equal(result.domains.vitals.ceiling,null,id+" invalid vital evidence "+index+" has no ceiling");
+ equal(result.healthClass,null,id+" invalid vital evidence "+index+" has no final class");
+ ok(result.issues.some(i=>i.id==="vital_evidence"),id+" explains vital reconciliation "+index);
+ equal(result.domains.classes?.supported?.length||0,0,id+" invalid vitals do not support joint classes");
+}
+for(const id of ["banner_opterm","fg_quantum"])for(const changes of [{bpBasis:"current"},...(id==="fg_quantum"?[{cholBasis:"current"},{cholBasis:"average_12mo"}]:[])]){
+ const result=run(id,changes);equal(result.domains.vitals.ceiling,null,id+" required average must be confirmed");ok(result.issues.some(i=>i.id==="vital_average"),id+" retains average source reason");
+}
+for(const id of vitalProfiles){
+ const result=run(id,{bpDate:"2025-10-09",cholDate:"2025-10-09"});
+ equal(result.issues.some(i=>i.id==="vital_evidence"),false,id+" last valid freshness day retained");
+ ok(result.domains.vitals.ceiling,id+" valid readings retain a component limit");
+}
+for(const id of ["foresters_yourterm_med","foresters_advantage_med"]){
+ const result=run(id,{nicotineHistory:"unknown"});
+ equal(result.domains.vitals.ceiling,null,id+" unknown tobacco basis cannot select tobacco-specific vital rules");
+ equal(result.healthClass,null,id+" unknown tobacco-specific basis remains review");
+}
+const vitalIndependentAmount=run("banner_opterm",{faceAmount:1,bpDate:"2027-01-01"});
+equal(vitalIndependentAmount.status,"unavailable","Independent amount exclusion still governs vital uncertainty");
+equal(vitalIndependentAmount.domains.vitals.ceiling,null,"Amount exclusion cannot create a vital limit");
+const vitalIndependentDui=run("transamerica_super",{bpDate:"",drivingHistory:"yes",driving:[{type:"dui",date:"2026-01-01"}]});
+equal(vitalIndependentDui.status,"decline_screen","Independent Transamerica DUI exclusion still governs vital uncertainty");
+equal(vitalIndependentDui.domains.vitals.ceiling,null,"DUI exclusion cannot create a vital limit");
+
+// Histories must be explicit, complete and consistent before class limits.
+const historyProfiles=Object.values(PRODUCT_RULES).filter(p=>p.status==="criteria"&&p.kind!=="final_expense").map(p=>p.id);
+const historyRelative={member:"mother",relation:"parent",diagnosisAge:60,death:"yes",deathAge:65,disease:"cardiovascular",sex:"female"};
+const historyFamily={familyHistory:"yes",familyComplete:"yes",family:[historyRelative]};
+const familyInvalid=[
+ {familyHistory:""},{familyHistory:"unknown"},{familyHistory:"no"},
+ {familyComplete:""},{familyComplete:"no"},{familyComplete:"unknown"},
+ {family:[]},{family:null},{family:{}},{family:[null]},{family:[historyRelative,null]},
+ {family:[{...historyRelative,member:""}]},{family:[{...historyRelative,member:"   "}]},{family:[{...historyRelative,member:{}}]},
+ {family:[{...historyRelative,relation:"unknown"}]},{family:[{...historyRelative,disease:"unknown"}]},
+ {family:[{...historyRelative,diagnosisAge:""}]},{family:[{...historyRelative,diagnosisAge:-1}]},{family:[{...historyRelative,diagnosisAge:121}]},
+ {family:[{...historyRelative,death:"unknown"}]},{family:[{...historyRelative,deathAge:""}]},{family:[{...historyRelative,deathAge:-1}]},{family:[{...historyRelative,deathAge:121}]},
+ {family:[{...historyRelative,diagnosisAge:70}]},{family:[{...historyRelative,disease:"huntington"}]},
+ {family:[{...historyRelative,disease:"cancer",sex:"unknown",cancerType:"colon"}]},
+ {family:[{...historyRelative,disease:"cancer",cancerType:"unknown"}]},
+ {family:[historyRelative,{...historyRelative,relation:"sibling"}]},
+ {family:[historyRelative,{...historyRelative,deathAge:66}]},
+ {family:[historyRelative,{...historyRelative,member:"Mother"}]},
+ {family:[{...historyRelative,disease:"cancer",cancerType:"colon"},{...historyRelative,disease:"cancer",cancerType:"melanoma",sex:"male"}]},
+];
+const historyEvent={type:"minor",date:"2020-01-01"};
+const historyDriving={drivingHistory:"yes",drivingComplete:"yes",driving:[historyEvent]};
+const drivingInvalid=[
+ {drivingHistory:""},{drivingHistory:"unknown"},{drivingHistory:"no"},
+ {drivingComplete:""},{drivingComplete:"no"},{drivingComplete:"unknown"},
+ {driving:[]},{driving:null},{driving:{}},{driving:[null]},{driving:[historyEvent,null]},
+ {driving:[{...historyEvent,type:"unknown"}]},{driving:[{...historyEvent,date:""}]},
+ {driving:[{...historyEvent,date:"2026-02-30"}]},{driving:[{...historyEvent,date:"2027-01-01"}]},{driving:[{...historyEvent,date:"1980-01-01"}]},
+ {licenseStatus:""},{licenseStatus:"unknown"},
+ {driving:[{type:"speeding",date:"2020-01-01",speed:"",mphOver:10}]},
+ {driving:[{type:"speeding",date:"2020-01-01",speed:40,mphOver:""}]},
+ {driving:[{type:"speeding",date:"2020-01-01",speed:40,mphOver:50}]},
+ {driving:[{type:"speeding",date:"2020-01-01",speed:0,mphOver:10}]},
+ {driving:[{type:"speeding",date:"2020-01-01",speed:40,mphOver:0}]},
+];
+for(const [domain,history,cases] of [["family",historyFamily,familyInvalid],["driving",historyDriving,drivingInvalid]])
+ for(const id of historyProfiles)for(const [index,changes] of cases.entries()){
+  const result=run(id,{...history,...changes});
+  equal(result.domains[domain].ceiling,null,id+" invalid "+domain+" case "+index+" has no limit");
+  equal(result.healthClass,null,id+" invalid "+domain+" case "+index+" has no class");
+  equal(result.domains.classes?.supported?.length||0,0,id+" invalid history supports no joint classes");
+  ok(result.issues.some(i=>i.id===domain+"_evidence"),id+" asks to reconcile "+domain+" evidence");
+ }
+for(const id of Object.keys(PRODUCT_RULES))for(const [changes,flag] of [
+ [{...historyFamily,family:[{...historyRelative,diagnosisAge:70}]},"family_age_order"],
+ [{...historyDriving,driving:[{...historyEvent,date:"1980-01-01"}]},"drive_birth"],
+ [{...historyDriving,driving:[{type:"speeding",date:"2020-01-01",speed:40,mphOver:50}]},"speed_conflict"],
+ [{...historyFamily,family:[historyRelative,{...historyRelative,deathAge:66}]},"family_person_conflict"],
+ [{...historyFamily,family:[historyRelative,{...historyRelative,member:"Mother"}]},"family_member_labels"],
+ ]){
+  const result=run(id,changes);ok(result.issues.some(i=>i.id===flag),id+" validates "+flag);
+  equal(result.healthClass,null,id+" impossible evidence withholds class");
+  equal(result.benefitTier,null,id+" impossible evidence withholds benefit tier");
+ }
+for(const id of historyProfiles){
+ const samePerson=run(id,{...historyFamily,family:[historyRelative,{...historyRelative,disease:"cancer",cancerType:"colon",diagnosisAge:65}]});
+ equal(samePerson.issues.some(i=>i.id==="family_person_conflict"||i.id==="family_age_order"||i.id==="family_evidence"),false,id+" consistent multi-condition relative remains supported");
+}
+const historyAmount=run("banner_opterm",{faceAmount:1,familyHistory:"unknown",drivingHistory:"unknown"});
+equal(historyAmount.status,"unavailable","Independent amount exclusion governs uncertain histories");
+const historyDui=run("transamerica_super",{drivingHistory:"yes",drivingComplete:"",driving:[{type:"dui",date:"2026-01-01"}],familyHistory:"unknown"});
+equal(historyDui.status,"decline_screen","Known Transamerica DUI exclusion survives incomplete histories");
+equal(historyDui.domains.driving.ceiling,null,"Independent DUI exclusion does not infer a driving class limit");
+
+// A current measurement is not a confirmed rating weight without history.
+const buildEvidenceProfiles=Object.values(PRODUCT_RULES).filter(p=>p.build).map(p=>p.id);
+const buildLoss={weightChange:"loss",priorWeightLb:205,weightChangeDate:"2026-09-01",weightCause:"intentional",stableSince:"2026-09-01"};
+const buildInvalid=[
+ {weightChange:""},{weightChange:"unknown"},{weightChange:{}},
+ {...buildLoss,priorWeightLb:""},{...buildLoss,priorWeightLb:29},{...buildLoss,priorWeightLb:1001},
+ {...buildLoss,weightChangeDate:""},{...buildLoss,weightChangeDate:"2026-02-30"},{...buildLoss,weightChangeDate:"2027-01-01"},
+ {...buildLoss,weightChangeDate:"2025-10-07"},{...buildLoss,weightChangeDate:"1980-01-01"},
+ {...buildLoss,weightCause:""},{...buildLoss,weightCause:"unknown"},{...buildLoss,weightCause:"illness"},{...buildLoss,weightCause:"pregnancy"},{...buildLoss,weightCause:"surgery"},
+ {...buildLoss,priorWeightLb:165},{...buildLoss,priorWeightLb:150},
+ {...buildLoss,weightChange:"gain",priorWeightLb:190},{...buildLoss,weightChange:"gain",priorWeightLb:165},
+ {heightIn:""},{heightIn:35},{heightIn:101},{heightIn:{}},{weightLb:""},{weightLb:29},{weightLb:1001},
+];
+for(const id of buildEvidenceProfiles)for(const [index,changes] of buildInvalid.entries()){
+ const r=run(id,changes);
+ equal(r.domains.build.ceiling,null,id+" invalid build case "+index+" has no class limit");
+ equal(r.tableRating,null,id+" invalid build case "+index+" has no build table");
+ equal(r.domains.build.level,undefined,id+" invalid build case "+index+" has no build level");
+ equal(r.healthClass,null,id+" invalid build evidence withholds final class");
+ equal(r.domains.classes?.supported?.length||0,0,id+" invalid build evidence supports no joint classes");
+ ok(r.issues.some(i=>i.id==="build_evidence"),id+" requests build evidence reconciliation");
+}
+for(const id of buildEvidenceProfiles)for(const [changes,flag] of [
+ [{...buildLoss,weightChangeDate:"1980-01-01"},"weight_birth"],
+ [{...buildLoss,weightChangeDate:"2025-10-07"},"weight_window"],
+ [{...buildLoss,priorWeightLb:150},"weight_conflict"],
+]){const r=run(id,changes);ok(r.issues.some(i=>i.id===flag),id+" validates "+flag);}
+for(const id of buildEvidenceProfiles.filter(id=>PRODUCT_RULES[id].build==="foresters"))for(const stableSince of ["","2026-02-30","2027-01-01","2026-01-01","1980-01-01"]){
+ const r=run(id,{...buildLoss,stableSince});equal(r.domains.build.ceiling,null,id+" invalid stability withholds build");equal(r.status,"manual_review",id+" invalid stability cannot produce estimate");
+ ok(r.issues.some(i=>i.id==="build_evidence"),id+" stability requires reconciliation");
+}
+const buildValidBanner=run("banner_opterm",buildLoss);
+equal(buildValidBanner.domains.build.weight,185,"Valid OPTerm half-loss rule remains unchanged");
+equal(buildValidBanner.issues.some(i=>i.id==="build_evidence"),false,"Valid Banner evidence is supported");
+const buildValidForesters=run("foresters_yourterm_med",buildLoss);
+equal(buildValidForesters.domains.build.weight,185,"Valid Foresters half-loss rule remains unchanged");
+equal(buildValidForesters.issues.some(i=>i.id==="weight_stability_order"||i.id==="build_evidence"),false,"Valid stability is supported");
+for(const id of ["banner_beyondterm","banner_flex"]){const r=run(id,buildLoss);equal(r.domains.build.possibleWeight,185,id+" discretionary weight remains possible");equal(r.issues.some(i=>i.id==="build_evidence"),false,id+" complete discretionary evidence is preserved");}
+const buildAmount=run("banner_opterm",{weightChange:"",faceAmount:1});equal(buildAmount.status,"unavailable","Independent amount exclusion survives uncertain build");
+const buildDui=run("transamerica_super",{weightChange:"",drivingHistory:"yes",driving:[{type:"dui",date:"2026-01-01"}]});equal(buildDui.status,"decline_screen","Independent DUI exclusion survives uncertain build");
+for(const [id,bmi] of [["banner_flex",56],["transamerica_super",47]]){const r=run(id,{weightChange:"",weightLb:bmi*70*70/703});equal(r.status,"decline_screen",id+" recorded upper-BMI exclusion survives uncertain history");equal(r.domains.build.ceiling,null,id+" independent exclusion does not imply a class");}
+const buildCore=run("corebridge_legacy",{...buildLoss,faceAmount:25000,weightCause:"unknown"});ok(buildCore.domains.medical.detail.includes("Unexplained weight loss"),"Corebridge independent unexplained-loss screen is preserved");equal(buildCore.domains.build.ceiling,null,"Corebridge unknown cause does not establish a build benefit design");
+
+// Sentence flags, active dates and case chronology govern timing screens.
+const criminalEvidenceEvent={type:"felony",offense:"Fictional theft",date:"2010-01-01",convictionDate:"2010-02-01",disposition:"convicted",jail:"no",probation:"no",parole:"no"};
+const criminalEvidenceRun=(id,row,extra={})=>run(id,{faceAmount:id==="sbli_easytrak"?250000:id==="corebridge_legacy"?25000:500000,criminalHistory:"yes",criminal:[row],...extra});
+const releaseProfiles=[...Object.values(PRODUCT_RULES).filter(p=>p.id.startsWith("foresters_")).map(p=>p.id),"fg_quantum","transamerica_super"];
+for(const id of releaseProfiles)for(const key of ["jail","probation","parole"])for(const answer of ["no","","unknown"])for(const end of ["2026-01-01","2027-01-01","1980-01-01"]){
+ const row={...criminalEvidenceEvent,[key]:answer,[key+"End"]:end},r=criminalEvidenceRun(id,row);
+ equal(r.flags.some(f=>["fg_release","foresters_release","ta_release"].includes(f)),false,id+" inactive "+key+" date cannot cause a release exclusion");
+ equal(r.flags.includes("sentence_dates_"+key)||r.flags.includes("sentence_birth_"+key),false,id+" inactive date cannot create a chronology conflict");
+}
+for(const id of Object.keys(PRODUCT_RULES))for(const [row,flag] of [
+ [{...criminalEvidenceEvent,date:"2026-01-01",convictionDate:"2025-01-01"},"criminal_case_dates"],
+ [{...criminalEvidenceEvent,date:"1980-01-01",convictionDate:"2025-01-01"},"criminal_birth"],
+ [{...criminalEvidenceEvent,convictionDate:"1980-01-01"},"criminal_birth"],
+ ]){const r=criminalEvidenceRun(id,row);ok(r.flags.includes(flag),id+" case chronology requests reconciliation");equal(r.flags.some(f=>["felony_10","moo_felony","core_felony","uhl_felony","fg_release","foresters_release","ta_release"].includes(f)),false,id+" conflicting case dates establish no timing exclusion");}
+for(const id of releaseProfiles)for(const key of ["jail","probation","parole"])for(const [row,flag] of [
+ [{...criminalEvidenceEvent,convictionDate:"2026-04-01",[key]:"yes",[key+"End"]:"2026-01-01"},"sentence_dates_"+key],
+ [{...criminalEvidenceEvent,[key]:"yes",[key+"End"]:"1980-01-01"},"sentence_birth_"+key],
+ [{...criminalEvidenceEvent,[key]:"yes",[key+"End"]:""},"date_"+key+" completion or release"],
+ [{...criminalEvidenceEvent,[key]:"yes",[key+"End"]:"2026-02-30"},"date_"+key+" completion or release"],
+ [{...criminalEvidenceEvent,[key]:"yes",[key+"End"]:"2027-01-01"},"date_"+key+" completion or release"],
+ ]){const r=criminalEvidenceRun(id,row);ok(r.flags.includes(flag),id+" invalid active "+key+" date requests reconciliation");equal(r.flags.some(f=>["fg_release","foresters_release","ta_release"].includes(f)),false,id+" invalid release date establishes no waiting-period exclusion");}
+for(const id of releaseProfiles)for(const convictionDate of ["","2026-02-30","2027-01-01"]){const r=criminalEvidenceRun(id,{...criminalEvidenceEvent,convictionDate,probation:"yes",probationEnd:"2026-01-01"});equal(r.flags.some(f=>["fg_release","foresters_release","ta_release"].includes(f)),false,id+" missing/invalid conviction basis withholds release screen");}
+for(const [id,key,flag] of [["fg_quantum","jail","fg_release"],["fg_quantum","probation","fg_release"],["fg_quantum","parole","fg_release"],["foresters_yourterm_med","probation","foresters_release"],["transamerica_super","probation","ta_release"],["transamerica_super","parole","ta_release"]]){const r=criminalEvidenceRun(id,{...criminalEvidenceEvent,[key]:"yes",[key+"End"]:"2026-01-01"});ok(r.flags.includes(flag),id+" confirmed "+key+" release exclusion remains supported");equal(r.status,"decline_screen",id+" known release still governs");}
+const criminalRecent=criminalEvidenceRun("sbli_easytrak",{...criminalEvidenceEvent,date:"2026-01-01",convictionDate:"2026-02-01",probation:"yes",probationEnd:"2025-01-01"});ok(criminalRecent.flags.includes("felony_10"),"Independent known conviction exclusion survives a conflicting sentence date");equal(criminalRecent.status,"decline_screen","Known recent felony remains a decline screen");
+const criminalActive=criminalEvidenceRun("transamerica_super",{...criminalEvidenceEvent,date:"1980-01-01"},{incarcerated:"yes"});equal(criminalActive.status,"decline_screen","Independent current incarceration exclusion survives case uncertainty");
+const criminalAmount=criminalEvidenceRun("sbli_easytrak",{...criminalEvidenceEvent,date:"1980-01-01"},{faceAmount:1});equal(criminalAmount.status,"unavailable","Independent amount exclusion governs uncertain case dates");
 
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

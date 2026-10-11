@@ -102,3 +102,78 @@ state-specific evidence remain genuine blockers to complete underwriting rules.
 National Life needs an exact product and issuing company. John Hancock's general
 field guide excludes Simple Term; it cannot supply the missing Simple Term rules.
 The legacy QTP identifier must be reconfirmed before choosing BeyondTerm.
+
+### Quantum coverage-limit follow-up
+
+The carrier-hosted ADV4682 Quantum At-a-Glance, revision September 2026
+(26-47554), physical page 1, confirms a $500,000 maximum at issue ages 0–17
+and $1,000,000 at ages 18–60, with a $50,000 minimum. The juvenile cap is
+now screened separately. Because issue-age basis remains unresolved, a
+17/18 boundary uses the more permissive supported cap for the outer exclusion
+screen and continues to require carrier review; it cannot produce a final class.
+Juvenile application and growth-chart rules remain separate from adult classes.
+The source PDF is recorded by official URL and SHA-256. No other profile's
+face-limit or age logic changed.
+
+### Quantum New York source conflict
+
+Quantum's ADV5691 July 2025 guide, physical page 4, lists all 50 states.
+Its ADV4682 September 2026 product sheet, physical page 4, identifies the
+issuing company as operating outside New York. A New York answer now raises
+an explicit source-conflict review with that citation. Carrier confirmation
+of current Quantum availability and the issuing company remains required.
+This guard independently withholds a final class even if issue-age basis is
+later reconciled. It does not infer a new state exclusion or affect other
+products' verified state rules. The Quantum source list now includes page 4;
+its coverage-limit findings still cite page 1.
+
+
+### Mutual of Omaha simplified-issue driving review
+
+Term Life Express and IUL Express no longer turn a generic recent DUI/DWI event
+into an automatic exclusion. The April 2026 United of Omaha simplified-issue
+guide (618352_0426), physical page 7, refers to convictions and explicitly makes
+the applicable timeframes dependent on the state's application. The interview
+currently records a combined conviction/event date; it does not verify an
+application edition or conviction outcome. These cases now require those facts
+and carrier/application review, with the current guide citation. The official
+carrier copy is byte-identical to the owner's Desktop copy.
+
+The older D295 guide remains archived in source metadata. These two active
+profiles cite M-SI-2026 for their simplified-issue guide. SBLI EasyTrak's separate
+five-year screen and every other product's driving logic are unchanged. The
+MOO profiles remain partial, without final classes or benefit tiers; independent
+published product age/amount exclusions still govern. Existing draft fields and
+migration are unchanged. No state-specific period or favorable class is guessed.
+
+Nicotine evidence consistency: every product now withholds the tobacco basis and nicotine class ceiling for malformed, incomplete or contradictory histories, invalid/future last-use dates, current-use/date conflicts and positive cotinine conflicts. Complete consistent histories still use the existing product definitions, lookbacks and exceptions. Independent product exclusions remain in force.
+
+Vital evidence consistency: blood-pressure and cholesterol component limits are withheld for invalid, future, stale or missing dates/readings, unconfirmed treatment/control or basis, required-average mismatches, contradictory values, treatment/history conflicts and uncontrolled blood pressure. Foresters tobacco-specific limits also require a known tobacco basis. Existing limits and independent exclusions remain unchanged.
+
+History evidence consistency: modeled family/driving class limits and joint class support require explicit, complete, internally consistent histories. Diagnosis after death, driving before birth, impossible speeding details, invalid relative labels and contradictory same-person records require reconciliation. Independently verified product exclusions remain in force; carrier criteria, lookbacks and profile completeness are unchanged.
+
+Build limits now require confirmed measurements and a complete, consistent weight-change history. Invalid dates, direction/cause conflicts and Foresters stability dates before the reported change withhold build class/table/benefit components. Current measurements remain recorded evidence; independent known upper-BMI exclusions and valid carrier adjustments are preserved. No carrier criteria, source editions or fields changed.
+
+Criminal timing screens use only affirmative sentence answers and valid active completion dates. Hidden retained dates after No/Unsure are inactive. Conflicting case/birth/conviction/release dates require reconciliation before their timing screen; independently known current-status, conviction and product exclusions remain supported. No carrier periods, sources or applicant fields changed.
+
+
+### Release 78 synchronization follow-up
+
+The canonical source and Streamlit distribution now include the verified
+Release 78 follow-ups: immediate Review completeness refresh; Quantum juvenile
+coverage and New York source-conflict guards; Mutual of Omaha simplified-issue
+driving/application review; and complete, consistent nicotine, vitals, family,
+driving, build/weight and criminal-date evidence prerequisites. The cumulative
+source-derived suite contains 10,260 assertions. The 24 profiles remain seven
+with class/benefit criteria, 14 partial and three unverified.
+
+The standalone acknowledgment and footer broker links open the current contact
+page directly. They send no estimator answers. Website-specific iframe sizing,
+parent navigation adapters, Contact/Concierge APIs and mail delivery live in the
+separate website project, rather than this dependency-free estimator.
+
+This is a Release 78 follow-up, matching the current website's engine, rules,
+state and UI modules. Streamlit uses a rebuilt single-file artifact; uploading
+only separate source assets is insufficient. Automatic cross-repository sync
+still depends on the existing workflow's configured token. No credential is
+created by this release.

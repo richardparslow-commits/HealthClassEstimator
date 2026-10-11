@@ -184,6 +184,16 @@ const RULE_SOURCES = {
     "file": "Mutual of Omaha/moo-fully-underwritten-life-insurance-uw-guidelines-updated-91625.pdf",
     "sha256": "d58ec2cb36e2f9903805f62eca520cf09917c624a86f17f549c19380203b8cf4"
   },
+  "M-SI-2026": {
+    "title": "United of Omaha simplified issue underwriting guide",
+    "edition": "618352_0426 (April 2026); carrier-hosted copy checked 2026-10-11",
+    "pages": [
+      7
+    ],
+    "file": "Life Insurance Products/WholeLife simple.pdf",
+    "url": "https://producer.mutualofomaha.com/enterprise/wcm/connect/producer.mutualofomaha.com-9968/8345762a-c728-45e8-85d3-fc3a36648e52/618352_SI-UWGuidelines_Broch_0124.pdf?CVID=oQZr.9a&MOD=AJPERES",
+    "sha256": "a2121f71c3f73fae25ca442842a4f065b310487c8031a4d53703b7394791c1e7"
+  },
   "D295": {
     "title": "Mutual of Omaha simplified issue underwriting guide",
     "edition": "618352_0124 (January 2024)",
@@ -212,6 +222,14 @@ const RULE_SOURCES = {
     ],
     "file": "Mutual of Omaha/moo-iul-express-product-guide-updated-91625.pdf",
     "sha256": "45af62baa51e8239b86d24fd0608a0001692a65c6934ce37e24186b667d04454"
+  },
+  "FG-QT-SPECS": {
+    "title": "F&G Quantum At-a-Glance",
+    "edition": "ADV4682 (12-2023), Rev. 09-2026, 26-47554",
+    "pages": [1, 4],
+    "file": "ADV4682-Quantum-2026-09.pdf",
+    "url": "https://assets.fglife.com/is/content/fglife/ad-reviewed-materials/adv/adv4600s/ADV4682%20FG%20Quantum%20(AAG).pdf",
+    "sha256": "f613c96ba033675406267931c8a1bc3825cb0bb390d1e83452c6c3bfa4c63011"
   },
   "D141": {
     "title": "F&G Quantum underwriting guidelines",
@@ -1483,7 +1501,7 @@ const PRODUCT_RULES = Object.fromEntries([
     "kind": "term",
     "route": "Simplified issue",
     "sources": [
-      "D295",
+      "M-SI-2026",
       "D299"
     ],
     "status": "partial",
@@ -1525,7 +1543,7 @@ const PRODUCT_RULES = Object.fromEntries([
     "kind": "universal_life",
     "route": "Simplified issue",
     "sources": [
-      "D295",
+      "M-SI-2026",
       "D286"
     ],
     "status": "partial",
@@ -1561,10 +1579,11 @@ const PRODUCT_RULES = Object.fromEntries([
     "kind": "universal_life",
     "route": "Application and database underwriting",
     "sources": [
-      "D141"
+      "D141",
+      "FG-QT-SPECS"
     ],
     "status": "criteria",
-    "reviewed": "2026-10-08",
+    "reviewed": "2026-10-10",
     "family": "fg",
     "build": "fg_quantum",
     "vitals": "fg_quantum",
@@ -1578,6 +1597,10 @@ const PRODUCT_RULES = Object.fromEntries([
     "maxAge": 60,
     "minFace": 50000,
     "maxFace": 1000000,
+    "faceBands": [[17, 500000], [60, 1000000]],
+    "eligibilitySource": "FG-QT-SPECS",
+    "eligibilityPages": [1],
+    "scopeNote": "The September 2026 Quantum product sheet supports issue ages 0–60, a $50,000 minimum, and maximums of $500,000 at issue ages 0–17 and $1,000,000 at 18–60. The supplied documents do not establish issue-age basis; a 17/18 boundary and final class remain under carrier review. Juvenile application and growth-chart requirements are separate from adult class criteria.",
     "ageBasis": "unconfirmed",
     "excludeTerritories": true,
     "classes": [
@@ -1952,4 +1975,3 @@ const CLASS_ORDER = ["preferred_plus","preferred","standard_plus","standard","ta
 const CLASS_LABELS = {preferred_plus:"Preferred Plus",preferred:"Preferred",standard_plus:"Standard Plus",standard:"Standard",table:"Substandard"};
 function freezeRules(value) { Object.values(value).forEach(v => { if (v && typeof v === "object") freezeRules(v); }); return Object.freeze(value); }
 [PRODUCT_RULES, RULE_SOURCES, BUILD_CHARTS, VITAL_RULES, CLASS_ORDER, CLASS_LABELS].forEach(freezeRules);
-

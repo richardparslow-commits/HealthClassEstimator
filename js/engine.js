@@ -101,8 +101,12 @@ const Engine = (() => {
     const limitsApplicable = !p.limitStates || p.limitStates.includes(d.state);
     if (limitsApplicable && age !== null && ((p.minAge != null && Math.max(age,alternateAge) < p.minAge) || (p.maxAge != null && Math.min(age,alternateAge) > p.maxAge))) issue("age_limit","Age is outside this product's published issue ages.","unavailable",p.eligibilitySource || p.sources[0],p.eligibilitySource ? (p.eligibilityPages || [1]) : undefined);
     if (p.excludeStates?.includes(d.state) || (p.onlyStates && present(d.state) && !p.onlyStates.includes(d.state))) issue("state_limit",p.onlyStates ? "The verified application is specific to Texas; another state's application must be reviewed." : "This product/issuing company is unavailable in the selected state.",p.onlyStates ? "review" : "unavailable",p.stateSource || p.eligibilitySource || p.sources[0],p.statePages || (p.eligibilitySource ? [1] : undefined));
+    if (p.id === "fg_quantum" && d.state === "NY") issue("quantum_state_conflict","Quantum's July 2025 guide lists all 50 states, while its September 2026 product sheet identifies an issuer operating outside New York. Confirm current Quantum availability and the issuing company in New York before relying on this screen.","review","FG-QT-SPECS",[4]);
     if (p.excludeTerritories && ["PR","GU","VI","AS","MP"].includes(d.state)) issue("territory","Quantum does not accept residents of US territories.","unavailable","D141",[4]);
-    const maxFace = (age !== null ? p.faceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.maxFace;
+    // Quantum's age basis is unresolved. Exclude only above the cap under both
+    // last- and nearest-birthday ages; the existing age-basis review gates class.
+    const faceAge = p.id === "fg_quantum" && age !== null ? Math.max(age,alternateAge) : age;
+    const maxFace = (faceAge !== null ? p.faceBands?.find(([to]) => faceAge <= to)?.[1] : null) ?? p.maxFace;
     const minFace = (age !== null ? p.minFaceBands?.find(([to]) => age <= to)?.[1] : null) ?? p.minFace;
     if (limitsApplicable && face !== null && ((minFace && face < minFace) || (maxFace && face > maxFace))) {
       const above = maxFace && face > maxFace;
@@ -133,17 +137,31 @@ const Engine = (() => {
       if (!["minor","speeding","serious","reckless","dui","suspension","revocation"].includes(r.type)) issue("drive_type","Choose a type for each driving event.","missing");
       past(r.date,"driving event");
       if (r.type === "speeding" && (numeric(r.mphOver) === null || numeric(r.speed) === null || numeric(r.mphOver)<0 || numeric(r.speed)<0)) issue("speed_detail","Confirm speed and miles per hour over the posted limit.","missing");
+      if (date(r.date) && date(d.dob) && r.date<d.dob) issue("drive_birth","A driving event cannot precede the date of birth. Confirm both dates.","missing");
+      if (r.type === "speeding" && numeric(r.speed)!==null && numeric(r.mphOver)!==null &&
+          (numeric(r.speed)<=0 || numeric(r.mphOver)<=0 || numeric(r.mphOver)>numeric(r.speed))) issue("speed_conflict","Speeding details need positive actual and excess speeds, with excess speed no greater than actual speed.","missing");
     }
     drivingScreens(driving);
     criminal();
     const family = history("familyHistory","family","biological family history");
     confirm("familyComplete","that family history is complete");
     for (const r of family) {
-      if (!["parent","sibling"].includes(r.relation) || !present(r.member) || !["cardiovascular","cancer","huntington","polycystic_kidney","other"].includes(r.disease) || !["yes","no"].includes(r.death)) issue("family_detail","Confirm the relative, disease and whether it caused a death.","missing");
+      if (!["parent","sibling"].includes(r.relation) || typeof r.member!=="string" || !r.member.trim() || !["cardiovascular","cancer","huntington","polycystic_kidney","other"].includes(r.disease) || !["yes","no"].includes(r.death)) issue("family_detail","Confirm the relative, disease and whether it caused a death.","missing");
       if (numeric(r.diagnosisAge) === null || numeric(r.diagnosisAge)<0 || numeric(r.diagnosisAge)>120) issue("family_diagnosis_age","Confirm each relative's age at diagnosis.","missing");
       if (r.death === "yes" && (numeric(r.deathAge) === null || numeric(r.deathAge)<0 || numeric(r.deathAge)>120)) issue("family_death_age","Confirm each relative's age at death.","missing");
       if (r.disease === "cancer" && (!["male","female"].includes(r.sex)||!present(r.cancerType)||r.cancerType === "unknown")) issue("family_cancer_type","Confirm the family cancer type.","missing");
+      if (r.death === "yes" && numeric(r.diagnosisAge)!==null && numeric(r.deathAge)!==null && Number(r.diagnosisAge)>Number(r.deathAge)) issue("family_age_order","A relative's diagnosis age cannot exceed the age when that disease caused death. Confirm both ages.","missing");
       if (["huntington","polycystic_kidney","other"].includes(r.disease)) issue("inherited_risk","This family condition needs carrier review; it is outside the modeled cardiovascular/cancer criteria.");
+    }
+    const relatives=new Map();
+    for (const r of family) {
+      if (typeof r.member!=="string" || !r.member.trim()) continue;
+      const key=r.member.trim().toLowerCase(),samePerson=relatives.get(key)||[];samePerson.push(r);relatives.set(key,samePerson);
+    }
+    for (const rows of relatives.values()) {
+      if (new Set(rows.map(r=>r.member)).size>1) issue("family_member_labels","Equivalent relative labels use different capitalization or spacing. Reconcile the same person's entries before counting relatives.");
+      if (new Set(rows.map(r=>r.relation)).size>1 || new Set(rows.filter(r=>r.death === "yes" && numeric(r.deathAge)!==null).map(r=>Number(r.deathAge))).size>1 ||
+          new Set(rows.filter(r=>r.disease === "cancer" && ["male","female"].includes(r.sex)).map(r=>r.sex)).size>1) issue("family_person_conflict","Entries for the same relative disagree about relationship, age at death or sex. Reconcile the records.");
     }
     const conds = medical();
     nicotine(conds);
@@ -274,7 +292,10 @@ const Engine = (() => {
       }
       if (p.id === "corebridge_legacy" && duis.some(r=>within(r.date,24,asOf))) issue("core_dui","DUI within 24 months fails SimpliNow Legacy screening.","decline","D106",[4]);
       if (p.id.startsWith("foresters_") && p.route === "Non-medical" && (duis.some(r=>within(r.date,12,asOf)) || duis.length>=2 && duis.some(r=>within(r.date,60,asOf)))) issue("foresters_nonmed_dui","This DUI history fails Foresters' non-medical route; fully underwritten consideration requires a separate assessment.","decline","D152",[18]);
-      if (["sbli_easytrak","moo_tle","moo_iule"].includes(p.id) && duis.some(r=>within(r.date,60,asOf))) issue("simplified_dui","DUI within five years fails this simplified product's screen.","decline",p.id === "sbli_easytrak" ? "D347" : "D295",p.id === "sbli_easytrak" ? [11] : [7,22]);
+      if (p.id === "sbli_easytrak" && duis.some(r=>within(r.date,60,asOf))) issue("simplified_dui","DUI within five years fails this simplified product's screen.","decline","D347",[11]);
+      // The Express guide refers to convictions and state-specific application timeframes.
+      // A generic conviction/event date cannot establish that application screen.
+      if (["moo_tle","moo_iule"].includes(p.id) && duis.some(r=>within(r.date,60,asOf))) issue("moo_driving_application","A DUI/DWI event within the guide's general five-year window requires confirmation of the conviction outcome/date and the current application timeframe for the selected state. The guide allows state variations; this event alone does not establish a product exclusion.","review","M-SI-2026",[7]);
       if (p.id === "uhl_otherterm" && rows.some(r=>["dui","suspension","revocation"].includes(r.type)&&within(r.date,60,asOf))) issue("uhl_partb_driving","This five-year driving history fails Part B term plans. Simple Term 20 DLX has a separate application screen.","decline","D459",[7]);
       if (p.id === "transamerica_super") {
         if (duis.some(r=>within(r.date,12,asOf))) issue("ta_dui_1","DUI within one year fails Transamerica's published impairment screen.","decline","D370",[27]);
@@ -296,22 +317,38 @@ const Engine = (() => {
       for (const r of rows) {
         if (!["felony","misdemeanor","arrest"].includes(r.type) || !["convicted","pending","dismissed","other"].includes(r.disposition)) issue("criminal_detail","Confirm offense type and outcome for each criminal event.","missing");
         past(r.date,"charge or arrest");
-        if (r.disposition === "convicted") past(r.convictionDate,"conviction");
+        const convictionDateOK=r.disposition === "convicted" && past(r.convictionDate,"conviction");
+        const caseDatesConflict=r.disposition === "convicted" && date(r.date) && date(r.convictionDate) && r.convictionDate<r.date;
+        if (caseDatesConflict) issue("criminal_case_dates","The reported conviction precedes the charge/arrest date. Confirm that these dates describe the same case before applying a timing screen.","missing");
+        const beforeBirth=v=>date(v) && dobOK && v<d.dob;
+        const caseBeforeBirth=beforeBirth(r.date) || r.disposition === "convicted" && beforeBirth(r.convictionDate);
+        if (caseBeforeBirth) issue("criminal_birth","A reported criminal case date precedes the date of birth. Confirm both dates before applying a timing screen.","missing");
+        const convictionEvidenceOK=convictionDateOK && !caseDatesConflict && !caseBeforeBirth;
+        const releaseEvidence={};
         for (const key of ["jail","probation","parole"]) {
           if (!["yes","no"].includes(r[key])) issue("sentence_"+key,"Confirm whether jail, probation and parole were part of each sentence.","missing");
-          if (r[key] === "yes") past(r[key+"End"],key+" completion or release");
+          if (r[key] === "yes") {
+            const end=r[key+"End"],endDateOK=past(end,key+" completion or release");
+            const endBeforeConviction=r.disposition === "convicted" && date(end) && date(r.convictionDate) && end<r.convictionDate;
+            if (endBeforeConviction) issue("sentence_dates_"+key,"The reported "+key+" completion/release precedes the conviction. Reconcile the case and sentence dates before applying a release waiting period.","missing");
+            if (beforeBirth(end)) issue("sentence_birth_"+key,"The reported "+key+" completion/release precedes the date of birth. Confirm both dates.","missing");
+            releaseEvidence[key]=convictionEvidenceOK && endDateOK && !endBeforeConviction && !beforeBirth(end);
+          }
         }
+        // Hidden dates retained when a sentence answer changes to No/Unsure
+        // are inactive. They do not establish a release or waiting period.
+        const releaseWithin=(key,months)=>r[key] === "yes" && releaseEvidence[key] && within(r[key+"End"],months,asOf);
         if (r.disposition !== "convicted") {issue("criminal_disposition","A charge or arrest is not assumed to be a conviction; the carrier must assess the disclosed outcome.");continue;}
-        if (r.type === "felony") {
+        if (r.type === "felony" && convictionEvidenceOK) {
           if (["banner_flex","sbli_easytrak"].includes(p.id) && within(r.convictionDate,120,asOf)) issue("felony_10","Felony conviction within ten years fails this product's screen.","decline",p.sources[0],p.id === "sbli_easytrak" ? [11] : [11]);
           if (p.id === "moo_full" && within(r.convictionDate,120,asOf)) issue("moo_felony","MOO preferred and Standard Plus criteria exclude felony convictions within ten years; Standard/substandard requires review.","review","D282",[11,12,13]);
           if (p.id === "corebridge_legacy" && within(r.convictionDate,24,asOf)) issue("core_felony","Felony conviction within 24 months fails the SimpliNow Legacy screen.","decline","D106",[4]);
           if (p.id.startsWith("uhl_") && within(r.convictionDate,84,asOf)) issue("uhl_felony","Felony conviction within seven years fails the Texas term application screen.","decline","D459",[7]);
         }
-        if (p.id === "fg_quantum" && [r.jailEnd,r.probationEnd,r.paroleEnd].some(v=>within(v,12,asOf))) issue("fg_release","Release from jail, probation or parole within 12 months fails Quantum's screen.","decline","D141",[8]);
-        if (foresters && ((r.jail === "no" && within(r.probationEnd,12,asOf)) || (r.jail === "yes" && within(r.paroleEnd,60,asOf)))) issue("foresters_release","Foresters consideration starts one year after probation without jail, or five years after parole with jail.","decline","D152",[18]);
+        if (p.id === "fg_quantum" && ["jail","probation","parole"].some(key=>releaseWithin(key,12))) issue("fg_release","Release from jail, probation or parole within 12 months fails Quantum's screen.","decline","D141",[8]);
+        if (foresters && ((r.jail === "no" && releaseWithin("probation",12)) || (r.jail === "yes" && releaseWithin("parole",60)))) issue("foresters_release","Foresters consideration starts one year after probation without jail, or five years after parole with jail.","decline","D152",[18]);
         else if (foresters && r.jail === "yes" && r.parole !== "yes") issue("foresters_sentence","Jail history without a confirmed parole completion requires carrier consideration.","review","D152",[18]);
-        if (p.id === "transamerica_super" && [r.probationEnd,r.paroleEnd].some(v=>within(v,12,asOf))) issue("ta_release","Transamerica requires one year after probation/parole ends before reconsideration.","decline","D370",[26]);
+        if (p.id === "transamerica_super" && ["probation","parole"].some(key=>releaseWithin(key,12))) issue("ta_release","Transamerica requires one year after probation/parole ends before reconsideration.","decline","D370",[26]);
         if (p.id === "royal") issue("royal_criminal","The supplied Royal guide does not accept criminal background; confirm the current product/application.","review","D309",[15]);
         if (!["corebridge_legacy","banner_beyondterm","banner_flex","sbli_easytrak","uhl_simple20","uhl_otherterm"].includes(p.id)) issue("criminal_history_review","Past criminal history requires the carrier's case review after any published waiting period.");
       }
@@ -492,6 +529,20 @@ const Engine = (() => {
         if (!["yes","no"].includes(r.current)) issue("nicotine_current","Confirm whether each product is still used.","missing");
       }
       if (d.cotinineResult === "positive")issue("cotinine_conflict","A positive cotinine result needs reconciliation with all disclosed use before a class is estimated.");
+      // Establish a nicotine basis only from complete, internally consistent evidence.
+      // Invalid dates cannot be interpreted as use outside a carrier's lookback.
+      const nicotineEvidenceOK = !invalidLists.includes("nicotine") && d.cotinineResult !== "positive" &&
+        (d.nicotineHistory === "never" && rows.length === 0 ||
+         d.nicotineHistory === "yes" && d.nicotineComplete === "yes" && rows.length > 0 &&
+         rows.every(r=>["cigarette","cigar","pipe","chew","nicotine","vape","vape_no_nicotine","cessation"].includes(r.product) &&
+           date(r.lastDate) && r.lastDate <= asOf && ["yes","no"].includes(r.current) &&
+           (r.current !== "yes" || r.lastDate === asOf)));
+      if (!nicotineEvidenceOK) {
+        out.tobaccoBasis = "unknown";
+        out.domains.nicotine = {ceiling:null,detail:"Nicotine history is incomplete or inconsistent. Confirm the history answer, every product and last-use date, current use, completeness and any conflicting cotinine evidence before assigning a tobacco basis or class limit.",source:source(p.sources[0])};
+        issue("nicotine_evidence","Complete and reconcile the nicotine history before assigning a tobacco basis or class limit.");
+        return;
+      }
       if(p.nicotineUnconfirmed) {
         const noUse=d.nicotineHistory === "never" && rows.length===0 && d.cotinineResult!=="positive";
         out.tobaccoBasis=noUse ? "non_tobacco" : "unknown";
@@ -558,31 +609,60 @@ const Engine = (() => {
     }
     function build() {
       const h = num("heightIn","height in inches",36,100), w = num("weightLb","weight in pounds",30,1000);
-      need("weightChange","weight change in the last 12 months",["none","loss","gain"]);
-      let ratedWeight=w,possibleWeight=null;
+      const historyOK=need("weightChange","weight change in the last 12 months",["none","loss","gain"]);
+      let ratedWeight=w,possibleWeight=null,evidenceOK=historyOK;
       if (d.weightChange === "loss" || d.weightChange === "gain") {
-        const prior = num("priorWeightLb","previous weight",30,1000),changeDateOK=past(d.weightChangeDate,"weight change");
-        need("weightCause","weight-change cause",["intentional","illness","pregnancy","surgery","unknown"]);
+        const prior=num("priorWeightLb","previous weight",30,1000),changeDateOK=past(d.weightChangeDate,"weight change");
+        const causeOK=need("weightCause","weight-change cause",["intentional","illness","pregnancy","surgery","unknown"]);
+        const directionOK=w!==null && prior!==null && (d.weightChange === "loss" ? prior>w : prior<w);
+        if (w!==null && prior!==null && !directionOK) issue("weight_conflict","The reported weight change conflicts with the current/previous weights.");
+        const windowOK=changeDateOK && within(d.weightChangeDate,12,asOf,true);
+        if (changeDateOK && !windowOK) issue("weight_window","The reported change is outside the stated last 12 months. Reconcile the history before using a rating weight.");
+        const birthOK=dobOK && changeDateOK && d.weightChangeDate>=d.dob;
+        if (dobOK && changeDateOK && !birthOK) issue("weight_birth","A weight-change date cannot precede the date of birth. Confirm both dates.","missing");
+        evidenceOK=evidenceOK && directionOK && windowOK && birthOK && causeOK && d.weightCause === "intentional";
         if (d.weightCause !== "intentional") {
-          if (p.id === "corebridge_legacy" && d.weightCause === "unknown" && d.weightChange === "loss" && within(d.weightChangeDate,12,asOf)) benefit("graded","Unexplained weight loss within 12 months supports Graded screening.","D106",[6]);
+          // Keep the independently supported unexplained-loss screen, without
+          // treating its current-weight chart as a confirmed benefit design.
+          if (p.id === "corebridge_legacy" && d.weightCause === "unknown" && d.weightChange === "loss" && directionOK && birthOK && within(d.weightChangeDate,12,asOf)) benefit("graded","Unexplained weight loss within 12 months supports Graded screening.","D106",[6]);
           else issue("weight_cause","Weight change due to illness, pregnancy, surgery or an unknown cause requires review.");
         }
-        if (w !== null && prior !== null && ((d.weightChange === "loss" && prior <= w) || (d.weightChange === "gain" && prior >= w))) issue("weight_conflict","The reported weight change conflicts with the current/previous weights.");
-        if (d.weightChange === "loss" && w!==null && prior!==null && prior > w && d.weightCause === "intentional") {
-          if (p.build === "banner" && prior-w>20 && within(d.weightChangeDate,12,asOf)) ratedWeight=w+(prior-w)/2;
-          else if (p.build === "foresters") {
-            if (!past(d.stableSince,"weight stability")) return;
-            if (d.stableSince > shift(asOf,-12)) ratedWeight=w+(prior-w)/2;
+        if (d.weightChange === "loss" && directionOK && d.weightCause === "intentional") {
+          if (p.build === "banner" && prior-w>20 && within(d.weightChangeDate,12,asOf)) {
+            if (evidenceOK) ratedWeight=w+(prior-w)/2;
+          } else if (p.build === "foresters") {
+            const stabilityOK=past(d.stableSince,"weight stability");
+            const orderOK=stabilityOK && changeDateOK && d.stableSince>=d.weightChangeDate;
+            if (stabilityOK && changeDateOK && !orderOK) issue("weight_stability_order","Weight stability cannot start before the reported weight change. Confirm both dates.","missing");
+            evidenceOK=evidenceOK && orderOK;
+            if (evidenceOK && d.stableSince > shift(asOf,-12)) ratedWeight=w+(prior-w)/2;
           } else if (["beyond","flex"].includes(p.build)) {
-            if (changeDateOK && within(d.weightChangeDate,12,asOf,true)) {
+            if (evidenceOK) {
               possibleWeight=w+(prior-w)/2;
               issue("beyond_weight_adjustment","The carrier may add back half of intentional weight loss over the last 12 months. The adjusted weight is a possibility requiring review, not a confirmed rating weight.","review","D077",[3]);
-            } else if (changeDateOK) issue("beyond_weight_window","The reported loss date is more than 12 months ago. Confirm the answer about weight change in the last 12 months; no half-loss adjustment has been applied.","review","D077",[3]);
+            } else if (changeDateOK && !windowOK) issue("beyond_weight_window","The reported loss date is more than 12 months ago. Confirm the answer about weight change in the last 12 months; no half-loss adjustment has been applied.","review","D077",[3]);
+          } else {
+            issue("weight_loss_review","This product's weight-loss adjustment has not been reconciled; underwriting must review it.");
+            evidenceOK=false;
           }
-          else issue("weight_loss_review","This product's weight-loss adjustment has not been reconciled; underwriting must review it.");
         }
       }
-      if (h === null || w === null || !p.build) return;
+      if (!p.build) return;
+      // Only confirmed measurements and a consistent history can establish a
+      // class/table/benefit component. Recorded current values remain evidence.
+      evidenceOK=evidenceOK && h!==null && w!==null &&
+        (p.build !== "bmi" || age!==null) && (p.build !== "fg_quantum" || age!==null && ["male","female"].includes(d.sex));
+      if (!evidenceOK) {
+        const currentBmi=h!==null && w!==null ? w*703/(h*h) : null;
+        out.domains.build={ceiling:null,detail:"Build evidence is incomplete, inconsistent or awaiting review. Confirm height, current and prior weights, the direction, date and cause of change, and any required stability evidence before assigning a class limit or rating weight.",source:source(p.sources[0],["beyond","flex"].includes(p.build) ? [3] : undefined)};
+        if (currentBmi!==null) Object.assign(out.domains.build,{weight:w,bmi:currentBmi});
+        issue("build_evidence","Complete and reconcile height, weight and weight-change evidence before assigning a class limit or rating weight.");
+        // A recorded current BMI above these published upper limits remains an
+        // independent exclusion; no uncertain add-back is used to create one.
+        if (p.build === "flex" && currentBmi>55) issue("flex_bmi_decline","BMI exceeds the BeyondTermflex maximum.","decline","D077",[3]);
+        if (p.build === "bmi" && currentBmi>46) issue("bmi_decline","BMI is outside the published adult build range.","decline","D370",[12]);
+        return;
+      }
       const bmi = ratedWeight*703/(h*h);out.domains.build={bmi,weight:ratedWeight,source:source(p.sources[0],["beyond","flex"].includes(p.build) ? [3] : undefined)};
       if (possibleWeight!==null) {
         const possibleBmi=possibleWeight*703/(h*h);
@@ -676,8 +756,8 @@ const Engine = (() => {
       const sys=num("bpSys","systolic blood pressure",60,260),dia=num("bpDia","diastolic blood pressure",30,160);
       const total=num("cholTotal","total cholesterol",40,700),hdl=num("cholHdl","HDL cholesterol",5,200);
       const bpOK=past(d.bpDate,"blood-pressure measurement"),cholOK=past(d.cholDate,"cholesterol measurement");
-      need("bpBasis","basis of blood-pressure readings",["current","average_2yr"]);need("cholBasis","basis of cholesterol readings",["current","average_12mo","average_2yr"]);
-      yn("bpTreatment","blood-pressure treatment");yn("bpControl","well-controlled blood pressure");yn("cholTreatment","cholesterol treatment");
+      const bpBasisOK=need("bpBasis","basis of blood-pressure readings",["current","average_2yr"]),cholBasisOK=need("cholBasis","basis of cholesterol readings",["current","average_12mo","average_2yr"]);
+      const bpTreatmentOK=yn("bpTreatment","blood-pressure treatment"),bpControlOK=yn("bpControl","well-controlled blood pressure"),cholTreatmentOK=yn("cholTreatment","cholesterol treatment");
       if(d.bpTreatment === "yes" && !(d.conditions||[]).some(c=>c.id === "hypertension") || d.cholTreatment === "yes" && !(d.conditions||[]).some(c=>c.id === "cholesterol"))issue("vital_diagnosis","Treatment is reported but its related diagnosis is missing. Reconcile the medical history.");
       if((d.bpTreatment === "yes"||d.cholTreatment === "yes") && d.medicationHistory!=="yes")issue("vital_prescriptions","Treatment is reported but the prescription history is unanswered or says no. Confirm the medicines.");
       if (d.bpControl === "no") issue("bp_control","Blood pressure that is not well controlled requires review.");
@@ -685,20 +765,47 @@ const Engine = (() => {
       if (total!==null && hdl!==null && total<=hdl) issue("chol_conflict","Total cholesterol must exceed HDL cholesterol.","missing");
       if (["banner_opterm","fg_quantum"].includes(p.id) && (d.bpBasis!=="average_2yr" || p.id === "fg_quantum" && d.cholBasis!=="average_2yr")) issue("vital_average","The selected guide uses two-year averages; a single reading cannot establish the published preferred criteria.");
       if ((bpOK && !within(d.bpDate,12,asOf)) || (cholOK && !within(d.cholDate,12,asOf))) issue("vital_age","These readings are over a year old. Obtain current evidence before relying on a class estimate.","review",null);
+      // Numeric values alone cannot establish an age- or tobacco-specific limit.
+      // Reuse the existing date, freshness, average and treatment review checks.
+      const vitalEvidenceOK=sys!==null && dia!==null && total!==null && hdl!==null && age!==null &&
+        bpOK && cholOK && bpBasisOK && cholBasisOK && bpTreatmentOK && bpControlOK && cholTreatmentOK &&
+        (!p.id.startsWith("foresters_") || out.tobaccoBasis!=="unknown") &&
+        !out.issues.some(i=>["vital_diagnosis","vital_prescriptions","bp_control","bp_conflict","chol_conflict","vital_average","vital_age"].includes(i.id));
+      const vitalReviewDetail="Vital evidence is incomplete, inconsistent or awaiting review. Confirm both readings and their dates, freshness, required averages, treatment and control before assigning a class limit.";
+      if (!vitalEvidenceOK) {
+        out.domains.vitals={ceiling:null,detail:vitalReviewDetail,source:source(p.sources[0])};
+        issue("vital_evidence","Complete and reconcile blood-pressure and cholesterol evidence before assigning a class limit.");
+      }
       if (sys===null || dia===null || total===null || hdl===null || age===null) return;
+      // An absent or invalid history must not be treated as zero relevant events.
+      const familyEvidenceOK=!invalidLists.includes("family") && d.familyComplete === "yes" &&
+        (d.familyHistory === "no" && family.length === 0 || d.familyHistory === "yes" && family.length > 0) &&
+        !out.issues.some(i=>["family_detail","family_diagnosis_age","family_death_age","family_cancer_type","inherited_risk","family_age_order","family_person_conflict","family_member_labels"].includes(i.id)) &&
+        (!(["moo","fg"].includes(p.family) && family.some(r=>r.disease === "cancer")) || ["male","female"].includes(d.sex)) &&
+        (!(p.family === "banner" && age>70) || out.tobaccoBasis!=="unknown");
+      const drivingEvidenceOK=!invalidLists.includes("driving") && d.drivingComplete === "yes" &&
+        (d.drivingHistory === "no" && driving.length === 0 || d.drivingHistory === "yes" && driving.length > 0) &&
+        ["valid","never","suspended","revoked","expired"].includes(d.licenseStatus) &&
+        !out.issues.some(i=>["drive_type","speed_detail","drive_birth","speed_conflict"].includes(i.id)) &&
+        driving.every(r=>date(r.date) && r.date<=asOf);
+      const familyReviewDetail="Family history is incomplete, inconsistent or outside the modeled criteria. Confirm relatives, diagnoses, diagnosis/death ages, cancer details and the complete listing before assigning a class limit.";
+      const drivingReviewDetail="Driving history is incomplete or inconsistent. Confirm every event, its date and speed details, license status and the complete listing before assigning a class limit.";
+      if (!familyEvidenceOK) issue("family_evidence","Complete and reconcile family-history evidence before assigning a class limit.");
+      if (!drivingEvidenceOK) issue("driving_evidence","Complete and reconcile driving-history evidence before assigning a class limit.");
       const ratio=total/hdl;
       const candidates=(p.classes||CLASS_ORDER.slice(0,4)).filter(k=>(!p.preferredMinFace || face>=p.preferredMinFace || k === "standard")&&nicFit(k)&&buildFit(k)&&vitalFit(k)&&familyFit(k)&&drivingFit(k)&&residencyFit(k));
-      if (!candidates.length) issue("class_outside","The disclosed factors do not jointly meet a modeled published class. Standard or substandard requires individual review; a favorable range is withheld.");
-      else {
+      if (!candidates.length) {
+        if (vitalEvidenceOK && familyEvidenceOK && drivingEvidenceOK && !out.issues.some(i=>i.id === "build_evidence")) issue("class_outside","The disclosed factors do not jointly meet a modeled published class. Standard or substandard requires individual review; a favorable range is withheld.");
+      } else {
         const k=candidates[0];
         if(k === "standard" && p.id === "fg_quantum" && driving.length)issue("fg_driving_standard","Quantum Standard requires no rateable violations; assess the driving record.","review","D141",[10]);
         if(k === "standard" && p.id === "transamerica_super" && driving.some(r=>["dui","serious","reckless","suspension","revocation"].includes(r.type)))issue("ta_driving_standard","Standard driving is individually considered; a disclosed major violation needs review.","review","D370",[21,27]);
         out.healthClass=out.domains.build?.ceiling === "table" ? "table" : k;
         out.domains.classes={detail:"The result must meet all modeled criteria together; no favorable domain is used as a range endpoint.",supported:candidates,source:source(p.sources[0])};
       }
-      out.domains.vitals={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(vitalFit),detail:`Blood pressure ${sys}/${dia}; total cholesterol ${total}, HDL ${hdl}, ratio ${ratio.toFixed(2)}.`,source:source(p.sources[0])};
-      out.domains.family={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(familyFit),detail:"Disease, relation and age-at-death criteria applied only for this product.",source:source(p.sources[0])};
-      out.domains.driving={ceiling:(p.classes||CLASS_ORDER.slice(0,4)).find(drivingFit),detail:"Events counted separately over the product's actual 1-, 2-, 3-, 5- and 10-year windows.",source:source(p.sources[0])};
+      out.domains.vitals={ceiling:vitalEvidenceOK ? (p.classes||CLASS_ORDER.slice(0,4)).find(vitalFit) : null,detail:vitalEvidenceOK ? `Blood pressure ${sys}/${dia}; total cholesterol ${total}, HDL ${hdl}, ratio ${ratio.toFixed(2)}.` : vitalReviewDetail,source:source(p.sources[0])};
+      out.domains.family={ceiling:familyEvidenceOK ? (p.classes||CLASS_ORDER.slice(0,4)).find(familyFit) : null,detail:familyEvidenceOK ? "Disease, relation and age-at-death criteria applied only for this product." : familyReviewDetail,source:source(p.sources[0])};
+      out.domains.driving={ceiling:drivingEvidenceOK ? (p.classes||CLASS_ORDER.slice(0,4)).find(drivingFit) : null,detail:drivingEvidenceOK ? "Events counted separately over the product's actual 1-, 2-, 3-, 5- and 10-year windows." : drivingReviewDetail,source:source(p.sources[0])};
       function nicFit(k) {
         if (out.tobaccoBasis === "unknown") return false;
         if (out.tobaccoBasis === "tobacco") {
@@ -716,6 +823,7 @@ const Engine = (() => {
         return ceiling === "table" || ceiling && rank(k)>=rank(ceiling);
       }
       function vitalFit(k) {
+        if (!vitalEvidenceOK) return false;
         let key=k;
         if (out.tobaccoBasis === "tobacco" && p.id.startsWith("foresters_") && k === "preferred_plus") key="tobacco_plus";
         const t=band(v.bp[key],age);
@@ -735,6 +843,7 @@ const Engine = (() => {
         return true;
       }
       function familyFit(k) {
+        if (!familyEvidenceOK) return false;
         const deaths=(items,threshold)=>new Set(items.filter(r=>r.death === "yes" && numeric(r.deathAge)!==null && Number(r.deathAge)<threshold).map(r=>r.member)).size;
         if (p.family === "banner") {
           if (age>70 && out.tobaccoBasis === "non_tobacco") return true;
@@ -770,6 +879,7 @@ const Engine = (() => {
         return r.disease === "cancer" && r.sex && r.sex !== d.sex && (d.sex === "male" && ["breast","ovarian"].includes(r.cancerType) || d.sex === "female" && r.cancerType === "prostate");
       }
       function drivingFit(k) {
+        if (!drivingEvidenceOK) return false;
         const duis=driving.filter(r=>r.type === "dui");
         const major=driving.filter(r=>["dui","reckless","serious","suspension","revocation"].includes(r.type) || r.type === "speeding" && (Number(r.mphOver)>=30||Number(r.speed)>=90));
         const moving=driving.filter(r=>["minor","speeding","serious","reckless","dui"].includes(r.type));
