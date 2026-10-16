@@ -112,6 +112,12 @@ const Engine = (() => {
       const above = maxFace && face > maxFace;
       issue("face_limit","Requested coverage is outside this product/route's published face limits.","unavailable",above ? p.maxFaceSource || p.eligibilitySource || p.sources[0] : p.eligibilitySource || p.sources[0],above && p.maxFacePages ? p.maxFacePages : p.eligibilitySource ? p.eligibilityPages || [1] : undefined);
     }
+    // Two April 2026 TLE editions disagree after age 50. Within the higher
+    // envelope is a review range; neither edition proves which limit governs.
+    if (p.id === "moo_tle" && age !== null && face !== null && age >= 51 && age <= 75) {
+      const highlightMax = age <= 60 ? 250000 : 150000;
+      if (face > highlightMax && face <= maxFace) issue("moo_tle_amount_conflict","The April 2026 Term Life Express highlight sheet lists lower age-specific maximums than the April 2026 brochure and simplified-issue guide. Confirm the current limit for this age, selected term and application state before relying on the requested amount.","review","M-TLE-HIGHLIGHT",[1]);
+    }
     if (p.id.startsWith("foresters_") && p.route === "Non-medical") {
       const existing = num("existingCarrierCoverage","total existing Foresters coverage",0,1000000000);
       if (face !== null && existing !== null && maxFace && face + existing > maxFace) issue("face_total","Total existing and requested Foresters coverage exceeds the non-medical route limit.","unavailable","D152",[7]);
@@ -224,7 +230,10 @@ const Engine = (() => {
       if (p.id === "sbli_easytrak") {
         need("employment","work status",["employed","spouse","student","seeking","retired","other"]);
         if (["student","seeking"].includes(d.employment) && (face>100000 || d.employment === "student" && age>=26)) issue("sbli_employment","EasyTrak student/seeking-work limits are not met.","unavailable","D347",[4]);
-        if (d.employment === "retired" && (age<49 || face>250000)) issue("sbli_retired","EasyTrak retired eligibility requires age49+ and coverage at most $250,000.","unavailable","D347",[4]);
+        // The age leg needs a known age: an unentered date of birth must not read
+        // as age 0 and turn a missing fact into a carrier exclusion.
+        if (d.employment === "retired" && (age!==null && age<49 || face>250000)) issue("sbli_retired","EasyTrak retired eligibility requires age49+ and coverage at most $250,000.","unavailable","D347",[4]);
+        else if (d.employment === "retired" && age===null && face!==null && face<=250000) issue("sbli_retired_age","Confirm the applicant's age before screening EasyTrak retired eligibility; the published minimum issue age is 49.","review","D347",[4]);
         if (d.employment === "other") issue("sbli_work_review","This work status requires EasyTrak eligibility review.","review","D347",[4]);
         if (face !== null && face % 1000 !== 0) issue("sbli_face_increment","EasyTrak coverage is offered in $1,000 increments. Confirm a supported amount; no rounding is assumed.","unavailable","SB-ET-SPECS",[1]);
         if (d.employment === "employed") {
@@ -242,8 +251,13 @@ const Engine = (() => {
       }
       if (p.id === "corebridge_legacy") {
         const existing=num("existingCarrierCoverage","existing AGL GIWL/SIWL coverage",0,1000000000);
-        const levelMax=age<=60?25000:age<=70?30000:35000;
-        if(face>levelMax || existing!==null && face+existing>35000 || out.benefitTier === "graded" && existing!==null && face+existing>25000) issue("core_amount","The requested amount / total existing AGL coverage exceeds the source benefit-design limit.","unavailable","D105",[7,9]);
+        // The Level maximum depends on the issue age: 25,000 at 60 or less, 30,000 at
+        // 61-70 and 35,000 at 71+. An unknown age cannot select one, so only an amount
+        // above every published maximum is excluded; an in-between amount is a review.
+        const levelMax=age!==null?age<=60?25000:age<=70?30000:35000:null;
+        const aboveEveryLimit=levelMax===null&&face!==null&&face>35000;
+        if(aboveEveryLimit || levelMax!==null && face>levelMax || existing!==null && face+existing>35000 || out.benefitTier === "graded" && existing!==null && face+existing>25000) issue("core_amount","The requested amount / total existing AGL coverage exceeds the source benefit-design limit.","unavailable","D105",[7,9]);
+        else if(levelMax===null && face!==null && face>25000) issue("core_amount_age","Confirm the issue age before screening this amount; the published Level maximum is 25,000 at age 60 or less, 30,000 at 61-70 and 35,000 at 71+.","review","D105",[7]);
         if(age>=71&&out.tobaccoBasis === "tobacco"&&out.benefitTier === "level")issue("core_level_smoker","The supplied product guide does not offer Level benefits to smokers aged71–80.","unavailable","D105",[7]);
         if(d.replacement === "yes" && out.benefitTier === "graded")issue("core_graded_replacement","Replacement is permitted only for the Level design in this supplied guide.","unavailable","D105",[9]);
       }

@@ -54,4 +54,6 @@ if (index.includes('href="css/') || index.includes('src="js/') || index.includes
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, index);
-console.log("Built " + path.relative(ROOT, OUT) + " (" + index.length + " bytes)");
+// Byte length, not String length: the artifact is UTF-8, so multi-byte
+// punctuation would report a size that does not match the file on disk.
+console.log("Built " + path.relative(ROOT, OUT) + " (" + Buffer.byteLength(index) + " bytes)");

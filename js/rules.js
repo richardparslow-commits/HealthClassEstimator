@@ -204,6 +204,16 @@ const RULE_SOURCES = {
     "file": "Mutual of Omaha/moo-simplified-issue-life-uw-guide-updated-91625.pdf",
     "sha256": "c5e4e64c4d4d8f2665b64cb87462ce4b5612fffef62d042bd389f8dadd4b82fb"
   },
+  "M-TLE-HIGHLIGHT": {
+    "title": "Mutual of Omaha Term Life Express highlight sheet",
+    "edition": "285243_0426 (April 2026); current carrier-hosted copy checked 2026-10-11; conflicts with 283976_0426 and 618352_0426 at ages 51–75",
+    "pages": [
+      1
+    ],
+    "file": "Mutual of Omaha/MOO Express2.pdf",
+    "url": "https://producer.mutualofomaha.com/enterprise/wcm/connect/producer.mutualofomaha.com-9968/a7288831-24c5-4af7-9841-21624a43a8dc/285243_0918-term-life-express-highlight-sheet.pdf?CVID=mSN44vj&MOD=AJPERES",
+    "sha256": "9c7391b50f4878df58ed907ce6809a899997fdf202b40ed2d9c01bed7654df69"
+  },
   "D299": {
     "title": "Mutual of Omaha Term Life Express brochure",
     "edition": "283976_0426 (April 2026)",
@@ -1502,10 +1512,11 @@ const PRODUCT_RULES = Object.fromEntries([
     "route": "Simplified issue",
     "sources": [
       "M-SI-2026",
-      "D299"
+      "D299",
+      "M-TLE-HIGHLIGHT"
     ],
     "status": "partial",
-    "reviewed": "2026-10-10",
+    "reviewed": "2026-10-11",
     "minAge": 18,
     "maxAge": 75,
     "ageBasis": "last",
@@ -1534,7 +1545,7 @@ const PRODUCT_RULES = Object.fromEntries([
     "eligibilityPages": [
       2
     ],
-    "scopeNote": "The April 2026 brochure supports a $25,000 minimum, age-dependent face limits and 10/15/20/30-year terms. It does not establish every term-specific issue-age or class rule. Confirm the current application, selected term at the issue age, medical combinations and state variations with Mutual of Omaha; a permitted duration does not establish eligibility."
+    "scopeNote": "The April 2026 brochure and simplified-issue guide list maximums of $550,000 at 18–50, $450,000 at 51–60 and $350,000 at 61–75. The April 2026 highlight sheet agrees at 18–50 but instead lists $250,000 at 51–60 and $150,000 at 61–75. Amounts in that difference require confirmation of the current carrier limit; neither source is silently treated as superseding the other. The $25,000 minimum and offered 10/15/20/30-year durations are documented, but selected-term issue ages, actual class and medical combinations remain under review. Obtain the current application and applicable forms for the state where the owner signs; the national guide expressly allows state-specific timeframes."
   },
   {
   "id": "moo_iule",

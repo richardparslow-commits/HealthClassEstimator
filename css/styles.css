@@ -573,7 +573,7 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   border-top: 1px solid var(--line);
 }
 .footer-links-label { font-weight: 600; }
-.footer-links-sep { color: var(--line); }
+.footer-links-sep { color: var(--muted); }
 .footer-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .footer-links a:hover { color: var(--navy); }
 /* Broker contact CTA — distinct from the plain footer text links so the
@@ -707,6 +707,23 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 }
 
 /* ---- Print ----------------------------------------------------------- */
+/* Visually hidden, still announced: keeps a table's caption out of the layout
+   while giving the table its accessible name. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.table-scroll:focus-visible { outline: 3px solid #d79124; outline-offset: 3px; }
+
 @media print {
   .app-header, .steps-nav, .app-footer, .btn, .no-print { display: none !important; }
   .app-main { padding: 0; max-width: 100%; }

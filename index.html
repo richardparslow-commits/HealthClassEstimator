@@ -16,7 +16,7 @@
 <div class="ack-gate hidden" id="ack-gate" role="dialog" aria-modal="true" aria-labelledby="ack-title">
   <div class="ack-card">
     <div class="ack-brand">HealthClassEstimator</div>
-    <h2 id="ack-title">Before you continue</h2>
+    <h2 id="ack-title" tabindex="-1">Before you continue</h2>
     <p class="ack-sub">Acknowledgment &amp; disclaimer &mdash; please read before using this tool.</p>
 
     <div class="ack-section">
@@ -121,7 +121,9 @@
 <main class="app-main">
   <div id="step-content"></div>
 
-  <div id="results-content" class="hidden"></div>
+  <!-- role/aria-labelledby gives the result view a name; focus is moved to its
+       heading when it replaces the interview, so it is announced once. -->
+  <div id="results-content" class="hidden" role="region" aria-labelledby="result-heading"></div>
 </main>
 
 <footer class="app-footer">
@@ -151,7 +153,7 @@
   </div>
 </footer>
 
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
 <script>
   /* Single cache-busting version for all app scripts. Bump HCE_VERSION once
@@ -160,7 +162,7 @@
      in order when async=false, preserving the rules -> state -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "78";
+    var HCE_VERSION = "79";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");

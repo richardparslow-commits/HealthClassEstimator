@@ -2,8 +2,8 @@
 const fs=require("fs"),path=require("path"),vm=require("vm"),assert=require("node:assert/strict");
 const root=path.resolve(__dirname,"..");
 const ctx=vm.createContext({Date,console});
-vm.runInContext(["rules","state","engine"].map(n=>fs.readFileSync(path.join(root,"js",n+".js"),"utf8")).join("\n")+"\nglobalThis.api={Engine,InterviewState,PRODUCT_RULES,BUILD_CHARTS};",ctx);
-const {Engine,InterviewState,PRODUCT_RULES,BUILD_CHARTS}=ctx.api;
+vm.runInContext(["rules","state","engine"].map(n=>fs.readFileSync(path.join(root,"js",n+".js"),"utf8")).join("\n")+"\nglobalThis.api={Engine,InterviewState,PRODUCT_RULES,BUILD_CHARTS,RULE_SOURCES};",ctx);
+const {Engine,InterviewState,PRODUCT_RULES,BUILD_CHARTS,RULE_SOURCES}=ctx.api;
 const asOf="2026-10-08";
 const base={...InterviewState.empty(),productId:"banner_opterm",dob:"1991-10-08",sex:"male",state:"TX",faceAmount:500000,termYears:20,existingCoverage:0,existingCarrierCoverage:0,policyPurpose:"income",income:120000,replacement:"no",financing:"no",employment:"employed",occupation:"Office worker",hazardousOccupation:"no",aviation:"no",hazardousSports:"no",militaryDeployment:"no",forestersDeployment:"no",citizenship:"citizen",usResident:"yes",usSince:"1991-10-08",intentStay:"yes",foreignResidence:"no",travelHistory:"no",healthInsurance:"yes",nicotineHistory:"never",heightIn:70,weightLb:165,weightChange:"none",bpSys:120,bpDia:78,bpDate:"2026-09-01",bpBasis:"average_2yr",bpTreatment:"no",bpControl:"yes",cholTotal:190,cholHdl:60,cholDate:"2026-09-01",cholBasis:"average_2yr",cholTreatment:"no",medicalHistory:"no",medicalComplete:"yes",hospitalHistory:"no",surgeryHistory:"no",pendingCare:"no",activeSymptoms:"no",oxygen:"no",dialysis:"no",adlAssistance:"no",careFacility:"no",homeHealth:"no",terminalIllness:"no",substanceHistory:"no",marijuana:"none",priorInsuranceAdverse:"no",disabled:"no",medicationHistory:"no",medicationsComplete:"yes",drivingHistory:"no",drivingComplete:"yes",licenseStatus:"valid",criminalHistory:"no",criminalComplete:"yes",incarcerated:"no",pendingCharges:"no",probationCurrent:"no",paroleCurrent:"no",outstandingRestitution:"no",familyHistory:"no",familyComplete:"yes",historyConfirmed:"yes"};
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -895,4 +895,50 @@ const criminalRecent=criminalEvidenceRun("sbli_easytrak",{...criminalEvidenceEve
 const criminalActive=criminalEvidenceRun("transamerica_super",{...criminalEvidenceEvent,date:"1980-01-01"},{incarcerated:"yes"});equal(criminalActive.status,"decline_screen","Independent current incarceration exclusion survives case uncertainty");
 const criminalAmount=criminalEvidenceRun("sbli_easytrak",{...criminalEvidenceEvent,date:"1980-01-01"},{faceAmount:1});equal(criminalAmount.status,"unavailable","Independent amount exclusion governs uncertain case dates");
 
+// Missing evidence must never be read as a numeric zero. An unentered date of birth
+// cannot satisfy "age under 49" and cannot select the strictest published amount
+// limit — the same rule the Quantum missing-DOB cap already follows.
+for(const [id,changes,flag] of [
+ ["sbli_easytrak",{employment:"retired",faceAmount:250000},"sbli_retired"],
+ ["corebridge_legacy",{faceAmount:30000,policyPurpose:"final_expense"},"core_amount"],
+]){
+ const r=run(id,{dob:"",...changes});
+ equal(r.flags.includes(flag),false,id+" unknown age cannot assert the published exclusion");
+ equal(r.status,"manual_review",id+" unknown age withholds a determination");
+ ok(r.issues.some(i=>i.status==="missing"),id+" unknown age reports the missing fact");
+}
+ok(run("sbli_easytrak",{dob:"",employment:"retired",faceAmount:250000}).flags.includes("sbli_retired_age"),"EasyTrak retired screen asks for the missing age");
+ok(run("corebridge_legacy",{dob:"",faceAmount:30000,policyPurpose:"final_expense"}).flags.includes("core_amount_age"),"SimpliNow Legacy amount screen asks for the missing age");
+equal(run("sbli_easytrak",{dob:"",employment:"retired",faceAmount:250001}).status,"unavailable","EasyTrak retired cap above $250,000 still excludes without an age");
+equal(run("corebridge_legacy",{dob:"",faceAmount:35001,policyPurpose:"final_expense"}).status,"unavailable","Amount above every published maximum still excludes without an age");
+equal(run("sbli_easytrak",{dob:dobForAge(48),employment:"retired",faceAmount:250000}).status,"unavailable","EasyTrak retired under age 49 still excludes");
+for(const [age,face,excluded] of [[55,25000,false],[55,25001,true],[65,30000,false],[65,30001,true],[72,35000,false],[72,35001,true]]){
+ const r=run("corebridge_legacy",{dob:dobForAge(age),faceAmount:face,policyPurpose:"final_expense"});
+ equal(r.flags.includes("core_amount"),excluded,"SimpliNow Legacy Level maximum at age "+age+" for $"+face);
+ equal(r.flags.includes("core_amount_age"),false,"Known age at "+age+" never defers the amount screen");
+}
+
+// Two April 2026 Term Life Express editions disagree at 51-75. The difference is a
+// review range inside the higher envelope: never a silent limit swap, and never a
+// replacement for the published exclusion above both editions.
+const tleAt=(age,face)=>run("moo_tle",{dob:String(2026-age).padStart(4,"0")+"-01-01",faceAmount:face});
+const tleConflict=out=>out.issues.find(i=>i.id==="moo_tle_amount_conflict");
+for(const [age,face] of [[51,250001],[55,300000],[60,250001],[61,150001],[70,200000],[75,150001]]){
+  const r=tleAt(age,face),issue=tleConflict(r);
+  ok(issue,"TLE highlight-sheet conflict is screened at age "+age);
+  equal(issue.status,"review","TLE conflict is a review screen, not a determination");
+  equal(issue.source.id,"M-TLE-HIGHLIGHT","TLE conflict cites the highlight sheet");
+  equal(issue.source.pages[0],1,"TLE conflict cites the highlight sheet's physical page 1");
+  equal(r.healthClass,null,"TLE conflict withholds a class at age "+age);
+  equal(r.status,"manual_review","TLE conflict cannot resolve as unavailable at age "+age);
+}
+for(const [age,face] of [[51,250000],[55,250000],[60,250000],[61,150000],[70,150000],[75,150000],[50,300000],[50,550000]]){
+  equal(!!tleConflict(tleAt(age,face)),false,"TLE amount inside the agreed envelope is not a conflict at age "+age);
+}
+const tleAboveBoth=tleAt(60,500000);
+equal(!!tleConflict(tleAboveBoth),false,"Above both editions is an exclusion, not a conflict");
+equal(tleAboveBoth.status,"unavailable","Amount above both editions keeps the published exclusion");
+ok(PRODUCT_RULES.moo_tle.sources.includes("M-TLE-HIGHLIGHT"),"TLE entry lists the highlight sheet");
+ok(!!RULE_SOURCES["M-TLE-HIGHLIGHT"]&&RULE_SOURCES["M-TLE-HIGHLIGHT"].sha256,"Highlight-sheet record is versioned with its digest");
+ok(PRODUCT_RULES.moo_tle.scopeNote.includes("highlight sheet"),"TLE scope note documents the unreconciled difference");
 console.log(`Passed ${checks} source-derived underwriting assertions.`);

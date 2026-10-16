@@ -3,7 +3,7 @@
 const App = (() => {
   const STORAGE_KEY="hce_state_v2", LEGACY_KEY="hce_state_v1";
   const $=sel=>document.querySelector(sel);
-  let state=InterviewState.empty(), step=0, results=false, migrationNotice=false;
+  let state=InterviewState.empty(), step=0, results=false, migrationNotice=false, focusStepHeading=false;
   const yesNo=[["yes","Yes"],["no","No"],["unknown","Unsure"]];
   const states="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ").map(s=>[s,s]);
   const conditions=[
@@ -38,6 +38,9 @@ const App = (() => {
   function date(parent,label,key,opts={}) {return field(parent,label,key,null,{type:"date",...opts});}
   function text(parent,label,key,opts={}) {return field(parent,label,key,null,opts);}
   function row(parent) {const r=node("div","field-row");parent.appendChild(r);return r;}
+  // A horizontally scrollable table needs to be reachable by keyboard and to
+  // carry a name; both are required before the region is announced.
+  function labelledRegion(label,table) {const region=node("div","table-scroll");region.setAttribute("role","region");region.setAttribute("tabindex","0");region.setAttribute("aria-label",label);region.appendChild(table);return region;}
   function paragraph(parent,text,cls="card-sub") {parent.appendChild(node("p",cls,text));}
   function button(label,fn,cls="btn btn-ghost") {const b=node("button",cls,label);b.type="button";b.addEventListener("click",fn);return b;}
   function listEditor(parent,key,label,renderRow) {
@@ -235,7 +238,8 @@ const App = (() => {
   function showResults() {
     const target=$("#results-content");target.replaceChildren();target.classList.remove("hidden");$("#step-content").classList.add("hidden");
     const out=Engine.run(state.productId,state),hero=node("section","result-hero");
-    hero.appendChild(node("div","hero-label",out.carrier+" — "+out.product+" — "+out.route));hero.appendChild(node("h2",null,resultLabel(out)));
+    hero.appendChild(node("div","hero-label",out.carrier+" — "+out.product+" — "+out.route));
+    const resultHeading=node("h2",null,resultLabel(out));resultHeading.id="result-heading";resultHeading.setAttribute("tabindex","-1");hero.appendChild(resultHeading);
     paragraph(hero,out.status === "estimated" ? "Preliminary result from the modeled source criteria. Carrier records and the current application can change this estimate." : "A final health class or benefit tier is withheld. Review the reasons below with the carrier.","hero-meaning");
     paragraph(hero,out.confidence.level+" · Assessment date "+out.assessed+" · "+(out.age == null ? "Age unconfirmed" : "Carrier age "+out.age+" ("+out.ageBasis+" birthday)"),"hero-meaning");target.appendChild(hero);
     if(out.tableRating||out.flatExtra){const box=node("section","card");box.appendChild(node("h3",null,"Separate rating components"));if(out.tableRating)paragraph(box,"Build component: Table "+out.tableRating.label+(out.tableRating.extraPercent?" ("+out.tableRating.extraPercent+"% extra rating)":"")+". Other factors and the final table remain subject to underwriting.");if(out.flatExtra)paragraph(box,out.flatExtra.basis+". "+sourceText(out.flatExtra.source));target.appendChild(box);}
@@ -244,25 +248,30 @@ const App = (() => {
     const ul=node("ul","decision-list");out.issues.forEach(i=>{const li=node("li");li.appendChild(node("span",null,i.text));li.appendChild(node("small","source-reference",sourceText(i.source)));ul.appendChild(li);});why.appendChild(ul);out.notes.forEach(t=>paragraph(why,t));target.appendChild(why);
     if(out.kind === "final_expense" && out.status === "estimated"){const tier=node("section","card");tier.appendChild(node("h3",null,"Benefit design"));paragraph(tier,out.benefitTier === "graded" ? "The supplied guide pays 110% of premiums for death in the first two years, then the face amount, subject to policy terms. This is a benefit design, not a preferred health class." : "The source's Level benefit design provides the full benefit from the first year, subject to policy terms. This is separate from premium and tobacco classification.");target.appendChild(tier);}
     const factors=node("section","card");factors.appendChild(node("h3",null,"How the factors limit this screen"));
-    const factorTable=node("table","domain-table"),factorHead=node("thead"),fh=node("tr");["Factor","Recorded evidence","Modeled limit"].forEach(t=>fh.appendChild(node("th",null,t)));factorHead.appendChild(fh);factorTable.appendChild(factorHead);const fb=node("tbody");
+    const factorTable=node("table","domain-table");factorTable.appendChild(node("caption","visually-hidden","How the factors limit this screen"));const factorHead=node("thead"),fh=node("tr");["Factor","Recorded evidence","Modeled limit"].forEach(t=>{const th=node("th",null,t);th.setAttribute("scope","col");fh.appendChild(th);});factorHead.appendChild(fh);factorTable.appendChild(factorHead);const fb=node("tbody");
     Object.entries(out.domains).filter(([key])=>key!=="classes").forEach(([key,v])=>{const tr=node("tr"),label={build:"Height / weight",nicotine:"Tobacco / nicotine",vitals:"Blood pressure / cholesterol",family:"Family history",driving:"Driving",medical:"Medical"}[key]||key;
       tr.appendChild(node("td",null,label));const evidence=node("td",null,v.detail||("Weight used: "+v.weight+" lb; BMI "+v.bmi?.toFixed(2)));evidence.appendChild(node("small","source-reference",sourceText(v.source)));tr.appendChild(evidence);
       const limit=out.kind === "final_expense" ? key === "nicotine" ? out.tobaccoBasis === "non_tobacco" ? "Non-tobacco basis" : out.tobaccoBasis === "tobacco" ? "Tobacco basis" : "Tobacco basis needs review" : "Benefit screen / carrier review" : v.ceiling?CLASS_LABELS[v.ceiling]:"Carrier review";
-      tr.appendChild(node("td",null,limit));fb.appendChild(tr);});factorTable.appendChild(fb);const factorScroll=node("div","table-scroll");factorScroll.appendChild(factorTable);factors.appendChild(factorScroll);target.appendChild(factors);
+      tr.appendChild(node("td",null,limit));fb.appendChild(tr);});factorTable.appendChild(fb);factors.appendChild(labelledRegion("How the factors limit this screen",factorTable));target.appendChild(factors);
     const comparisons=Engine.compare(state);
     if(comparisons.length>1){const box=node("section","card");box.appendChild(node("h3",null,"Other products with the same coverage type and route"));paragraph(box,"Listed in carrier order. Term length, riders, price and availability still require confirmation; these are not ranked offers.");
-      const table=node("table","domain-table"),head=node("tr");["Product","Screen result","Source scope"].forEach(t=>head.appendChild(node("th",null,t)));const th=node("thead");th.appendChild(head);table.appendChild(th);const body=node("tbody");
-      comparisons.forEach(o=>{const tr=node("tr");tr.appendChild(node("td",null,o.carrier+" — "+o.product));tr.appendChild(node("td",null,resultLabel(o)));tr.appendChild(node("td",null,o.verification === "criteria" ? "Selected criteria reconciled" : "Carrier review"));body.appendChild(tr);});table.appendChild(body);const scroll=node("div","table-scroll");scroll.appendChild(table);box.appendChild(scroll);target.appendChild(box);}
+      const table=node("table","domain-table");table.appendChild(node("caption","visually-hidden","Other products with the same coverage type and route"));const head=node("tr");["Product","Screen result","Source scope"].forEach(t=>{const cell=node("th",null,t);cell.setAttribute("scope","col");head.appendChild(cell);});const th=node("thead");th.appendChild(head);table.appendChild(th);const body=node("tbody");
+      comparisons.forEach(o=>{const tr=node("tr");tr.appendChild(node("td",null,o.carrier+" — "+o.product));tr.appendChild(node("td",null,resultLabel(o)));tr.appendChild(node("td",null,o.verification === "criteria" ? "Selected criteria reconciled" : "Carrier review"));body.appendChild(tr);});table.appendChild(body);box.appendChild(labelledRegion("Other products with the same coverage type and route",table));target.appendChild(box);}
     const refs=node("section","card");refs.appendChild(node("h3",null,"Source editions used"));out.sources.forEach(s=>{paragraph(refs,s.id+" · "+s.title+" · "+s.edition+(s.pages?.length ? " · Physical PDF pages "+s.pages.join(", ") : " · Web reference"));if(s.url){const a=node("a",null,"Carrier source");a.href=s.url;a.target="_blank";a.rel="noopener noreferrer";refs.appendChild(a);}});target.appendChild(refs);
     const actions=node("section","card");actions.append(button("Print this result",()=>window.print()),button("Delete saved answers and start over",reset));target.appendChild(actions);
     $("#btn-next").classList.add("hidden");$("#btn-back").textContent="← Edit answers";$("#btn-back").disabled=false;
+    // The button that asked for the result is now hidden, so focus would fall to
+    // the document. Enter the result instead: the heading carries its name and is
+    // announced once (a live region as well would speak the same result twice).
+    resultHeading.focus();
   }
   function render() {
     const nav=$("#steps-nav");nav.replaceChildren();steps.forEach(([label],i)=>{const b=button((i+1)+". "+label,()=>{step=i;results=false;render();},"step-pill"+(i===step&&!results?" active":""));if(i===step&&!results)b.setAttribute("aria-current","step");nav.appendChild(b);});
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
     if(migrationNotice)paragraph(target,"Your previous draft was imported. Select a product and reconfirm the new histories; earlier unchecked boxes and mild/control defaults are not treated as answers.","migration-notice");
-    const card=node("section","card");card.appendChild(node("h2",null,steps[step][0]));steps[step][1](card);target.appendChild(card);
+    const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
+    if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}
     $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"Estimate →":"Next →";
   }
   function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}render();}
@@ -270,6 +279,17 @@ const App = (() => {
     const gate=$("#ack-gate"),check=$("#ack-check"),accept=$("#ack-accept");let acknowledged=false;try{acknowledged=sessionStorage.getItem("hce_ack_v2")==="yes";}catch{}
     const surfaces=[$(".app-header"),$("#steps-nav"),$(".app-main"),$(".app-footer")];
     const set=open=>{gate.classList.toggle("hidden",!open);surfaces.forEach(s=>{s.inert=open;});};set(!acknowledged);
+    // aria-modal promises managed focus: announce and enter the dialog, keep Tab
+    // inside it, and hand focus to the first question once it is accepted.
+    const focusables=()=>[...gate.querySelectorAll("a[href],button:not([disabled]),input:not([disabled]),select,textarea")].filter(n=>n.offsetParent!==null);
+    gate.addEventListener("keydown",event=>{
+      if(event.key!=="Tab")return;
+      const items=focusables();if(!items.length)return;
+      const first=items[0],last=items[items.length-1],active=document.activeElement;
+      if(event.shiftKey&&(active===first||!gate.contains(active))){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&(active===last||!gate.contains(active))){event.preventDefault();first.focus();}
+    });
+    if(!acknowledged)$("#ack-title").focus();
     check.addEventListener("change",()=>accept.disabled=!check.checked);
     accept.addEventListener("click",()=>{if(!check.checked)return;try{sessionStorage.setItem("hce_ack_v2","yes");sessionStorage.setItem("hce_ack_time_v2",new Date().toISOString());}catch{}set(false);$("#productId")?.focus();});
   }
@@ -282,7 +302,7 @@ const App = (() => {
   function init() {
     try {const current=localStorage.getItem(STORAGE_KEY),old=localStorage.getItem(LEGACY_KEY);if(current||old){state=InterviewState.migrate(JSON.parse(current||old));migrationNotice=!!state.migrated;}}catch{migrationNotice=true;}
     $("#btn-next").addEventListener("click",()=>{if(step===steps.length-1)results=true;else step++;render();window.scrollTo(0,0);});
-    $("#btn-back").addEventListener("click",()=>{if(results)results=false;else if(step>0)step--;render();window.scrollTo(0,0);});
+    $("#btn-back").addEventListener("click",()=>{if(results){results=false;focusStepHeading=true;}else if(step>0)step--;render();window.scrollTo(0,0);});
     $("#btn-save").addEventListener("click",()=>{save();toast("Draft saved on this device.");});$("#btn-print-ack").addEventListener("click",printAck);
     // Reserve the actual fixed footer height, including wrapped mobile links.
     const footer=$(".app-footer"),fitFooter=()=>document.documentElement.style.setProperty("--footer-h",footer.getBoundingClientRect().height+"px");
