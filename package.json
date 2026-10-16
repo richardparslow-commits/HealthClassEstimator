@@ -9,6 +9,7 @@
     "check:consumer": "node scripts/check-consumer-parity.js",
     "build": "node scripts/build-embedded.js",
     "test:ui": "node test/ui.test.js",
-    "test:build": "node test/build.test.js"
+    "test:build": "node test/build.test.js",
+    "test:css": "node test/css.test.js"
   }
 }

@@ -42,6 +42,14 @@ jobs:
       - name: Build single-file embedded HTML
         run: node scripts/build-embedded.js app_embedded.html
 
+      # Dead CSS ships inside every embedded copy, so it is checked before anything
+      # is published. The audit verifies dist/app.html inlines the sheet it judged,
+      # which is why the default build runs first.
+      - name: Check the stylesheet for unreachable rules
+        run: |
+          npm run build
+          npm run test:css
+
       - name: Check out streamlit repo (health_app.py)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         uses: actions/checkout@v4

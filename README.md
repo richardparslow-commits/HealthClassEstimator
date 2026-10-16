@@ -11,11 +11,14 @@ Open `index.html` in a browser, or serve this directory with a static web server
 ```sh
 npm test
 npm run build
+npm run test:css
 npm run test:parity
 node scripts/build-embedded.js app_embedded.html
 ```
 
 The standalone output is `dist/app.html`. The builder includes rules, state, engine and UI in that order and stamps the same release version as `index.html`.
+
+`npm run test:css` guards the stylesheet against rules no element can match (`node scripts/css-audit.js` reports them, and the test fails when any are found). The stylesheet is inlined into every consumer of the build, so a rule whose class left with the interface it styled keeps describing behaviour the product no longer has — 441 lines of it had accumulated before Release 80. A class or id counts as referenced when it appears as a `class`/`id` value in `index.html` or as a string literal in `js/*.js`, which is where the app builds elements and looks them up. The audit refuses to run if a class name is ever assembled at runtime, because a fragment-built name would look unreferenced and the audit would delete a live rule.
 
 Optional real-browser checks require Playwright and its Chromium browser:
 
@@ -39,7 +42,7 @@ node scripts/check-consumer-parity.js --consumer <file|url>    # any consumer
 
 The check compares each consumer with a fresh build and fails when they disagree on underwriting logic — `rules`, `state` or `engine` — because then the published tool is not the tool these sources describe. Presentational differences, and the adaptations a consumer is entitled to make (its own CSP, same-origin contact links, an injected accessibility shim), are reported without failing. A single missing final newline is reported as trailing whitespace rather than drift.
 
-Both copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide the other's result: the live page is read from the served site, and the Streamlit artifact from the published `app_embedded.html` in `richardparslow-commits/health_app.py`, which is the build output copied verbatim and so is expected to be byte-identical. That repository's loose `index.html`, `js` and `css` fallback assets are not compared, because the embedded artifact is what renders. Either job going red means a published tool is not the reviewed one; `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the copy the Streamlit job then verifies.
+The stylesheet audit runs in the release workflow before anything is published, and both copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide the other's result: the live page is read from the served site, and the Streamlit artifact from the published `app_embedded.html` in `richardparslow-commits/health_app.py`, which is the build output copied verbatim and so is expected to be byte-identical. That repository's loose `index.html`, `js` and `css` fallback assets are not compared, because the embedded artifact is what renders. Either job going red means a published tool is not the reviewed one; `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the copy the Streamlit job then verifies.
 
 Policy: a change to underwriting behavior is made here, with a test, and only then regenerated into a consumer. A consumer's copy is never edited to match, and a rule never originates there. Porting a rule *into* this repository after finding it only in a copy is the one exception, and it belongs in the same change that regenerates the copy.
 
@@ -193,3 +196,34 @@ state and UI modules. Streamlit uses a rebuilt single-file artifact; uploading
 only separate source assets is insufficient. Automatic cross-repository sync
 still depends on the existing workflow's configured token. No credential is
 created by this release.
+
+## Release 80 — unreachable stylesheet rules removed
+
+`css/styles.css` carried 441 lines that no element could match. The cross-carrier
+comparison table (`compare-*`, `tag-*`, `#btn-compare`) described a comparison view
+the results section no longer renders. The `#print-sheet` and `#ack-sheet` system —
+including `body.print-compare` and `body.print-ack`, which nothing ever set — was
+replaced by the popup window `printAck()` opens, so its one-page sheets could never
+appear. The rest was the interface before the edition-specific interview: the
+carrier panel and its eligibility grid, the checkbox condition picker, the class
+range strip and gate boxes, the acknowledgement flag pills, and the evidence/note
+presentation helpers. `.klass-chip`, `.btn-print`, `.step-num` and `.no-print` were
+in the same position: referenced nowhere, or only ever as part of a longer name
+(`btn-print-ack`).
+
+The stylesheet is 464 lines instead of 905 and the standalone build is 238,132
+bytes instead of 253,914 (Release 80 identifies these bytes). **No underwriting,
+rules, state, engine or interview behaviour changed**, and no applicant-visible
+rendering changed either: both builds were rendered in a browser and the computed
+style of every element — 341 at the acknowledgment gate, 279 on the medical-history
+step and 201 on the results view, across some 44 properties each — hashes identically
+before and after. The remaining `.no-print` name was dropped from the print-hide
+selector list rather than deleting that rule, which is still live.
+
+`scripts/css-audit.js` now answers this question for the whole sheet, with
+`npm run test:css` failing on any rule no element can match and the release workflow
+running it before it publishes anything. Both fixes are needed together: the audit
+is what makes the removal verifiable, and the removal is what makes the audit able
+to run without an exception list. The Streamlit copy is re-synced to Release 80; the
+website copy is republished from Lovable, which remains the outstanding step for
+Release 79's engine as well.
