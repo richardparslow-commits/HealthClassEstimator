@@ -39,6 +39,8 @@ node scripts/check-consumer-parity.js --consumer <file|url>    # any consumer
 
 The check compares each consumer with a fresh build and fails when they disagree on underwriting logic — `rules`, `state` or `engine` — because then the published tool is not the tool these sources describe. Presentational differences, and the adaptations a consumer is entitled to make (its own CSP, same-origin contact links, an injected accessibility shim), are reported without failing. A single missing final newline is reported as trailing whitespace rather than drift.
 
+Both copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide the other's result: the live page is read from the served site, and the Streamlit artifact from the published `app_embedded.html` in `richardparslow-commits/health_app.py`, which is the build output copied verbatim and so is expected to be byte-identical. That repository's loose `index.html`, `js` and `css` fallback assets are not compared, because the embedded artifact is what renders. Either job going red means a published tool is not the reviewed one; `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the copy the Streamlit job then verifies.
+
 Policy: a change to underwriting behavior is made here, with a test, and only then regenerated into a consumer. A consumer's copy is never edited to match, and a rule never originates there. Porting a rule *into* this repository after finding it only in a copy is the one exception, and it belongs in the same change that regenerates the copy.
 
 ## Interview and outcomes

@@ -1,33 +1,49 @@
-name: Check the live consumer against the build
+name: Check the live consumers against the build
 
 # The website and the Streamlit app each hold a copy of the built estimator, and a
 # copy can be edited where it lands. Release 78 shipped a Mutual of Omaha amount
 # screen that existed only inside the website's copy, so nothing in this repository
 # could reproduce what an applicant saw (ISSUE-001).
 #
-# This job compares the live tool page with a fresh build. It fails when the two
-# disagree on underwriting logic — rules, state or engine — because then the
-# published tool is not the tool this repository audited.
+# Both copies are compared with a fresh build here, as independent jobs, so one
+# going red cannot hide the other's result:
 #
-# A red run is a real answer, not a flake: it also means the site has not been
+#   parity    — the live tool page, which delivers the build through an iframe
+#               srcDoc plus its own adapters, read from the served page itself.
+#   streamlit — the artifact Streamlit Community Cloud renders, read from
+#               richardparslow-commits/health_app.py at its published ref. That
+#               file is the build output copied verbatim, so the expected verdict
+#               is byte-identical; anything else means the deployed tool is not
+#               the reviewed one. (The repository's loose index.html/js/css fallback
+#               assets are not compared — the embedded artifact is what renders.)
+#
+# Each job fails when the two disagree on underwriting logic — rules, state or
+# engine — because then the published tool is not the tool this repository audited.
+#
+# A red run is a real answer, not a flake: it can also mean a copy has not been
 # republished with the current build yet. That is why this runs on a schedule and on
 # demand instead of on pull requests, where a pending republish must not block
-# unrelated work. When it goes green, the live page and the sources agree.
+# unrelated work. When both jobs go green, both live tools and the sources agree.
 on:
   schedule:
     - cron: "17 13 * * *"
   workflow_dispatch:
     inputs:
       consumer:
-        description: Consumer URL or workspace file to compare with the build
+        description: Website URL or workspace file to compare with the build
         required: false
         default: https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor
+      streamlit_source:
+        description: Published Streamlit artifact URL to compare with the build
+        required: false
+        default: https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html
 
 permissions:
   contents: read
 
 jobs:
-  parity:
+  website:
+    name: Live website
     runs-on: ubuntu-latest
     steps:
       - name: Check out HealthClassEstimator
@@ -45,19 +61,58 @@ jobs:
         run: node test/parity.test.js
 
       # pipefail keeps a failing check from being hidden by tee.
-      - name: Compare the live consumer with the build
+      - name: Compare the live page with the build
         env:
           CONSUMER: ${{ inputs.consumer || 'https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor' }}
         run: |
           set -o pipefail
           node scripts/check-consumer-parity.js --consumer "$CONSUMER" 2>&1 | tee parity.txt
 
-      - name: Publish the comparison to the run summary
+      - name: Publish the website comparison to the run summary
         if: ${{ always() }}
         run: |
           {
-            echo "### Live consumer parity"
+            echo "### Live website parity"
             echo '```'
             cat parity.txt 2>/dev/null || echo "The comparison produced no output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  streamlit:
+    name: Streamlit artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the standalone distribution
+        run: npm run build
+
+      - name: Check the parity check against its fixtures
+        run: node test/parity.test.js
+
+      # -f turns an HTTP error into a step failure rather than a comparison against
+      # an error page; --retry rides out a transient network wobble, not a 404.
+      - name: Compare the published Streamlit artifact with the build
+        env:
+          SOURCE: ${{ inputs.streamlit_source || 'https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html' }}
+        run: |
+          set -o pipefail
+          curl -fsS --retry 3 --retry-delay 5 "$SOURCE" -o streamlit_embedded.html
+          echo "Fetched $(wc -c < streamlit_embedded.html) bytes from $SOURCE"
+          node scripts/check-consumer-parity.js --consumer streamlit_embedded.html 2>&1 | tee streamlit.txt
+
+      - name: Publish the Streamlit comparison to the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Streamlit artifact parity"
+            echo '```'
+            cat streamlit.txt 2>/dev/null || echo "The comparison produced no output."
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
