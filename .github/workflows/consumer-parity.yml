@@ -14,8 +14,12 @@ name: Check the live consumers against the build
 #               richardparslow-commits/health_app.py at its published ref. That
 #               file is the build output copied verbatim, so the expected verdict
 #               is byte-identical; anything else means the deployed tool is not
-#               the reviewed one. (The repository's loose index.html/js/css fallback
-#               assets are not compared — the embedded artifact is what renders.)
+#               the reviewed one.
+#   fallback   — the second implementation of the build in that repository's
+#               health_app.py, which inlines its loose index.html/css/js assets
+#               when app_embedded.html is absent. It does not run in the deployed
+#               app, but it is what a local run serves, and it claimed byte-for-byte
+#               parity while differing in three script joins.
 #
 # Each job fails when the two disagree on underwriting logic — rules, state or
 # engine — because then the published tool is not the tool this repository audited.
@@ -37,6 +41,10 @@ on:
         description: Published Streamlit artifact URL to compare with the build
         required: false
         default: https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html
+      streamlit_repo:
+        description: Repository whose fallback builder is compared with the build
+        required: false
+        default: richardparslow-commits/health_app.py
 
 permissions:
   contents: read
@@ -114,5 +122,82 @@ jobs:
             echo "### Streamlit artifact parity"
             echo '```'
             cat streamlit.txt 2>/dev/null || echo "The comparison produced no output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # build_app_html() in that repository is a second implementation of this build:
+  # it inlines the loose index.html/css/js assets when app_embedded.html is absent
+  # (a local run, or a deploy where the artifact did not arrive). Neither job above
+  # reads that path, and it does not reliably reproduce the build — its script
+  # blocks were joined differently in three places, and a stylesheet carrying a CSS
+  # escape made it fail outright with 'invalid group reference'. Run it here and
+  # compare with the build, ignoring only the one-line provenance stamp, which
+  # names whichever builder wrote the file.
+  streamlit-fallback:
+    name: Streamlit fallback build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the standalone distribution
+        run: npm run build
+
+      # -f turns an HTTP error into a step failure: a comparison against a 404 page
+      # would otherwise look like drift.
+      - name: Fetch the fallback builder and the assets it inlines
+        env:
+          REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
+        run: |
+          mkdir -p fallback/js fallback/css
+          base="https://raw.githubusercontent.com/$REPO/main"
+          curl -fsS --retry 3 --retry-delay 5 "$base/health_app.py" -o fallback/health_app.py
+          curl -fsS --retry 3 --retry-delay 5 "$base/index.html" -o fallback/index.html
+          curl -fsS --retry 3 --retry-delay 5 "$base/css/styles.css" -o fallback/css/styles.css
+          for name in rules state engine app; do
+            curl -fsS --retry 3 --retry-delay 5 "$base/js/$name.js" -o "fallback/js/$name.js"
+          done
+          echo "Fetched the builder and its assets from $REPO"
+
+      # The module renders at import time, so it is imported with the parts of
+      # Streamlit it touches stubbed out; only build_app_html() is under test.
+      - name: Render the fallback document
+        run: |
+          cd fallback
+          python3 -c "
+          import sys, types
+          st = types.ModuleType('streamlit')
+          st.components = types.SimpleNamespace(v1=types.SimpleNamespace(html=lambda *a, **k: None))
+          st.set_page_config = st.markdown = st.caption = lambda *a, **k: None
+          sys.modules['streamlit'] = st
+          import health_app
+          document = health_app.build_app_html()
+          open('../fallback.html', 'w', encoding='utf-8').write(document)
+          print('fallback document:', len(document.encode('utf-8')), 'bytes')
+          "
+
+      - name: Compare the fallback with the build
+        run: |
+          sed -E 's|// stamped by [A-Za-z_.-]+|// stamped by BUILD|' dist/app.html > build.normalised.html
+          sed -E 's|// stamped by [A-Za-z_.-]+|// stamped by BUILD|' fallback.html > fallback.normalised.html
+          if diff -u build.normalised.html fallback.normalised.html > fallback.diff; then
+            echo "PASS — the fallback build reproduces the reviewed build, stamp line aside."
+          else
+            echo "::error::The Streamlit fallback builder no longer reproduces the reviewed build. See the run summary for the first differences."
+            exit 1
+          fi
+
+      - name: Publish the fallback comparison to the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Streamlit fallback build"
+            echo '```'
+            cat fallback.diff 2>/dev/null || echo "No differences, or the comparison produced no output."
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
