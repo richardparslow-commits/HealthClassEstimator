@@ -17,3 +17,7 @@ jobs:
         run: npm run build
       - name: Validate embedded script order and version
         run: node test/build.test.js
+      # Offline fixtures for the consumer parity check: they prove the check can
+      # tell a consumer's embed adaptations from a fork of the underwriting rules.
+      - name: Verify the consumer parity check itself
+        run: node test/parity.test.js

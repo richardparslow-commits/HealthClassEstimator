@@ -1,0 +1,63 @@
+name: Check the live consumer against the build
+
+# The website and the Streamlit app each hold a copy of the built estimator, and a
+# copy can be edited where it lands. Release 78 shipped a Mutual of Omaha amount
+# screen that existed only inside the website's copy, so nothing in this repository
+# could reproduce what an applicant saw (ISSUE-001).
+#
+# This job compares the live tool page with a fresh build. It fails when the two
+# disagree on underwriting logic — rules, state or engine — because then the
+# published tool is not the tool this repository audited.
+#
+# A red run is a real answer, not a flake: it also means the site has not been
+# republished with the current build yet. That is why this runs on a schedule and on
+# demand instead of on pull requests, where a pending republish must not block
+# unrelated work. When it goes green, the live page and the sources agree.
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+    inputs:
+      consumer:
+        description: Consumer URL or workspace file to compare with the build
+        required: false
+        default: https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the standalone distribution
+        run: npm run build
+
+      - name: Check the parity check against its fixtures
+        run: node test/parity.test.js
+
+      # pipefail keeps a failing check from being hidden by tee.
+      - name: Compare the live consumer with the build
+        env:
+          CONSUMER: ${{ inputs.consumer || 'https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor' }}
+        run: |
+          set -o pipefail
+          node scripts/check-consumer-parity.js --consumer "$CONSUMER" 2>&1 | tee parity.txt
+
+      - name: Publish the comparison to the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Live consumer parity"
+            echo '```'
+            cat parity.txt 2>/dev/null || echo "The comparison produced no output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

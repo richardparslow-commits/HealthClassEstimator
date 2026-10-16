@@ -11,6 +11,7 @@ Open `index.html` in a browser, or serve this directory with a static web server
 ```sh
 npm test
 npm run build
+npm run test:parity
 node scripts/build-embedded.js app_embedded.html
 ```
 
@@ -26,6 +27,19 @@ npm run test:ui
 ```
 
 `HCE_BROWSER_PATH` can select an existing Chromium binary. The browser test starts and closes a temporary localhost server, exercises the actual interview controls, checks saved-state migration and mobile layout, and verifies the embedded output. Runtime deployment requires none of these testing dependencies.
+
+## Consumers of the build
+
+The website embeds `dist/app.html` in an iframe and the Streamlit app receives a copy on release. Both are copies, so both can drift from the sources that were reviewed:
+
+```sh
+npm run check:consumer                                        # the live tool page
+node scripts/check-consumer-parity.js --consumer <file|url>    # any consumer
+```
+
+The check compares each consumer with a fresh build and fails when they disagree on underwriting logic — `rules`, `state` or `engine` — because then the published tool is not the tool these sources describe. Presentational differences, and the adaptations a consumer is entitled to make (its own CSP, same-origin contact links, an injected accessibility shim), are reported without failing. A single missing final newline is reported as trailing whitespace rather than drift.
+
+Policy: a change to underwriting behavior is made here, with a test, and only then regenerated into a consumer. A consumer's copy is never edited to match, and a rule never originates there. Porting a rule *into* this repository after finding it only in a copy is the one exception, and it belongs in the same change that regenerates the copy.
 
 ## Interview and outcomes
 
