@@ -50,6 +50,11 @@ jobs:
           npm run build
           npm run test:css
 
+      # An embed that still needs external files loads nothing inside a consumer's
+      # iframe, so the builder's own guards are exercised before anything publishes.
+      - name: Check the builder's end-of-build guards
+        run: npm run test:builder
+
       - name: Check out streamlit repo (health_app.py)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         uses: actions/checkout@v4

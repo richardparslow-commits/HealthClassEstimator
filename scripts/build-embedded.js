@@ -47,7 +47,19 @@ index = index.split(/<script>\s*\/\* Single cache-busting version[\s\S]*?<\/scri
 const inline = versionScript + sources.map((src) => "<script>\n" + src + "\n</script>").join("\n");
 index = index.split("</body>").join(inline + "\n</body>");
 
-if (index.includes('href="css/') || index.includes('src="js/') || index.includes("Single cache-busting")) {
+/* `createElement("script")` is the loader's signature and appears nowhere else in the
+   sources (js/app.js builds elements from a tag parameter and never passes "script").
+   The strip above is anchored on the loader's comment, so a document whose loader
+   survived for any other reason — including an edit to that comment — still has to
+   fail the build: without this marker, renaming the comment defeats both the strip
+   and the "Single cache-busting" check, and the build silently emits a document that
+   loads js/ over the network. */
+if (
+  index.includes('href="css/') ||
+  index.includes('src="js/') ||
+  index.includes("Single cache-busting") ||
+  index.includes('createElement("script")')
+) {
   console.error("ERROR: build output still references external assets or the loader — aborting.");
   process.exit(1);
 }
