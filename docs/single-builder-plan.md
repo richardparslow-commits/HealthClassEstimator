@@ -252,6 +252,7 @@ automatically. Confirm the Streamlit Cloud page (§9).
 | A6 | Deploy job stages exactly the pair + deletions, verifies it, and pushes it | Staging, sync, no-rebuild invariant and runtime verification now run on **every** push (token not needed); only the push itself waits for the token (S7) |
 | A7 | No underwriting or rendering change | engine suite (10,332 assertions), build/css/builder/parity/manifest suites unchanged green; artifact hash unchanged |
 | A8 | The app runs under Streamlit itself | `verify-streamlit-live.py` 3/3 on the staged checkout (real `AppTest` runtime), plus a real `streamlit run` rendering release 80 in a browser — and it found `st.components.v1.html`, which is now `st.iframe` |
+| A9 | The app still runs on the *newest* Streamlit, not just the pinned one | `.github/workflows/streamlit-canary.yml`, daily: installs the newest `streamlit` from PyPI (ignoring the deployed `>=1.66,<2` ceiling) and runs `verify-streamlit-live.py` against the deployed pair; the summary states whether the installed version is inside or outside the deployed pin, and one `streamlit-canary` issue stays open while the canary is red, closing on the first passing run |
 
 ## 8. Risks and rollback
 

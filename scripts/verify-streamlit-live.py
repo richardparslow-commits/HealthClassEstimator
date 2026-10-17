@@ -17,6 +17,12 @@ the same interpreter Streamlit would use, and checks:
   * a tampered pair surfaces the refusal as an app exception naming the sha256;
   * the wrapper calls no API Streamlit has announced for removal.
 
+It also prints how the Streamlit it is running sits against the directory's own
+requirements.txt pin. That line is not part of the verdict: deploy installs
+exactly the pinned version, while the scheduled canary deliberately installs a
+newer one to ask whether the ceiling can move, and only a reader can tell which
+of those two questions a given run was asking.
+
 Usage:
     python3 scripts/verify-streamlit-live.py <directory>
 
@@ -108,6 +114,35 @@ def run(directory, probe):
     return exceptions, recorded
 
 
+def pin_note(directory, installed):
+    """One line relating the version under test to the deployed requirement."""
+    path = pathlib.Path(directory, "requirements.txt")
+    if not path.exists():
+        return "  deployed pin: none — the directory ships no requirements.txt"
+    pins = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip().lower().startswith("streamlit")
+    ]
+    if not pins:
+        return "  deployed pin: none — requirements.txt does not name streamlit, so an unpinned install is what deploys"
+    try:
+        from packaging.requirements import Requirement
+
+        readings = []
+        for pin in pins:
+            inside = Requirement(pin).specifier.contains(installed)
+            readings.append("%s — %s is %s it" % (pin, installed, "inside" if inside else "OUTSIDE"))
+        return "  deployed pin: " + "; ".join(readings)
+    except Exception:
+        # A missing `packaging` or a requirements line it cannot parse must not
+        # change the verdict; the raw pin is still worth printing.
+        return "  deployed pin: %s (uncompared; whether %s is inside it was not determined)" % (
+            ", ".join(pins),
+            installed,
+        )
+
+
 def main():
     if len(sys.argv) != 2:
         print("usage: verify-streamlit-live.py <directory>", file=sys.stderr)
@@ -129,6 +164,7 @@ def main():
 
     print("verify-streamlit-live: %s" % base)
     print("  streamlit %s, python %s" % (streamlit.__version__, sys.version.split()[0]))
+    print(pin_note(base, streamlit.__version__))
     expected = (base / "app_embedded.html").read_text(encoding="utf-8")
     failures = 0
 
@@ -155,16 +191,17 @@ def main():
             failures += not intact
 
             deprecated = removed_api_calls(base / "health_app.py")
-            print(
-                "  %s — no API Streamlit has announced for removal: %s"
-                % (
-                    "PASS" if not deprecated else "FAIL",
-                    "the wrapper renders through %s" % recorded["api"]
-                    if not deprecated
-                    else "health_app.py still calls %s, which Streamlit removes after 2026-06-01"
-                    % ", ".join(deprecated),
+            if deprecated:
+                verdict = "health_app.py still calls %s, which Streamlit removes after 2026-06-01" % ", ".join(
+                    deprecated
                 )
-            )
+            elif recorded["api"]:
+                verdict = "the wrapper renders through %s" % recorded["api"]
+            else:
+                # Named plainly: with no render call recorded there is nothing to
+                # say about which API the wrapper used, only about the call sites.
+                verdict = "this run recorded no render call, so only the call sites could be read"
+            print("  %s — no API Streamlit has announced for removal: %s" % ("FAIL" if deprecated else "PASS", verdict))
             failures += bool(deprecated)
         finally:
             for name in ("_probed_health_app.py", "_probe.json"):

@@ -1,0 +1,219 @@
+name: Streamlit canary
+
+# Streamlit Community Cloud installs what the deployed repository's
+# requirements.txt allows and upgrades on its own schedule, so an API removed
+# upstream can take the live app down with no change in this repository. That is
+# not hypothetical: st.components.v1.html was announced for removal after
+# 2026-06-01, a date already past, and the deployed wrapper still called it.
+#
+# deploy-streamlit.yml runs the live check on every push, but always against the
+# version requirements.txt pins — so it can see an API that the *pinned* Streamlit
+# removes, never one that lands in a release the pin currently excludes. The next
+# ceiling lift is where that would show up, too late to react.
+#
+# This canary asks the other question on a schedule: install the newest Streamlit
+# published to PyPI, deliberately ignoring the deployed ceiling, and run the same
+# live check against the pair the deployed repository serves right now. A failure
+# means the wrapper needs changing before the ceiling moves, or that the ceiling
+# must stay. A pass means an upgrade is safe as far as this check can tell.
+#
+# It needs no secret and pushes nothing: the deployed repository is publicly
+# readable, which Streamlit Cloud requires anyway. Dispatch it by hand with
+# channel "prerelease" to probe a release candidate before it ships as stable.
+#
+# A scheduled workflow is disabled after 60 days without repository activity, and
+# a canary that has stopped running looks exactly like one that passes. Nothing
+# inside the repository can detect its own silence, so the summary reports when
+# the previous canary attempt was: a large gap there is evidence the schedule was
+# dark, not that every day passed.
+on:
+  schedule:
+    # Daily, off the hour so it does not queue behind the workflows that all run
+    # at :00. GitHub cron is always UTC.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Which Streamlit builds to install
+        type: choice
+        options:
+          - latest
+          - prerelease
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      # github.event rather than the inputs context: a scheduled run passes no
+      # inputs, and this form is defined for every trigger.
+      CHANNEL: ${{ github.event.inputs.channel || 'latest' }}
+      DEPLOYED_REPO: richardparslow-commits/health_app.py
+    outputs:
+      installed: ${{ steps.install.outputs.version }}
+      channel: ${{ steps.install.outputs.channel }}
+      deployed_sha: ${{ steps.fetch.outputs.sha }}
+      verdicts: ${{ steps.check.outputs.verdicts }}
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      # The same interpreter the deploy workflow uses, because the wrapper is
+      # exercised through the real library rather than stubbed.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The pair under test is the one Streamlit Cloud is serving, fetched from
+      # the deployed repository rather than rebuilt here: a canary that tested a
+      # local build would answer for code that is not live.
+      - name: Fetch the deployed pair
+        id: fetch
+        run: |
+          if ! git clone --quiet --depth 1 --single-branch \
+               "https://github.com/${DEPLOYED_REPO}.git" streamlit-app; then
+            echo "::error::Could not fetch ${DEPLOYED_REPO}. It must stay publicly readable for the canary (and for Streamlit Cloud) to see what is live."
+            exit 1
+          fi
+          sha=$(git -C streamlit-app rev-parse --short HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing ${DEPLOYED_REPO} at $(git -C streamlit-app rev-parse HEAD)"
+
+      # `--pre` is only ever used on an explicit dispatch: a release candidate can
+      # legitimately differ from the release it becomes, so a scheduled red has to
+      # mean something a stable release actually did.
+      - name: Install the newest Streamlit
+        id: install
+        run: |
+          set -o pipefail
+          if [ "${CHANNEL:-latest}" = "prerelease" ]; then
+            channel=(--pre)
+          else
+            channel=()
+          fi
+          python -m pip install --quiet --disable-pip-version-check \
+            --upgrade "${channel[@]}" streamlit 2>&1 | tee canary-install.log
+          version=$(python -c "import streamlit; print(streamlit.__version__)")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL:-latest}" >> "$GITHUB_OUTPUT"
+          echo "Newest Streamlit on the ${CHANNEL:-latest} channel: $version"
+
+      # The same check the deploy workflow runs, against a version that workflow
+      # never installs. Its exit status is the canary's verdict.
+      - name: Exercise the deployed wrapper in the newest Streamlit
+        id: check
+        run: |
+          set -o pipefail
+          status=0
+          python scripts/verify-streamlit-live.py streamlit-app 2>&1 | tee canary-check.log || status=$?
+          # Carried out of this step as an output, so the tracking issue can name
+          # the case that failed instead of pointing at a log.
+          {
+            echo "verdicts<<CANARY_VERDICTS_EOF"
+            grep -E '^  (PASS|FAIL)|^[0-9]+/[0-9]+ cases' canary-check.log || true
+            echo "CANARY_VERDICTS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Publish the canary to the run summary
+        if: ${{ always() }}
+        env:
+          INSTALLED: ${{ steps.install.outputs.version }}
+          DEPLOYED_SHA: ${{ steps.fetch.outputs.sha }}
+        run: |
+          previous=$(gh run list --workflow streamlit-canary.yml --limit 2 \
+            --json createdAt --jq '.[1].createdAt // empty' 2>/dev/null || true)
+          # The pin relation is printed by the live check itself rather than
+          # restated here from a second copy of the same comparison, and lifted out
+          # of the details block because it is the line that says whether a green
+          # run is early warning or already the real thing.
+          pin=$(grep -i "deployed pin:" canary-check.log 2>/dev/null | sed 's/^ *//' || true)
+          {
+            echo "### Streamlit canary"
+            echo
+            echo "- Deployed: \`${DEPLOYED_REPO}\` at \`${DEPLOYED_SHA:-unknown}\`"
+            echo "- Channel: \`${CHANNEL:-latest}\`"
+            echo "- Installed: \`${INSTALLED:-not installed}\`"
+            echo "- ${pin:-Pin relation: not reported (the live check did not reach it)}"
+            echo "- Previous canary attempt: ${previous:-none recorded}"
+            echo
+            echo "<details><summary>Live check output</summary>"
+            echo
+            echo '```'
+            cat canary-check.log 2>/dev/null || echo "The live check did not run."
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Same shape as the parity workflow's alert job, for the same reason: a red mark
+  # on a scheduled run is easy to overlook, an open issue is not. While the canary
+  # is not green this job keeps one labelled issue open — creating it on the first
+  # failure, commenting on later ones — and closes it on the first run where the
+  # check passes. Only a plain `success` closes it: a cancelled or skipped run
+  # means the canary did not happen, which must not be read as recovery.
+  alert:
+    name: Report a canary failure to a tracking issue
+    runs-on: ubuntu-latest
+    needs: canary
+    if: ${{ always() }}
+    concurrency:
+      group: streamlit-canary-alert
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    env:
+      DEPLOYED_REPO: richardparslow-commits/health_app.py
+    steps:
+      - name: Open, update or close the canary issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.canary.result }}
+          EVENT: ${{ github.event_name }}
+          INSTALLED: ${{ needs.canary.outputs.installed }}
+          CHANNEL_NAME: ${{ needs.canary.outputs.channel }}
+          DEPLOYED_SHA: ${{ needs.canary.outputs.deployed_sha }}
+          VERDICTS: ${{ needs.canary.outputs.verdicts }}
+        run: |
+          set -euo pipefail
+          label=streamlit-canary
+
+          gh label create "$label" --repo "$REPO" --force \
+            --description "The newest Streamlit no longer runs the deployed estimator" \
+            --color FBCA04
+
+          open_issues=$(gh issue list --repo "$REPO" --label "$label" --state open --json number --jq '.[].number')
+          # sed, not head: `printf | head` can die of SIGPIPE under pipefail.
+          issue=$(printf '%s\n' "$open_issues" | sed -n '1p')
+
+          if [ "$RESULT" != "success" ]; then
+            body=$(mktemp)
+            {
+              printf '@%s — the Streamlit canary installed `%s` (channel `%s`) and ran the live check against `%s` at `%s`, and it did not pass.\n\n' \
+                "$OWNER" "${INSTALLED:-unknown}" "${CHANNEL_NAME:-unknown}" "$DEPLOYED_REPO" "${DEPLOYED_SHA:-unknown}"
+              printf -- '- Canary result: %s\n- Run: %s\n- Trigger: %s\n\n' "$RESULT" "$RUN_URL" "$EVENT"
+              printf '```\n%s\n```\n\n' "${VERDICTS:-The live check produced no verdict lines; the run log has them.}"
+              printf 'The deployed app stops working when Streamlit Cloud installs a release that removes an API the wrapper calls. Either teach the wrapper the new API before the ceiling moves, or keep the ceiling in the deployed `requirements.txt` below the release that breaks it — and say which in the run summary, because the next person will ask.\n\n'
+              printf 'This issue closes automatically on the first canary run that passes.\n'
+            } > "$body"
+            if [ -z "$issue" ]; then
+              gh issue create --repo "$REPO" --label "$label" \
+                --title "Streamlit ${INSTALLED:-unknown} no longer runs the deployed estimator" \
+                --body-file "$body"
+            else
+              gh issue comment "$issue" --repo "$REPO" --body-file "$body"
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --repo "$REPO" --comment "Streamlit ${INSTALLED:-unknown} passes the live check against the deployed pair, so the canary is green again. Closed by the first passing run: ${RUN_URL}"
+          fi
