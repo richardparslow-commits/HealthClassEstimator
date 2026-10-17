@@ -57,6 +57,8 @@ The check compares each consumer with a fresh build and fails when they disagree
 
 `--expect-identical` removes that presentational tolerance for a consumer that receives the build verbatim: the Streamlit deployment copies the artifact as built, so anything but byte identity there means it is not the reviewed build.
 
+The website is the consumer that adapts, and it declares what it does: its `scripts/embed-estimator.mjs` rebuilds the embed from `dist/app.html` and applies four documented page adaptations — a stricter CSP, its own same-origin `/contact` links, a result-page contact card, and the deliberate omission of the cross-product comparison table — refusing to write unless every anchor and invariant holds, and answering "does this page still match the build?" with `npm run embed:estimator:check`. Those four are what the parity check reports as a presentational difference; it cannot tell a declared adaptation from an edit made in the copy, so that difference is expected rather than drift. What parity is really holding on that side is the underwriting logic, and it is identical.
+
 The copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide another's result: the live page is read from the served site; the published Streamlit artifact in `richardparslow-commits/health_app.py` must be **byte-identical** to a fresh build *and* match the manifest it ships with, both read from a single fetched commit so a run shortly after a deploy cannot compare the previous one; and the deployed wrapper itself is exercised the way Streamlit runs it — the published pair must load and be served byte for byte, and a tampered artifact, a missing artifact, a missing manifest, a manifest that names a different file as its artifact and a manifest whose release version lies must all be refused. A red run also opens a labelled tracking issue, and closes it on the first run where every consumer matches again, so drift cannot fail quietly. `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the pair those jobs then verify.
 
 There is no second implementation of the build anywhere, and that is deliberate. `health_app.py` used to inline loose `index.html`, `css` and `js` assets whenever the artifact was absent, and it claimed byte-for-byte parity while joining its script blocks differently in three places; a stylesheet containing a CSS escape (`content: "\2192"`) made it fail outright through a `re.sub` replacement string; and its loader-strip guard could be defeated by editing the comment it was anchored on. Each was fixed in the copy rather than the cause. The wrapper now holds no build logic at all, and the assets it used to inline are deleted from the deployed repository.
@@ -208,8 +210,8 @@ page directly. They send no estimator answers. Website-specific iframe sizing,
 parent navigation adapters, Contact/Concierge APIs and mail delivery live in the
 separate website project, rather than this dependency-free estimator.
 
-This is a Release 78 follow-up, matching the current website's engine, rules,
-state and UI modules. Streamlit uses a rebuilt single-file artifact; uploading
+This is a Release 78 follow-up, and the website copy carried the same engine,
+rules, state and UI modules at the time. Streamlit uses a rebuilt single-file artifact; uploading
 only separate source assets is insufficient. Automatic cross-repository sync
 still depends on the existing workflow's configured token. No credential is
 created by this release.
@@ -241,6 +243,11 @@ selector list rather than deleting that rule, which is still live.
 `npm run test:css` failing on any rule no element can match and the release workflow
 running it before it publishes anything. Both fixes are needed together: the audit
 is what makes the removal verifiable, and the removal is what makes the audit able
-to run without an exception list. The Streamlit copy is re-synced to Release 80; the
-website copy is republished from Lovable, which remains the outstanding step for
-Release 79's engine as well.
+to run without an exception list. The Streamlit copy is re-synced to Release 80, and
+so is the website: its page generates that embed from this build rather than
+pasting one, and the live page serves `HCE_VERSION` 80 — verified 2026-10-17 by
+fetching the page and comparing the document it delivers with the page's own copy
+(sha256 `3f25dbc0…`). The page's FAQ named release 78 until that day, which is what
+the earlier "the website is behind" note was reading; the embed had been 80 since
+its own release. A push to the website project reaches the live page with no
+separate publish step — measured at about 90 seconds.

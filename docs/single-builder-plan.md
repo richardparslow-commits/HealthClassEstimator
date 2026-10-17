@@ -290,18 +290,31 @@ drifted copy cannot fail quietly.)
 - `STREAMLIT_PUSH_TOKEN` — until it exists, the workflow never pushes; every sync
   is manual. It now stages and verifies the pair on every push regardless, so a
   run without the secret still answers whether the pair is fit to publish.
-- Publish release 80 from Lovable — the live page still serves release 78 (the
-  earlier note said 79; the served document says 78), with a broker-contact card
-  in place of the build's product-comparison table.
 - Confirm the Streamlit Cloud page after the S5 push; that render check cannot be
   made from here.
 
+**Release 80 on the website — verified on 2026-10-17, no longer blocked.** The
+earlier note here ("the live page still serves release 78") was wrong, and its
+evidence was the page's own FAQ text rather than what the page ran: the delivered
+document carried `HCE_VERSION` 80 and its stylesheet matched release 80 exactly.
+What was read as a missing publish was a stale sentence. The served document is
+byte-identical to the page's committed embed plus its two render-time adapters
+(sha256 `3f25dbc0…`, 239,583 characters), and that embed is the build this
+repository produces with the page's four documented adaptations; the FAQ now says
+so. Publishing needs no Lovable step from the user's side: a push to the site
+repository reached the live page in about 90 seconds, checked by refetching it.
+
 ## 10. Out of scope, natural follow-ups
 
-- The website's `tools.health-class-predictor.tsx` still carries a hand-copied
-  `ESTIMATOR_HTML` literal. Same class of defect, one layer out: have the release
-  process generate that literal (or a module the route imports) from the same
-  build, so no copy is hand-carried.
+- The website's `ESTIMATOR_HTML` literal is generated, not hand-carried: the site's
+  `scripts/embed-estimator.mjs` rebuilds it from `dist/app.html`, applies the four
+  documented page adaptations and refuses to write unless every anchor and
+  invariant holds (`npm run embed:estimator:check` answers whether the page still
+  matches this build). Nothing here runs that check, so the link between a release
+  in this repository and the page that serves it is still a person. Its four
+  adaptations also read as drift to `check-consumer-parity.js`, which can only see
+  a presentational difference — a declared adaptation list would let both checks
+  agree instead of explaining the same thing twice.
 - If the token stays unset, consider making the deploy job open a PR against the
   Streamlit repo instead of pushing, so the pair is always CI-built even manually.
 
