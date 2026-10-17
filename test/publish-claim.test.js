@@ -299,9 +299,10 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   // whatever origin happens to hold: a run must judge the commit it pushed.
   ok(run1.stdout.includes("Commit: " + head), "naming the commit it verified: " + run1.stdout.slice(-80));
 
-  // Someone else moved main after this run pushed: the step must fail, must not write a
-  // commit for the summary to name, and must not go on to "verify" a copy it did not
-  // expect.
+  // Someone else moved main after this run pushed: the step must fail, must not go on to
+  // "verify" a copy it did not expect, and must not leave the marker that would let a
+  // summary call it published — while still naming the commit origin holds, which is the
+  // only way the reader learns which build superseded this run.
   const other = path.join(fx.dir, "other");
   mustGit(["clone", fx.bare, other], fx.dir);
   fs.writeFileSync(path.join(other, "README.md"), "moved\n");
@@ -316,8 +317,12 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   ok(run2.status !== 0, "a branch head that is not the pushed commit fails the read-back");
   ok(run2.stdout.includes("origin's main is " + moved + ", not " + pushed), "naming both commits: " + run2.stdout.slice(0, 200));
   ok(/Nothing was compared/.test(run2.stdout), "and saying that nothing was compared, so the copy was never verified");
-  ok(!fs.existsSync(path.join(fx.dir, "published-commit.txt")), "so no commit is written for the summary to claim");
-  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "and no completed-verification marker either");
+  equal(
+    fs.readFileSync(path.join(fx.dir, "published-commit.txt"), "utf8").trim(),
+    moved,
+    "it writes the commit origin holds instead of the one it pushed, so the summary names what is live",
+  );
+  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "and leaves no completed-verification marker, so nothing can call it published");
   equal(pythonCalls(fx), [], "and the runtime verifier is never asked to bless a copy this run did not push");
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
@@ -415,8 +420,12 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   const mismatch = run(readback, fx, { STREAMLIT_PUSH_TOKEN: "token" });
   ok(mismatch.status !== 0, "a published artifact that is not this build fails the read-back");
   ok(/the published artifact is not the build this repository produced/.test(mismatch.stdout), "naming the two hashes: " + mismatch.stdout.slice(0, 220));
-  ok(!fs.existsSync(path.join(fx.dir, "published-commit.txt")), "and nothing is written for the summary to publish");
-  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "with no marker a summary cannot describe it as verified");
+  equal(
+    fs.readFileSync(path.join(fx.dir, "published-commit.txt"), "utf8").trim(),
+    mustGit(["rev-parse", "main"], fx.bare),
+    "the commit it read is written even though the build was refused, so the refusal names what was served",
+  );
+  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "but with no marker a summary cannot describe it as verified");
   equal(pythonCalls(fx), [], "and the runtime verifier is not run on an unverified copy");
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }

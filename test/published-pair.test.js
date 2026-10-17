@@ -125,8 +125,14 @@ const tamperedHead = publish({
   "app_embedded.html": changed.toString("utf8"),
   "app_embedded.manifest.json": fs.readFileSync(manifest, "utf8"),
 });
-const tamperedRun = run(["--remote", remote, "--into", path.join(scratch, "readback-tampered"), "--artifact", artifact]);
+const tamperedCommit = path.join(scratch, "tampered-commit.txt");
+const tamperedRun = run([
+  "--remote", remote, "--into", path.join(scratch, "readback-tampered"), "--artifact", artifact, "--commit-out", tamperedCommit,
+]);
 equal(tamperedRun.status, 1, "an artifact that differs from the build fails");
+// The refused build is the one a reader most needs named: "stale" without a commit
+// sends them to the log to find out which build was served.
+equal(fs.readFileSync(tamperedCommit, "utf8").trim(), tamperedHead, "the commit origin held is written out even though the comparison refused the build");
 ok(/is not the build this repository produced/.test(tamperedRun.err), "the failure says the published artifact is not the build");
 ok(tamperedRun.err.includes("sha256 " + require("node:crypto").createHash("sha256").update(source).digest("hex")), "it reports the local hash");
 ok(/published app_embedded\.html\s+sha256/.test(tamperedRun.err), "and the published one, on its own line");
@@ -166,11 +172,16 @@ ok(/must carry both the artifact and its manifest/.test(missing.err), "and why b
 
 /* --- a branch head that is not the commit this run pushed ---------------- */
 
-const stale = run(["--remote", remote, "--into", path.join(scratch, "readback-stale"), "--artifact", artifact, "--expect", "0".repeat(40)]);
+const staleCommit = path.join(scratch, "stale-commit.txt");
+const stale = run([
+  "--remote", remote, "--into", path.join(scratch, "readback-stale"), "--artifact", artifact,
+  "--expect", "0".repeat(40), "--commit-out", staleCommit,
+]);
 equal(stale.status, 1, "a branch head other than the expected commit fails");
 ok(/origin's main is [0-9a-f]{40}, not 0{40}/.test(stale.err), "the failure names origin's head and the expectation");
 ok(/Nothing was compared/.test(stale.err), "and says no verdict was reached about the copy origin holds");
 ok(!fs.existsSync(path.join(scratch, "readback-stale")), "nothing is cloned when the head is already known to be wrong");
+ok(fs.existsSync(staleCommit) && git(work, "rev-parse", "HEAD") === fs.readFileSync(staleCommit, "utf8").trim(), "while the head it read is still written out, so the summary can name what origin holds");
 
 /* --- a local build that is not there ------------------------------------ */
 
@@ -192,6 +203,7 @@ ok(/--remote is required/.test(noRemote.err), "the usage error says what is miss
 const help = run(["--help"]);
 equal(help.status, 0, "--help exits 0");
 ok(/--commit-out <file>/.test(help.out), "--help documents the interface the workflow uses");
+ok(/as soon as it is read/.test(help.out), "and says the commit is written before any comparison, which is what makes a refusal nameable");
 
 /* --- the workflow calls it, in the right order --------------------------- */
 
@@ -215,6 +227,10 @@ ok(/python3 scripts\/verify-streamlit-runtime\.py published/.test(deploy), "the 
 ok(readBackAt < tokenGateAt, "the token gate stays last, so its message is what a tokenless run ends on");
 const readBackStep = deploy.slice(readBackAt, deploy.indexOf("- name:", readBackAt + 10));
 ok(/Deployed commit: .+\$\{PUBLISHED_SHA\}/.test(deploy), "the run summary names the commit that is live");
+ok(
+  /if \[ "\$VERIFY_PUBLISHED" = "true" \]; then[\s\S]*?Deployed commit: .+\$\{PUBLISHED_SHA\}/.test(deploy),
+  "and the verify-only summary names the deployed commit it read back, so a reader does not open the log to learn which build was judged"
+);
 
 /* --- and the read-back can be run without a token ------------------------ */
 

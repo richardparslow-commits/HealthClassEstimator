@@ -34,8 +34,10 @@
 #   --expect <sha>      the commit the caller believes it just pushed. A different
 #                       branch head is a failure: the push did not land, or
 #                       something moved the branch after it.
-#   --commit-out <file> writes the full commit hash that was verified, so a
-#                       caller can name it in a run summary without parsing text.
+#   --commit-out <file> writes the full commit hash origin's branch pointed at, as
+#                       soon as it is read, so a caller can name the build in a run
+#                       summary without parsing text — including a build a later
+#                       comparison refuses, which is the one a reader most needs named.
 #   --into <dir>        where to keep the read-back checkout (replaced if present),
 #                       so a caller can run the deployed app's own verifier on it.
 #
@@ -54,7 +56,7 @@ Usage: verify-published-pair.sh --remote <url-or-path> --into <dir> [options]
   --branch <name>          branch whose head is judged (default: main)
   --artifact <path>        local build to compare against (default: dist/app.html)
   --expect <sha>           require origin's branch head to be this commit
-  --commit-out <file>      write the verified commit hash to this file
+  --commit-out <file>      write origin's branch head to this file as soon as it is read
   -h, --help               show this message
 
 The file compared inside the checkout is always app_embedded.html — the name the
@@ -113,6 +115,14 @@ if [ -z "$head" ]; then
   die "could not read refs/heads/$branch from $remote. The repository must be readable from here (the deployed one is public, and a token that can push can also read); check the name and that the branch exists."
 fi
 
+# Written before anything is compared, not after: "the deployment is stale" without
+# the commit it is stale at leaves the reader to open the log to find out which build
+# was judged, and the refusal cases are exactly the ones that need naming. A caller
+# that wants "verified" needs its own marker for the checks that follow this file.
+if [ -n "$commit_out" ]; then
+  printf '%s\n' "$head" > "$commit_out"
+fi
+
 if [ -n "$expect" ] && [ "${expect}" != "$head" ]; then
   die "origin's $branch is ${head}, not ${expect}. The push did not land, or the branch moved after it (a newer run supersedes this one with concurrency: cancel-in-progress). Nothing was compared: the copy origin holds was never verified by this run."
 fi
@@ -162,10 +172,6 @@ fi
 if ! manifest_verdict="$(node "$root/scripts/write-artifact-manifest.js" --check "$into/app_embedded.html" 2>&1)"; then
   die "the published manifest does not describe the published artifact at $head, so the deployed app would refuse to serve this pair.
 $manifest_verdict"
-fi
-
-if [ -n "$commit_out" ]; then
-  printf '%s\n' "$head" > "$commit_out"
 fi
 
 echo "PASS — the pair origin holds is the build this repository produced."
