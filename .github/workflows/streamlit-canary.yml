@@ -40,6 +40,10 @@ on:
           - latest
           - prerelease
         default: latest
+      self_test:
+        description: Tamper the fetched pair so the failure path (red canary + tracking issue) is exercised on purpose
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,6 +58,7 @@ jobs:
       # github.event rather than the inputs context: a scheduled run passes no
       # inputs, and this form is defined for every trigger.
       CHANNEL: ${{ github.event.inputs.channel || 'latest' }}
+      SELF_TEST: ${{ github.event.inputs.self_test || 'false' }}
       DEPLOYED_REPO: richardparslow-commits/health_app.py
     outputs:
       installed: ${{ steps.install.outputs.version }}
@@ -85,6 +90,15 @@ jobs:
           sha=$(git -C streamlit-app rev-parse --short HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing ${DEPLOYED_REPO} at $(git -C streamlit-app rev-parse HEAD)"
+
+      # A failure path that has never run is a claim, not a check. This plants a
+      # one-byte edit in the fetched copy on request, so the red job and the
+      # tracking issue can be seen working rather than assumed.
+      - name: Tamper the fetched pair (self-test only)
+        if: ${{ env.SELF_TEST == 'true' }}
+        run: |
+          printf 'X' >> streamlit-app/app_embedded.html
+          echo "::warning::Self-test: the fetched artifact was tampered with on purpose, so this run is expected to fail and to file the tracking issue."
 
       # `--pre` is only ever used on an explicit dispatch: a release candidate can
       # legitimately differ from the release it becomes, so a scheduled red has to
@@ -143,6 +157,9 @@ jobs:
             echo "- Installed: \`${INSTALLED:-not installed}\`"
             echo "- ${pin:-Pin relation: not reported (the live check did not reach it)}"
             echo "- Previous canary attempt: ${previous:-none recorded}"
+            if [ "${SELF_TEST:-false}" = "true" ]; then
+              echo "- Self-test: the fetched pair was tampered with on purpose, so a red canary here is the expected result."
+            fi
             echo
             echo "<details><summary>Live check output</summary>"
             echo
