@@ -181,6 +181,38 @@ equal(forcedJson.ok,false,"--json reports the byte-identity failure as not ok");
 equal(forcedJson.documentIdentical,false,"--json records that the documents differ");
 equal(forcedJson.expectIdentical,true,"--json records that byte identity was required");
 
+// 8b. The Streamlit artifact is a file copied from a repository, so there is no second
+//     document to compare — but a green run still has to say which published copy it
+//     was about. `--consumer-repo/--consumer-commit` name the commit the bytes were
+//     read from, the way `--deployed` names it for the website.
+const APP_REPO="richardparslow-commits/health_app.py",APP_SHA="3f25dbc0aa11bb22cc33dd44ee55ff66aa77bb88";
+const provenance=["--consumer-repo",APP_REPO,"--consumer-commit",APP_SHA];
+let r4=check(write("streamlit-published.html",build),buildPath,["--expect-identical",...provenance]);
+equal(r4.status,0,"a published artifact named by commit passes");
+ok(/Deployment: richardparslow-commits\/health_app\.py@3f25dbc/.test(r4.out),"the verdict names the deployed commit");
+ok(/the copy compared was read from that commit/.test(r4.out),"and says the compared bytes are that commit's copy");
+ok(/PASS — this consumer is byte-identical to the build\.\n       Judged: richardparslow-commits\/health_app\.py@3f25dbc\./.test(r4.out),"the pass line repeats which deployment it judged");
+const provenanceJson=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",write("streamlit-published-json.html",build),"--build",buildPath,"--expect-identical",...provenance,"--json"],{encoding:"utf8"}));
+equal(provenanceJson.readFrom.repo,APP_REPO,"--json carries the repository it was read from");
+equal(provenanceJson.readFrom.commit,APP_SHA,"--json carries the full commit, not the abbreviation the verdict prints");
+// Without the pair the verdict claims nothing about a deployment it cannot name.
+r4=check(write("streamlit-unnamed.html",build),buildPath,["--expect-identical"]);
+equal(r4.status,0,"a consumer with no provenance still compares");
+ok(!/Deployment:|Judged:/.test(r4.out),"and does not invent a deployment");
+// Half a pair is a usage error, not a verdict about a copy nobody named.
+r4=check(write("streamlit-half.html",build),buildPath,["--consumer-commit",APP_SHA]);
+equal(r4.status,1,"a commit without a repository fails");
+ok(/--consumer-commit names the deployment the consumer was read from/.test(r4.err),"the failure says what the commit needs");
+r4=check(write("streamlit-half2.html",build),buildPath,["--consumer-repo",APP_REPO]);
+equal(r4.status,1,"a repository without a commit fails");
+ok(/--consumer-repo needs --consumer-commit/.test(r4.err),"the failure says which half is missing");
+// The wiring: the Streamlit job has to pass the commit it fetched, or the summary goes
+// back to naming only a filename.
+const streamlitWiring=fs.readFileSync(path.join(root,".github/workflows/consumer-parity.yml"),"utf8");
+ok(/--consumer-repo "\$DEPLOYED_STREAMLIT_REPO"/.test(streamlitWiring),"the artifact comparison is given the repository");
+ok(/--consumer-commit "\$DEPLOYED_STREAMLIT_COMMIT"/.test(streamlitWiring),"and the commit, so the verdict can name it");
+ok(/echo "DEPLOYED_STREAMLIT_COMMIT=\$commit" >> "\$GITHUB_ENV"/.test(streamlitWiring),"the fetch step exports the commit it checked out");
+
 // 7. JSON output carries the machine-readable verdict.
 const parsed=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",write("json.html",build),"--build",buildPath,"--json"],{encoding:"utf8"}));
 equal(parsed.ok,true,"--json reports ok for a matching consumer");

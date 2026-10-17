@@ -29,6 +29,7 @@
      node scripts/check-consumer-parity.js --expect-identical   # fail unless byte-identical
      node scripts/check-consumer-parity.js --declarations <path> # another consumer's adaptations
      node scripts/check-consumer-parity.js --deployed <path> --deployed-commit <sha> [--deployed-repo <owner/name>]
+     node scripts/check-consumer-parity.js --consumer-repo <owner/name> --consumer-commit <sha>
      node scripts/check-consumer-parity.js --json
 
    <path> may be the built HTML, the website's route file that holds the embed as
@@ -48,6 +49,15 @@
    page that still carries something it declares omitted, and a document that is not
    that composition all fail — the first two mean the page cannot be regenerated from
    this build or does not match its own description, the last means it is not this build.
+
+   A consumer that was read from a deployed repository can say so, with
+   `--consumer-repo <owner/name> --consumer-commit <sha>`: the verdict then names the
+   commit it judged instead of naming a copied file. That is the Streamlit job's shape —
+   app_embedded.html fetched at one commit of richardparslow-commits/health_app.py — and
+   without it a green run says "app_embedded.html is byte-identical to the build" while
+   leaving open which published copy that was. The pair is reported, not verified against
+   a second document: the bytes compared *are* that commit's copy, which is why the
+   repository is fetched by commit rather than over a CDN that can serve another one.
 
    A consumer that states which release it runs has to state this one, in every place it
    says so (see "the release the page claims" below): the served page and the committed
@@ -98,6 +108,8 @@ function parseArgs(argv) {
     else if (a === "--deployed") args.deployed = argv[++i];
     else if (a === "--deployed-commit") args.deployedCommit = argv[++i];
     else if (a === "--deployed-repo") args.deployedRepo = argv[++i];
+    else if (a === "--consumer-repo") args.consumerRepo = argv[++i];
+    else if (a === "--consumer-commit") args.consumerCommit = argv[++i];
     else if (a === "--json") args.json = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error("Unknown argument: " + a);
@@ -728,11 +740,16 @@ function report(results, meta) {
   const releaseProblems = meta.release?.problems ?? [];
   const ok = critical.length === 0 && !byteMismatch && problems.length === 0 && deploymentProblems.length === 0 && releaseProblems.length === 0;
   if (meta.json) {
-    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, expectIdentical: meta.expectIdentical, documentIdentical: meta.documentIdentical, declarations: meta.declarationFile ? { file: meta.declarationFile, ids: meta.declarationIds, exact: meta.declarationExact, composed: meta.declarationComposed, problems, notes: meta.declarationNotes } : null, release: meta.release ? { build: meta.release.version, checked: meta.release.checked, problems: releaseProblems } : null, deployment: meta.deployment ? { repo: meta.deployment.repo, commit: meta.deployment.commit, file: meta.deployment.file, identical: meta.deployment.identical, exact: meta.deployment.exact, composed: meta.deployment.composed, problems: deploymentProblems } : null, results, ok }, null, 2));
+    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, readFrom: meta.readFrom ?? null, expectIdentical: meta.expectIdentical, documentIdentical: meta.documentIdentical, declarations: meta.declarationFile ? { file: meta.declarationFile, ids: meta.declarationIds, exact: meta.declarationExact, composed: meta.declarationComposed, problems, notes: meta.declarationNotes } : null, release: meta.release ? { build: meta.release.version, checked: meta.release.checked, problems: releaseProblems } : null, deployment: meta.deployment ? { repo: meta.deployment.repo, commit: meta.deployment.commit, file: meta.deployment.file, identical: meta.deployment.identical, exact: meta.deployment.exact, composed: meta.deployment.composed, problems: deploymentProblems } : null, results, ok }, null, 2));
     return ok;
   }
   console.log("Consumer : " + meta.consumer);
   console.log("           (" + meta.how + ")");
+  if (meta.readFrom) {
+    console.log("Deployment: " + label(meta.readFrom.repo, meta.readFrom.commit));
+    console.log("            the copy compared was read from that commit, so the verdict is about it and not about");
+    console.log("            whichever copy a cache or the default branch was serving");
+  }
   console.log("Build    : " + meta.build);
   if (meta.declarationFile) console.log("Declared : " + meta.declarationFile + " — " + meta.declarationIds.join(", "));
   if (meta.release) {
@@ -823,6 +840,7 @@ function report(results, meta) {
   } else {
     console.log("PASS — this consumer is byte-identical to the build.");
   }
+  if (ok && meta.readFrom) console.log("       Judged: " + label(meta.readFrom.repo, meta.readFrom.commit) + ".");
   return ok;
 }
 
@@ -848,6 +866,13 @@ async function main() {
     throw new Error("--deployed needs --deployed-commit <branch, tag or SHA>, so the verdict can name the deployment it judged");
   if (args.deployedCommit && !args.deployed)
     throw new Error("--deployed-commit names a deployment to read; pass --deployed <path> with the page at that commit");
+  // Where the consumer itself came from is reported, not proven: a caller can name the
+  // wrong commit. The workflow sets both from the checkout it performed, which is the
+  // only thing that can know.
+  if (args.consumerCommit && !args.consumerRepo)
+    throw new Error("--consumer-commit names the deployment the consumer was read from; pass --consumer-repo <owner/name> with it");
+  if (args.consumerRepo && !args.consumerCommit)
+    throw new Error("--consumer-repo needs --consumer-commit <branch, tag or SHA>, so the verdict can name the commit it judged");
   const committed = args.deployed ? readDeployment(args.deployed, args.deployedCommit) : null;
   const deployment = committed
     ? verifyDeployment(committed, consumer.html, build, loaded, args.deployedRepo ?? null, args.deployedCommit)
@@ -873,6 +898,7 @@ async function main() {
     consumer: args.consumer,
     build: path.relative(ROOT, buildPath),
     how: consumer.how,
+    readFrom: args.consumerCommit ? { repo: args.consumerRepo, commit: args.consumerCommit } : null,
     json: args.json,
     documentIdentical: consumer.html === build,
     expectIdentical: args.expectIdentical,

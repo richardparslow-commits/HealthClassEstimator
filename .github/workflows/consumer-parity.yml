@@ -24,17 +24,18 @@ name: Check the live consumers against the build
 #               rather than the copy the edge was still serving. A response that
 #               says it came from a cache anyway is retried with a new nonce and
 #               then refused — never compared, because comparing it is the answer
-#               this job exists to stop being wrong.
-#   streamlit — the artifact Streamlit Community Cloud renders, read from a
-#               checkout of richardparslow-commits/health_app.py pinned to one
-#               commit. That file is the build output copied verbatim, so the
-#               verdict required here is byte-identical, and its manifest must
-#               describe it; anything else means the deployed tool is not the
-#               reviewed one. The checkout is a git fetch of one commit, not a
-#               download from raw.githubusercontent.com: that CDN goes on serving
-#               the previous commit for minutes after a push, and two independent
-#               requests can even return an artifact and a manifest from two
-#               different commits.
+#               this job exists to stop being wrong.  #   streamlit — the artifact Streamlit Community Cloud renders, read from a
+  #               checkout of richardparslow-commits/health_app.py pinned to one
+  #               commit. That file is the build output copied verbatim, so the
+  #               verdict required here is byte-identical, and its manifest must
+  #               describe it; anything else means the deployed tool is not the
+  #               reviewed one. The checkout is a git fetch of one commit, not a
+  #               download from raw.githubusercontent.com: that CDN goes on serving
+  #               the previous commit for minutes after a push, and two independent
+  #               requests can even return an artifact and a manifest from two
+  #               different commits. The verdict names that commit
+  #               (repo@sha), so a green run says which published copy it judged
+  #               rather than only which file it read.
 #   runtime   — the deployed wrapper itself, exercised the way Streamlit does.
 #               That repository holds no build logic: it verifies the pair it
 #               serves. This job proves the contract in both directions — the
@@ -235,6 +236,9 @@ jobs:
           commit=$(git -C deployed rev-parse HEAD)
           echo "repo=$REPO" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          # The comparison below names the commit it read, the way the website job does.
+          echo "DEPLOYED_STREAMLIT_REPO=$REPO" >> "$GITHUB_ENV"
+          echo "DEPLOYED_STREAMLIT_COMMIT=$commit" >> "$GITHUB_ENV"
           echo "Read $REPO at $commit" | tee -a streamlit.txt
           # The manifest records the artifact's name, so the copies keep it.
           cp deployed/app_embedded.html deployed/app_embedded.manifest.json .
@@ -242,10 +246,17 @@ jobs:
 
       # This consumer receives the build output copied verbatim, so a
       # presentational difference is drift here, not an embed adaptation.
+      # `--consumer-repo/--consumer-commit` do not compare anything extra: the bytes being
+      # compared are that commit's copy, fetched by commit rather than over a CDN that can
+      # serve another. They make the verdict say which published copy it was about — the
+      # same question the website job answers with --deployed, asked of a file instead of
+      # a page.
       - name: Require the published artifact to be the build, byte for byte
         run: |
           set -o pipefail
-          node scripts/check-consumer-parity.js --consumer app_embedded.html --expect-identical 2>&1 | tee -a streamlit.txt
+          node scripts/check-consumer-parity.js --consumer app_embedded.html --expect-identical \
+            --consumer-repo "$DEPLOYED_STREAMLIT_REPO" \
+            --consumer-commit "$DEPLOYED_STREAMLIT_COMMIT" 2>&1 | tee -a streamlit.txt
 
       # Byte identity alone would accept a manifest that describes something else,
       # so the artifact is also held to the record it shipped with.
