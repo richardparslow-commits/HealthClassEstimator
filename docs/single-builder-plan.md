@@ -271,6 +271,13 @@ automatically. Confirm the Streamlit Cloud page (§9).
 - **Self-consistent tampering** (artifact + manifest both hand-made): not
   detectable at boot by design; caught daily against a fresh build. Documented in
   §5 and in the Streamlit README.
+- **Upstream API removal taking the live app down.** This is the risk the whole
+  wrapper is shaped around, and it is now watched rather than remembered: the
+  daily canary (A9) installs the newest Streamlit, ignoring the deployed ceiling,
+  and runs the live check against the deployed pair — so the answer to "can the
+  ceiling move?" arrives before the upgrade, not after it. A red canary files a
+  `streamlit-canary` issue and the run summary says whether the installed version
+  is inside or outside the deployed pin.
 - **Streamlit Cloud process reuse.** A redeploy restarts the app; verification
   runs at import, so no stale document survives a redeploy.
 
