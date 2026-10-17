@@ -551,6 +551,7 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     const text = fs.readFileSync(out, "utf8");
     ok(/### Verified, not published/.test(text), "it says the run verified a copy it did not publish (" + where + ")");
     ok(/confirmed it is this build/.test(text), "because the read-back left the marker that says so (" + where + ")");
+    ok(text.includes("Deployed commit: `" + sha + "`"), "naming the deployed commit it read back, so the reader does not open the log to learn which build was judged (" + where + "): " + text.slice(0, 240));
     ok(/nothing was pushed/.test(text), "explaining why there is no deployed commit (" + where + "): " + text.slice(0, 160));
     ok(!/### Published/.test(text), "and does not claim a publish (" + where + ")");
     ok(!/No deploy token was configured/.test(text), "nor blames a missing token for a decision the dispatch made (" + where + ")");
@@ -563,6 +564,9 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   // than from anything the run did.
   {
     const fx = fixture();
+    // The read-back names the commit before its own checks fail, which is the state a
+    // stale deployment leaves: origin holds a build, and it is not this one.
+    fs.writeFileSync(path.join(fx.dir, "published-commit.txt"), sha + "\n");
     fs.writeFileSync(
       path.join(fx.dir, "published.txt"),
       "FAIL — the published artifact is not the build this repository produced: origin 238132 bytes, build 245183 bytes\n",
@@ -580,7 +584,9 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     ok(!/judged it against this build/.test(text), "nor the sentence that claimed it had compared the deployment");
     ok(/nothing was pushed/.test(text), "it still says the run published nothing");
     ok(/cannot say the deployment matches/.test(text), "and that it cannot vouch for the deployment");
-    ok(/FAIL — the published artifact is not the build this repository produced/.test(text), "while quoting what the read-back did find");
+    ok(text.includes("Deployed commit: `" + sha + "`"), "naming the commit the read-back saw, which is the build the failed checks ran against: " + text.slice(0, 240));
+    ok(/not a build this run verified/.test(text), "while saying plainly that it is not vouched for");
+    ok(/FAIL — the published artifact is not the build this repository produced/.test(text), "and quoting what the read-back did find");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 
@@ -598,6 +604,7 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     const text = fs.readFileSync(out, "utf8");
     ok(/### Not verified/.test(text), "a run with no read-back output is not verified");
     ok(/The read-back produced no output/.test(text), "and says the read-back produced no verdict: " + text.slice(0, 200));
+    ok(!/Deployed commit: `/.test(text), "and names no commit: nothing was read back to name");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 

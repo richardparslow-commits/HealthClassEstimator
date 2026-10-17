@@ -321,9 +321,20 @@ jobs:
               if [ -n "$verified" ]; then
                 echo "### Verified, not published"
                 echo "This run asked for verification only, so nothing was pushed; it read the deployed repository's current main back and confirmed it is this build."
+                # Which build was judged is the first thing a reader of a verify-only run
+                # wants, and it used to be answerable only from the quoted log below.
+                if [ -n "$PUBLISHED_SHA" ]; then
+                  echo "Deployed commit: \`${PUBLISHED_SHA}\` in richardparslow-commits/health_app.py — origin's main when the read-back ran, and the build these checks judged, compared byte for byte with \`dist/app.html\` and the manifest this run wrote."
+                fi
               else
                 echo "### Not verified"
                 echo "This run asked for verification only, so nothing was pushed — but its read-back did not confirm that origin's current main is this build, so this run cannot say the deployment matches. Nothing was published."
+                # Still named when the read-back got far enough to read it: a stale
+                # deployment is identified by the commit it serves, and that is the one
+                # fact worth having from a run whose own checks did not finish.
+                if [ -n "$PUBLISHED_SHA" ]; then
+                  echo "Deployed commit: \`${PUBLISHED_SHA}\` in richardparslow-commits/health_app.py — origin's main as the read-back saw it. This names the build the checks ran against; it is not a build this run verified."
+                fi
               fi
               echo
               quote_output
