@@ -13,6 +13,10 @@ name: Deploy Streamlit app
 # and after the push the branch head is read back from origin and compared again,
 # so a run that says "published" names the commit Streamlit Cloud will serve.
 #
+# Dispatching with `verify_published` runs that read-back on its own — origin's
+# current main against this build, pushing nothing — so the deployed copy can be
+# judged from CI without the token, including after a hand sync.
+#
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
 # secrets as STREAMLIT_PUSH_TOKEN. The token is only needed to push: staging the
@@ -27,6 +31,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      # Push runs exercise the read-back only once the token exists. Until then,
+      # and for a copy synced by hand, this is how the deployed commit gets read
+      # back and judged without publishing anything — the same comparison, with
+      # origin's current main as the subject instead of a commit this run pushed.
+      verify_published:
+        description: "Read the deployed repository's current main back and check it is this build (pushes nothing; works without the token)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-streamlit
@@ -37,6 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       STREAMLIT_PUSH_TOKEN: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
+      VERIFY_PUBLISHED: ${{ inputs.verify_published }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -200,15 +214,22 @@ jobs:
       # repository's own pair verifier on the copy origin holds. That is what makes
       # the run summary's "published" a claim about this build.
       - name: Read back what the deployed repository now holds
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' || env.VERIFY_PUBLISHED == 'true' }}
         env:
           DEPLOYED_REPO: richardparslow-commits/health_app.py
         run: |
           set -o pipefail
+          # A push run judges the commit it pushed; a verify-only run has pushed
+          # nothing, so origin's current main is the subject — which is the point
+          # of dispatching it after a hand sync.
+          expect=()
+          if [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+            expect=(--expect "$(git -C streamlit-app rev-parse HEAD)")
+          fi
           scripts/verify-published-pair.sh \
             --remote "https://github.com/${DEPLOYED_REPO}.git" \
             --branch main \
-            --expect "$(git -C streamlit-app rev-parse HEAD)" \
+            "${expect[@]}" \
             --into published \
             --commit-out published-commit.txt 2>&1 | tee published.txt
           python3 scripts/verify-streamlit-runtime.py published 2>&1 | tee -a published.txt
@@ -217,7 +238,7 @@ jobs:
       # gate existed the workflow warned and exited 0 without pushing, so a
       # release could look shipped while Streamlit still served the old build.
       - name: Fail when the deploy token is not configured (main)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && github.ref == 'refs/heads/main' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.VERIFY_PUBLISHED != 'true' && github.ref == 'refs/heads/main' }}
         run: |
           echo "::error::STREAMLIT_PUSH_TOKEN is not set, so richardparslow-commits/health_app.py was NOT updated and this release is not live. Create a PAT with Contents read/write on that repository, add it as the STREAMLIT_PUSH_TOKEN secret, then re-run this workflow."
           exit 1
@@ -241,6 +262,15 @@ jobs:
               else
                 echo "The push reported success but no commit was read back, so this run cannot name what is live. See the read-back step for why."
               fi
+              echo
+              echo '```'
+              cat published.txt 2>/dev/null || echo "The read-back produced no output."
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$VERIFY_PUBLISHED" = "true" ]; then
+            {
+              echo "### Verified, not published"
+              echo "No deploy token was configured, so this run pushed nothing; it read the deployed repository's current main back and judged it against this build."
               echo
               echo '```'
               cat published.txt 2>/dev/null || echo "The read-back produced no output."

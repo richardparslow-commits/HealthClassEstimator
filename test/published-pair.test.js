@@ -214,11 +214,33 @@ ok(/--commit-out published-commit\.txt/.test(deploy), "and records that commit f
 ok(/python3 scripts\/verify-streamlit-runtime\.py published/.test(deploy), "the deployed commit is run through the same pair verifier as the staged copy");
 ok(readBackAt < tokenGateAt, "the token gate stays last, so its message is what a tokenless run ends on");
 const readBackStep = deploy.slice(readBackAt, deploy.indexOf("- name:", readBackAt + 10));
-ok(
-  /^\s*if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN != '' \}\}$/m.test(readBackStep),
-  "the read-back only runs when something was pushed"
-);
 ok(/Deployed commit: .+\$\{PUBLISHED_SHA\}/.test(deploy), "the run summary names the commit that is live");
+
+/* --- and the read-back can be run without a token ------------------------ */
+
+// The read-back only runs on a push once STREAMLIT_PUSH_TOKEN exists, so until it
+// does — and for a copy synced by hand, which is how releases ship today — the
+// dispatch input is the only way CI ever exercises this path. A verification that
+// cannot be run is documentation.
+ok(/verify_published:\n(\s+)description: .*\n\s+type: boolean\n\s+default: false/.test(deploy), "the workflow can be dispatched to verify the deployed copy without publishing");
+ok(/VERIFY_PUBLISHED: \$\{\{ inputs\.verify_published \}\}/.test(deploy), "the input is mapped to an env var, since the inputs context cannot be read in if:");
+ok(
+  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN != '' \|\| env\.VERIFY_PUBLISHED == 'true' \}\}/.test(readBackStep),
+  "the read-back runs for a verify-only dispatch as well as for a push"
+);
+ok(
+  /expect=\(\)[\s\S]*if \[ -n "\$STREAMLIT_PUSH_TOKEN" \]; then[\s\S]*expect=\(--expect "\$\(git -C streamlit-app rev-parse HEAD\)"\)/.test(readBackStep),
+  "but only a push run requires origin to be the commit it pushed: a verify-only run judges whatever main is"
+);
+ok(
+  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN == '' && env\.VERIFY_PUBLISHED != 'true' && github\.ref == 'refs\/heads\/main' \}\}/.test(deploy),
+  "a verify-only run is not failed by the token gate it deliberately has no token for"
+);
+ok(/### Verified, not published/.test(deploy), "and its summary says it verified rather than published");
+ok(
+  (deploy.match(/cat published\.txt 2>\/dev\/null/g) || []).length >= 2,
+  "both the published and the verify-only summaries carry the read-back output"
+);
 
 const parityWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "consumer-parity.yml"), "utf8");
 ok(
