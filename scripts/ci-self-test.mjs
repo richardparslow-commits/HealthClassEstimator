@@ -52,10 +52,14 @@ const RELEASE = {
   job: "deploy",
   inputs: ["-f", "verify_published=true"],
   // The five decisions the release makes on a verify-only dispatch. A name here that
-  // the run does not report is a failure, not a silence.
+  // the run does not report is a failure, not a silence. The read-back is `ran`, not
+  // `success`: this command proves that GitHub evaluated the condition and executed the
+  // step, while whether the deployed copy matches this build is the deployment checks'
+  // verdict, not the self-test's. A read-back that is skipped is still a failure — that
+  // is the condition being wrong, which is what this command exists to catch.
   steps: {
     "Check out HealthClassEstimator": "success",
-    "Read back what the deployed repository now holds": "success",
+    "Read back what the deployed repository now holds": "ran",
     "Fail when the deploy token is not configured (main)": "skipped",
     "Explain the skipped push on a non-main ref": "skipped",
     "Commit and push (triggers Streamlit Cloud redeploy)": "skipped",
@@ -249,8 +253,15 @@ function judgeRelease(run, problems) {
     return {};
   }
   for (const [name, expected] of Object.entries(RELEASE.steps)) {
-    if (!(name in steps)) problems.push("the release run reports no step named `" + name + "`");
-    else if (steps[name] !== expected) {
+    if (!(name in steps)) {
+      problems.push("the release run reports no step named `" + name + "`");
+    } else if (expected === "ran") {
+      // Ran means GitHub decided the condition was true and started the step. Its
+      // conclusion is the deployment's state, which the receipt records separately.
+      if (steps[name] === "skipped" || steps[name] === null || steps[name] === undefined) {
+        problems.push("the release step `" + name + "` was " + JSON.stringify(steps[name]) + ", so the condition never ran it");
+      }
+    } else if (steps[name] !== expected) {
       const detail =
         name.startsWith("Commit and push") && steps[name] !== "skipped"
           ? " — a verify-only dispatch must publish nothing; this is the step that would have pushed, so the release may have gone live"
@@ -280,7 +291,7 @@ function judgeAudit(run, problems) {
 
 /* --- the receipt ----------------------------------------------------------- */
 
-function receipt({ dispatchedAt, selfTestRunId, runs, problems, dispatchErrors }) {
+function receipt({ dispatchedAt, selfTestRunId, runs, problems, warnings, dispatchErrors }) {
   return {
     ok: problems.length === 0,
     repo,
@@ -291,6 +302,7 @@ function receipt({ dispatchedAt, selfTestRunId, runs, problems, dispatchErrors }
     runs,
     dispatchErrors,
     problems,
+    warnings,
   };
 }
 
@@ -309,8 +321,19 @@ function markdownOf(result) {
     lines.push(
       "- " + label + ": " + id + " — " + (run.conclusion ?? run.status ?? "unknown") +
         (run.headSha ? " at `" + String(run.headSha).slice(0, 7) + "`" : "") +
-        (label === "release" ? "; verify-only: push " + (run.steps?.["Commit and push (triggers Streamlit Cloud redeploy)"] ?? "not reported") : ""),
+        (label === "release"
+          ? "; verify-only: push " +
+            (run.steps?.["Commit and push (triggers Streamlit Cloud redeploy)"] ?? "not reported") +
+            "; read-back " +
+            (run.readback ?? "not reported") +
+            (run.deployment && run.deployment !== "not judged" ? " (deployment " + run.deployment + ")" : "")
+          : ""),
     );
+  }
+  if (result.warnings.length) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const warning of result.warnings) lines.push("- " + warning);
   }
   if (result.problems.length) {
     lines.push("");
@@ -330,6 +353,7 @@ function report(result, markdownPath) {
     }
     console.log("       Release verify-only: the push step was skipped, so nothing was published.");
     console.log("       Audit: every step concluded success, including the condition evaluator and the coverage guard.");
+    for (const warning of result.warnings) console.log("       WARN: " + warning);
     return 0;
   }
   console.log("FAIL — GitHub's own record does not match what these workflows claim.");
@@ -337,6 +361,7 @@ function report(result, markdownPath) {
     const run = result.runs[label];
     if (run) console.log("       " + label + ": run #" + run.runId + " " + (run.conclusion ?? run.status) + " — " + run.url);
   }
+  for (const warning of result.warnings) console.log("       WARN: " + warning);
   for (const problem of result.problems) console.log("       " + problem);
   console.log("       The receipt beside this verdict holds the run IDs and the step conclusions.");
   return 1;
@@ -373,6 +398,7 @@ async function main(argv) {
 
   const runs = {};
   const problems = [];
+  const warnings = [];
   const dispatchErrors = {};
 
   // The release first. It shares a concurrency group with real deploys, so it is
@@ -395,12 +421,26 @@ async function main(argv) {
       const found = await discover(spec, known[spec.label], dispatchedAt, args.timeoutSeconds, args.pollSeconds);
       const view = await waitFor(found.run.databaseId, args.timeoutSeconds, args.pollSeconds);
       const steps = spec.label === "release" ? judgeRelease(view, problems) : judgeAudit(view, problems);
+      // The read-back's verdict is the deployment's state, not this command's subject.
+      // A release run that is red only because the deployed copy is not this build has
+      // still proved what the self-test exists to prove; it is reported as a warning so
+      // the operator sees it, and the deployment checks own the failure.
+      const readback = steps["Read back what the deployed repository now holds"];
+      const deployment = readback === "success" ? "matches this build" : readback === "failure" ? "does not match this build" : "not judged";
       if (view.status !== "completed") {
         problems.push(
           "the " + spec.label + " run did not finish within " + args.timeoutSeconds + " seconds (status " + JSON.stringify(view.status) + "); it is " + view.url,
         );
       } else if (view.conclusion !== "success") {
-        problems.push("the " + spec.label + " run concluded " + JSON.stringify(view.conclusion) + " — " + view.url);
+        if (spec.label === "release" && readback === "failure") {
+          warnings.push(
+            "the release run is red because its read-back judged the deployment and failed: the copy served from richardparslow-commits/health_app.py is " +
+              deployment +
+              ". That is the deployment checks' verdict, not this command's; the condition ran, the checkout ran, and the push was skipped as a verify-only dispatch requires.",
+          );
+        } else {
+          problems.push("the " + spec.label + " run concluded " + JSON.stringify(view.conclusion) + " — " + view.url);
+        }
       }
       if (found.ignored.length) problems.push("more than one new dispatch run appeared for " + spec.workflow + "; judged #" + found.run.databaseId + " and ignored " + found.ignored.map((id) => "#" + id).join(", "));
       runs[spec.label] = {
@@ -411,6 +451,7 @@ async function main(argv) {
         status: view.status,
         conclusion: view.conclusion ?? null,
         event: view.event ?? found.run.event,
+        ...(spec.label === "release" ? { readback, deployment } : {}),
         steps,
       };
     } catch (error) {
@@ -424,7 +465,7 @@ async function main(argv) {
     );
   }
 
-  const result = receipt({ dispatchedAt, selfTestRunId, runs, problems, dispatchErrors });
+  const result = receipt({ dispatchedAt, selfTestRunId, runs, problems, warnings, dispatchErrors });
   writeFileSync(args.receipt, JSON.stringify(result, null, 2) + "\n");
   return report(result, args.markdown);
 }

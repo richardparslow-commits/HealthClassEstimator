@@ -269,7 +269,31 @@ function receiptOf(fx) {
 }
 
 {
-  // The read-back skipped: the run is green because it never judged the deployment.
+  // The read-back ran and failed because the deployed copy is not this build. That is a
+  // red release run, but the machinery did what it was asked: the condition ran the
+  // step, so the self-test passes and reports the deployment as a warning — the
+  // deployment checks own that verdict.
+  const scenario = scenarioWith();
+  scenario.newRuns["deploy-streamlit.yml"][0].conclusion = "failure";
+  scenario.newRuns["deploy-streamlit.yml"][0].jobs[0].conclusion = "failure";
+  scenario.newRuns["deploy-streamlit.yml"][0].jobs[0].steps = stepsOf(
+    RELEASE_STEPS.map(([name, conclusion]) =>
+      name === "Read back what the deployed repository now holds" ? [name, "failure"] : [name, conclusion],
+    ),
+  );
+  const fx = fixture(scenario);
+  const result = invoke(fx);
+  equal(result.status, 0, "a read-back that ran and judged the deployment does not fail the self-test: " + result.stdout);
+  const receipt = receiptOf(fx);
+  equal(receipt.runs.release.readback, "failure", "the receipt records what the read-back concluded");
+  equal(receipt.runs.release.deployment, "does not match this build", "and what that means for the deployment");
+  ok(receipt.warnings.some((warning) => /read-back judged the deployment/.test(warning)), "with a warning naming it: " + JSON.stringify(receipt.warnings));
+  ok(/deployment does not match this build/.test(fs.readFileSync(fx.markdown, "utf8")), "and the summary says so");
+  fs.rmSync(fx.dir, { recursive: true, force: true });
+}
+
+{
+  // The read-back skipped: the run may be green, but the condition never ran the step.
   const scenario = scenarioWith();
   scenario.newRuns["deploy-streamlit.yml"][0].jobs[0].steps = stepsOf(
     RELEASE_STEPS.map(([name, conclusion]) =>
@@ -279,7 +303,20 @@ function receiptOf(fx) {
   const fx = fixture(scenario);
   const result = invoke(fx);
   equal(result.status, 1, "a skipped read-back fails the self-test");
-  ok(/Read back what the deployed repository now holds/.test(result.stdout), "naming the skipped step");
+  ok(/was "skipped", so the condition never ran it/.test(result.stdout), "naming the skipped step: " + result.stdout);
+  fs.rmSync(fx.dir, { recursive: true, force: true });
+}
+
+{
+  // The run failed somewhere the assertions do not explain: that is a machinery failure,
+  // not a deployment verdict, and must not be waved through as one.
+  const scenario = scenarioWith();
+  scenario.newRuns["deploy-streamlit.yml"][0].conclusion = "failure";
+  scenario.newRuns["deploy-streamlit.yml"][0].jobs[0].conclusion = "failure";
+  const fx = fixture(scenario);
+  const result = invoke(fx);
+  equal(result.status, 1, "a red release run whose read-back passed fails the self-test");
+  ok(/concluded "failure"/.test(result.stdout), "saying the run failed: " + result.stdout);
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
 
