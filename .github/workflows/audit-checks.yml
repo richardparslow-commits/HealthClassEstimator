@@ -63,6 +63,12 @@ jobs:
         run: npm run check:workflow-coverage
       - name: Verify the coverage guard against its fixtures
         run: npm run test:coverage
+      # The publish read-back is offline, like every check above: it belongs here and
+      # not in the job below, whose first step downloads a browser — a suite that only
+      # runs when that download succeeds reports nothing on the day it fails. (It was
+      # in there for one run, which is how the misplacement was noticed.)
+      - name: Verify the publish read-back
+        run: npm run test:published
 
   # The interview is the product, and the browser suite is the only check that
   # exercises it as an applicant does — the acknowledgment gate, the section walk,
@@ -88,11 +94,3 @@ jobs:
         run: npm run build
       - name: Exercise the interview in a real browser
         run: npm run test:ui
-      # Two builds ship from one run — the pair that is published and the copy the
-      # checks judged — and the deploy used to compare neither with the other, nor
-      # read the branch back from origin afterwards. The read-back decides whether a
-      # release may be called published, so its cases (matching pair, divergent
-      # artifact, manifest for a different build, missing file, wrong branch head)
-      # are fixtures against a real repository rather than prose.
-      - name: Verify the publish read-back
-        run: npm run test:published

@@ -238,6 +238,17 @@ ok(/npm run check:workflow-coverage/.test(audit) || /node scripts\/check-workflo
 
 const browser = audit.slice(audit.indexOf("  browser:"));
 ok(/^  browser:/m.test(audit), "the browser suite has its own job so its runtime cannot hide the other results");
+// Every offline suite runs in the job that has no browser to download: a step placed
+// after a job's installer only runs when the installer worked, so the suite would
+// report nothing on the day a download failed. One run had the read-back in there.
+ok(
+  audit.indexOf("      - name: Verify the publish read-back") < audit.indexOf("  browser:"),
+  "the offline publish read-back runs in the verify job, not after the browser job's installer"
+);
+ok(
+  (browser.match(/^      - name: /gm) || []).length === 3,
+  "and the browser job holds only the installer, the build and the browser suite: " + (browser.match(/^      - name: .*$/gm) || []).join(" | ")
+);
 ok(/npm install --no-save playwright/.test(browser), "which installs playwright without adding it to the project's dependencies");
 ok(/npx playwright install --with-deps chromium/.test(browser), "and the browser it drives");
 ok(browser.indexOf("npm run build") < browser.indexOf("npm run test:ui"), "and builds dist/app.html before the suite that visits it");
