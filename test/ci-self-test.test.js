@@ -64,6 +64,8 @@ const AUDIT_STEPS = [
 const stepsOf = (pairs) => pairs.map(([name, conclusion], number) => ({ name, conclusion, number, status: "completed" }));
 
 function run({ id, workflow, conclusion = "success", headSha = SHA_RELEASE, steps = RELEASE_STEPS, createdAt = "2020-01-01T00:00:00Z", status = "completed" }) {
+  // `createdAt` matters only for pre-existing runs; the fake replaces it for the runs a
+  // dispatch creates, so a fixture cannot encode a time the command has already passed.
   return {
     databaseId: id,
     createdAt,
@@ -110,7 +112,12 @@ const calls = fs.readFileSync(process.env.FAKE_GH_CALLS, "utf8").split("\\n").fi
 const dispatched = new Set(calls.filter((c) => c[0] === "workflow" && c[1] === "run").map((c) => c[2]));
 function runsFor(file) {
   const existing = (scenario.existing || {})[file] || [];
-  const fresh = dispatched.has(file) ? (scenario.newRuns || {})[file] || [] : [];
+  // A dispatched run is created now, not at a timestamp written into the fixture: the
+  // command filters runs by the time it dispatched, so a fixed date is a test that
+  // passes only until the wall clock walks past it. This is what CI found.
+  const fresh = dispatched.has(file)
+    ? ((scenario.newRuns || {})[file] || []).map((r) => ({ ...r, createdAt: new Date().toISOString() }))
+    : [];
   return existing.concat(fresh);
 }
 if (argv[0] === "workflow" && argv[1] === "run") {
