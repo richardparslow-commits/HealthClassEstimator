@@ -7,8 +7,9 @@ artifact/manifest pair, then proves the contract in both directions by importing
 the module with the small part of the Streamlit API it touches stubbed out:
 
   * the pair as published is served byte for byte, and
-  * a tampered artifact, a missing artifact, a missing manifest and a manifest
-    whose release version lies are each refused with a clear error.
+  * a tampered artifact, a missing artifact, a missing manifest, a manifest
+    naming a different file as its artifact, and a manifest whose release
+    version lies are each refused with a clear error.
 
 Why this exists: the deployed repository used to carry a second implementation
 of the build (build_app_html()) that inlined loose assets whenever the artifact
@@ -93,6 +94,14 @@ def lie_about_version(directory):
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+def name_a_different_artifact(directory):
+    """The manifest describes bytes it does not name — a pair from two builds."""
+    manifest_path = directory / "app_embedded.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifact"] = "streamlit_embedded.html"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
 def remove(name):
     def doctor(directory):
         (directory / name).unlink()
@@ -146,6 +155,15 @@ def main():
         ("tampered artifact", expected_refusal("the tampered artifact", tamper, "sha256"), tamper),
         ("missing artifact", expected_refusal("a missing artifact", remove("app_embedded.html"), "release:artifact"), remove("app_embedded.html")),
         ("missing manifest", expected_refusal("a missing manifest", remove("app_embedded.manifest.json"), "manifest"), remove("app_embedded.manifest.json")),
+        (
+            "manifest naming another file",
+            expected_refusal(
+                "a manifest that names a different artifact",
+                name_a_different_artifact,
+                "as the artifact",
+            ),
+            name_a_different_artifact,
+        ),
         ("lying manifest version", expected_refusal("a manifest whose version lies", lie_about_version, "HCE_VERSION"), lie_about_version),
     ]
 

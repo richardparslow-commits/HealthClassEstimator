@@ -194,7 +194,7 @@ a staged new `health_app.py`.
 In a clone of `health_app.py`: new `health_app.py` (verification, no builder),
 new README, delete `index.html`, `css/`, `js/`. Copy the pair generated in S1.
 *Verify:* `npm run release:artifact` in the estimator repo, then
-`python3 scripts/verify-streamlit-runtime.py <clone>` → 5/5 PASS. Confirm
+`python3 scripts/verify-streamlit-runtime.py <clone>` → 6/6 PASS. Confirm
 `shasum -a 256` of the artifact equals the canonical `dist/app.html`
 (byte-identical, no normalisation). Confirm the staged `health_app.py` has no
 `re.sub` and no `build_app_html`.
@@ -228,7 +228,7 @@ to the current artifact, so the redeploy changes no served bytes).
 
 **S6 — dispatch both workflows and read the receipts.**
 `consumer-parity.yml` (no inputs): expect `Live website` green, `Streamlit
-artifact` green **with strict byte identity**, `Streamlit runtime` green 5/5 —
+artifact` green **with strict byte identity**, `Streamlit runtime` green 6/6 —
 and no `streamlit-fallback` job. `deploy-streamlit.yml`: expect green through
 engine suite, build, CSS audit, builder guards, then the token gate (still the
 only failure on `main`, as designed).
@@ -246,7 +246,7 @@ automatically. Confirm the Streamlit Cloud page (§9).
 | A2 | No sources in the deployed repo | `git ls-files` → only `.devcontainer/`, `README.md`, `app_embedded.html`, `app_embedded.manifest.json`, `health_app.py`, `requirements.txt` |
 | A3 | Published artifact is byte-identical to a fresh build | `shasum -a 256` equality, no normalisation (`88d1204338b8…`) |
 | A4 | Manifest matches artifact and sources | `sha256`/`bytes`/`hce_version` equal fresh-build values |
-| A5 | Runtime refuses broken pairs and serves good ones | `verify-streamlit-runtime.py` 5/5 PASS; proven to fail on the old code in S2 |
+| A5 | Runtime refuses broken pairs and serves good ones | `verify-streamlit-runtime.py` 6/6 PASS; proven to fail on the old code in S2 |
 | A6 | Deploy job pushes exactly the pair + deletions | inspect the streamlit repo diff after the token exists (S7) |
 | A7 | No underwriting or rendering change | engine suite (10,332 assertions), build/css/builder/parity/manifest suites unchanged green; artifact hash unchanged |
 | A8 | Local `streamlit run` works | pair is committed; the app never needs Node or loose assets again |
