@@ -434,7 +434,7 @@ async function main(argv) {
       } else if (view.conclusion !== "success") {
         if (spec.label === "release" && readback === "failure") {
           warnings.push(
-            "the release run is red because its read-back judged the deployment and failed: the copy served from richardparslow-commits/health_app.py is " +
+            "the release run is red because its read-back judged the deployment and failed: the copy served from richardparslow-commits/health_app.py " +
               deployment +
               ". That is the deployment checks' verdict, not this command's; the condition ran, the checkout ran, and the push was skipped as a verify-only dispatch requires.",
           );
