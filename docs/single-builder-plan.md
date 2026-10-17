@@ -247,7 +247,7 @@ automatically. Confirm the Streamlit Cloud page (§9).
 | A3 | Published artifact is byte-identical to a fresh build | `shasum -a 256` equality, no normalisation (`88d1204338b8…`) |
 | A4 | Manifest matches artifact and sources | `sha256`/`bytes`/`hce_version` equal fresh-build values |
 | A5 | Runtime refuses broken pairs and serves good ones | `verify-streamlit-runtime.py` 6/6 PASS; proven to fail on the old code in S2 |
-| A6 | Deploy job pushes exactly the pair + deletions | inspect the streamlit repo diff after the token exists (S7) |
+| A6 | Deploy job stages exactly the pair + deletions, verifies it, and pushes it | Staging, sync, no-rebuild invariant and runtime verification now run on **every** push (token not needed); only the push itself waits for the token (S7) |
 | A7 | No underwriting or rendering change | engine suite (10,332 assertions), build/css/builder/parity/manifest suites unchanged green; artifact hash unchanged |
 | A8 | Local `streamlit run` works | pair is committed; the app never needs Node or loose assets again |
 
@@ -278,8 +278,11 @@ job is red and closes it when all are green — added after this plan, so that a
 drifted copy cannot fail quietly.)
 
 - `STREAMLIT_PUSH_TOKEN` — until it exists, the workflow never pushes; every sync
-  is manual.
-- Publish release 80 from Lovable — the website still serves release 79.
+  is manual. It now stages and verifies the pair on every push regardless, so a
+  run without the secret still answers whether the pair is fit to publish.
+- Publish release 80 from Lovable — the live page still serves release 78 (the
+  earlier note said 79; the served document says 78), with a broker-contact card
+  in place of the build's product-comparison table.
 - Confirm the Streamlit Cloud page after the S5 push; that render check cannot be
   made from here.
 

@@ -11,8 +11,11 @@ name: Deploy Streamlit app
 #
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
-# secrets as STREAMLIT_PUSH_TOKEN. Until that secret exists, the workflow runs
-# the test + build steps and skips the push with a warning.
+# secrets as STREAMLIT_PUSH_TOKEN. The token is only needed to push: staging the
+# deployed repository and verifying the pair happen on every run, so the steps
+# that decide whether a pair may ship are exercised whether or not it is set.
+# On main, a run without the secret still fails at the token gate, so a release
+# can never look published when it is not.
 #
 # NB: the `secrets` context cannot be read inside `if:` expressions, so the
 # token is mapped to a job-level `env` var and the steps test `env.X` instead.
@@ -64,6 +67,21 @@ jobs:
       - name: Check the manifest writer
         run: npm run test:manifest
 
+      # Staging needs no credentials — the deployed repository is publicly
+      # readable, which Streamlit Community Cloud requires anyway. Gating this on
+      # the token meant the sync, the no-rebuild invariant and the pair
+      # verification below had only ever run by hand, so CI could not answer
+      # whether a pair was fit to publish. Only the push needs the secret.
+      - name: Check out streamlit repo for staging (no token needed)
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' }}
+        run: |
+          if ! git clone --quiet --depth 1 --single-branch \
+               https://github.com/richardparslow-commits/health_app.py.git streamlit-app; then
+            echo "::error::Could not stage richardparslow-commits/health_app.py without a token. The repository must stay publicly readable; otherwise set STREAMLIT_PUSH_TOKEN."
+            exit 1
+          fi
+          echo "Staged $(git -C streamlit-app rev-parse HEAD) for verification"
+
       - name: Check out streamlit repo (health_app.py)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         uses: actions/checkout@v4
@@ -73,7 +91,6 @@ jobs:
           path: streamlit-app
 
       - name: Sync the artifact and its manifest into streamlit repo
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         run: |
           cp app_embedded.html app_embedded.manifest.json streamlit-app/
           # The deployed repository holds no build inputs and no second
@@ -82,7 +99,6 @@ jobs:
           rm -rf streamlit-app/index.html streamlit-app/css streamlit-app/js
 
       - name: Refuse to publish a repository that rebuilds the estimator
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         run: |
           if grep -q "def build_app_html" streamlit-app/health_app.py; then
             echo "::error::streamlit-app/health_app.py still implements the embedded build — the deployed repository must verify the artifact, not rebuild it."
@@ -93,8 +109,19 @@ jobs:
       # Verify the pair the way the deployed app does, before it can be pushed:
       # it must load and be served byte for byte, and a tampered copy must be refused.
       - name: Verify the pair the way the deployed app does
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
-        run: python3 scripts/verify-streamlit-runtime.py streamlit-app
+        run: |
+          set -o pipefail
+          python3 scripts/verify-streamlit-runtime.py streamlit-app 2>&1 | tee verified.txt
+
+      - name: Publish the verification to the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Staged pair verification"
+            echo '```'
+            cat verified.txt 2>/dev/null || echo "The verification produced no output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
@@ -136,5 +163,5 @@ jobs:
             echo "Pushed the built artifact and its manifest to richardparslow-commits/health_app.py; Streamlit Community Cloud redeploys on that push." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
-            echo "No deploy token was configured, so nothing was pushed. The artifact built by this run is not live.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
+            echo "No deploy token was configured, so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
           fi
