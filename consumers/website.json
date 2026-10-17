@@ -1,0 +1,96 @@
+{
+  "consumer": "https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor",
+  "releaseClaims": [
+    {
+      "id": "structured-data-version",
+      "why": "schema.org SoftwareApplication.softwareVersion is read by search engines, and it sat at 78 while the page ran 80 because nothing compared it with the build.",
+      "pattern": "softwareVersion: \"{version}\"",
+      "count": 1,
+      "in": ["source"]
+    },
+    {
+      "id": "structured-data-version-served",
+      "why": "The same claim as it reaches a crawler: JSON.stringify writes it without the space.",
+      "pattern": "\"softwareVersion\":\"{version}\"",
+      "count": 1,
+      "in": ["page"]
+    },
+    {
+      "id": "footer-stamp",
+      "why": "The visible release stamp under the page heading.",
+      "pattern": "Release {version} · Updated",
+      "count": 1,
+      "in": ["source", "page"]
+    },
+    {
+      "id": "faq-release",
+      "why": "The FAQ answer that tells a reader which release the page runs. Its trailing history may name earlier releases; only this claim has to move.",
+      "pattern": "runs HealthClassEstimator release {version}",
+      "count": 1,
+      "in": ["source"]
+    },
+    {
+      "id": "faq-release-served",
+      "why": "The same answer once it is served: the visible FAQ accordion and the FAQPage structured data built from the same array, so the sentence appears twice.",
+      "pattern": "runs HealthClassEstimator release {version}",
+      "count": 2,
+      "in": ["page"]
+    },
+    {
+      "id": "route-comment",
+      "why": "The comment above ESTIMATOR_HTML, which the generator already restamps.",
+      "pattern": "Self-contained release {version} from the reviewed source",
+      "count": 1,
+      "in": ["source"]
+    }
+  ],
+  "note": "How the predictor page adapts this repository's build. The page's generator (richardparslow-commits/life-policy-light, scripts/embed-estimator.mjs) reads this file and applies these four adaptations, copying everything else byte for byte, and check-consumer-parity.js applies the same file to the same build — one description of the page, read by the script that writes it and the check that judges it, instead of two copies that can drift. `inserts` adds lines at a build anchor, `omits` drops the build statement that starts at an anchor, `rewrites` replaces a fixed number of occurrences. The check applies them to the build and requires the page's document to begin with the result, followed by the page's own render-time adapters, so the page is held to this build exactly. A missing build anchor, a page that still carries an omitted statement, and a document that is not that composition all fail: the first two mean the page cannot be regenerated from this build or no longer matches its own description, the last means it is not this build. `releaseClaims` describes the other thing the page states about the build: which release it runs. Each claim is literal text with `{version}` where the number goes, matched against the build's own HCE_VERSION in every place it is declared — the committed page's source and the served page — so a page serving the right bytes cannot tell a reader or a crawler that it is an older release. The page's generator stamps the same claims, which is why the two cannot drift apart: softwareVersion sat at 78 while the page ran 80 only because it was hand-typed and nothing compared it.",
+  "adaptations": [
+    {
+      "id": "content-security-policy",
+      "component": "markup",
+      "why": "The page runs the estimator under a stricter policy than the standalone build, which carries none.",
+      "inserts": {
+        "after": "<meta charset=\"UTF-8\">",
+        "lines": [
+          "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'\">"
+        ]
+      }
+    },
+    {
+      "id": "same-origin-contact-links",
+      "component": "markup",
+      "why": "Both broker contact links stay on this origin and open in the parent frame.",
+      "rewrites": [
+        {
+          "from": "href=\"https://lifeinsurancebrokeradvocate.com/contact\" target=\"_blank\"",
+          "to": "href=\"/contact\" target=\"_parent\"",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "result-contact-card",
+      "component": "app",
+      "why": "The result page offers a contact card that posts hce-open-contact to the page instead of listing other carriers.",
+      "inserts": {
+        "before": "const refs=node(\"section\",\"card\");",
+        "lines": [
+          "    const contactBox=node(\"section\",\"card\");",
+          "    contactBox.appendChild(node(\"h3\",null,\"Discuss carrier options with Richard\"));",
+          "    paragraph(contactBox,\"This screen does not recommend a carrier or another product. Carrier selection requires a personal review.\");",
+          "    const contactLink=node(\"a\",\"btn-ack-contact\",\"Contact Richard\");",
+          "    contactLink.href=\"/contact\";",
+          "    contactLink.addEventListener(\"click\",function(event){event.preventDefault();window.parent.postMessage(\"hce-open-contact\",\"*\");});",
+          "    contactBox.appendChild(contactLink);target.appendChild(contactBox);"
+        ]
+      }
+    },
+    {
+      "id": "no-comparison-table",
+      "component": "app",
+      "why": "The page does not list or rank other carriers' products, so it leaves out the cross-product comparison table.",
+      "omits": ["const comparisons=Engine.compare(state);"]
+    }
+  ]
+}

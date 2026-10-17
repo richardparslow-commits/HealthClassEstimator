@@ -15,13 +15,22 @@ the same interpreter Streamlit would use, and checks:
     app_embedded.html, captured by wrapping the API the wrapper renders with;
   * the script raises no app exception for a good pair;
   * a tampered pair surfaces the refusal as an app exception naming the sha256;
-  * the wrapper calls no API Streamlit has announced for removal.
+  * the wrapper calls no API Streamlit has announced for removal;
+  * the interpreter running it is the one the deployed repository declares, and
+    the dev container it offers for a local run declares the same.
 
 It also prints how the Streamlit it is running sits against the directory's own
 requirements.txt pin. That line is not part of the verdict: deploy installs
 exactly the pinned version, while the scheduled canary deliberately installs a
 newer one to ask whether the ceiling can move, and only a reader can tell which
 of those two questions a given run was asking.
+
+The interpreter *is* part of the verdict, because it is the one thing a green run
+otherwise cannot speak for: Python 3.9 and 3.13 both exist on the machines this
+project is developed on, CI used to hard-code its own version in YAML, and Cloud
+runs whatever the app was deployed with. `scripts/python_pin.py` reads the
+deployed `.python-version`, checks the dev container against it, and compares both
+with this run.
 
 Usage:
     python3 scripts/verify-streamlit-live.py <directory>
@@ -42,6 +51,8 @@ import pathlib
 import shutil
 import sys
 import tempfile
+
+import python_pin
 
 REQUIRED = ("health_app.py", "app_embedded.html", "app_embedded.manifest.json")
 REMOVED_APIS = ("components.v1.html",)
@@ -203,6 +214,10 @@ def main():
                 verdict = "this run recorded no render call, so only the call sites could be read"
             print("  %s — no API Streamlit has announced for removal: %s" % ("FAIL" if deprecated else "PASS", verdict))
             failures += bool(deprecated)
+
+            interpreter = python_pin.check(base, sys.version_info)
+            print("  %s — python: %s" % (interpreter["status"], interpreter["message"]))
+            failures += interpreter["status"] != "PASS"
         finally:
             for name in ("_probed_health_app.py", "_probe.json"):
                 (good / name).unlink(missing_ok=True)
@@ -229,7 +244,7 @@ def main():
         )
         failures += not refused
 
-    total = 3
+    total = 4
     print("%d/%d cases behaved as the contract requires." % (total - failures, total))
     return 1 if failures else 0
 

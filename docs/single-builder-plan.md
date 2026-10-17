@@ -230,15 +230,19 @@ to the current artifact, so the redeploy changes no served bytes).
 `consumer-parity.yml` (no inputs): expect `Live website` green, `Streamlit
 artifact` green **with strict byte identity**, `Streamlit runtime` green 6/6 —
 and no `streamlit-fallback` job. `deploy-streamlit.yml` also runs
-`verify-streamlit-live.py` (3/3) against the staged checkout under a real
+`verify-streamlit-live.py` (4/4) against the staged checkout under a real
 Streamlit install; that check found the deprecated rendering API. `deploy-streamlit.yml`: expect green through
 engine suite, build, CSS audit, builder guards, then the token gate (still the
 only failure on `main`, as designed).
 *Done when:* both runs show the expected jobs.
 
 **S7 — optional, user-owned.**
-Set `STREAMLIT_PUSH_TOKEN`; the next push to estimator `main` deploys the pair
-automatically. Confirm the Streamlit Cloud page (§9).
+Set `STREAMLIT_PUSH_TOKEN` (Contents and Pull requests read/write on
+`richardparslow-commits/health_app.py`); the next push to estimator `main` deploys
+the pair automatically, and the same token is what lets a green canary above the
+ceiling open the review that raises it (A12). Without it a warranted lift fails the
+`propose-ceiling` job with that instruction rather than passing as nothing to do.
+Confirm the Streamlit Cloud page (§9).
 
 ## 7. Acceptance criteria
 
@@ -251,8 +255,15 @@ automatically. Confirm the Streamlit Cloud page (§9).
 | A5 | Runtime refuses broken pairs and serves good ones | `verify-streamlit-runtime.py` 6/6 PASS; proven to fail on the old code in S2 |
 | A6 | Deploy job stages exactly the pair + deletions, verifies it, and pushes it | Staging, sync, no-rebuild invariant and runtime verification now run on **every** push (token not needed); only the push itself waits for the token (S7) |
 | A7 | No underwriting or rendering change | engine suite (10,332 assertions), build/css/builder/parity/manifest suites unchanged green; artifact hash unchanged |
-| A8 | The app runs under Streamlit itself | `verify-streamlit-live.py` 3/3 on the staged checkout (real `AppTest` runtime), plus a real `streamlit run` rendering release 80 in a browser — and it found `st.components.v1.html`, which is now `st.iframe` |
+| A8 | The app runs under Streamlit itself | `verify-streamlit-live.py` 4/4 on the staged checkout (real `AppTest` runtime, plus the interpreter case), plus a real `streamlit run` rendering release 80 in a browser — and it found `st.components.v1.html`, which is now `st.iframe` |
+| A13 | One interpreter for the local run, CI and the deployment | `richardparslow-commits/health_app.py` declares `3.12` in `.python-version`; both workflows install it with `python-version-file: streamlit-app/.python-version` instead of naming a version in YAML (the deployed repo is checked out first for that reason), both fail with an instruction when the file is missing, the dev container's image is pinned to the same 3.12, and `verify-streamlit-live.py` fails when the interpreter it is running is not the declared one. Cloud cannot be read from here: its Advanced-settings selection is the live pin, and the deployed README says that rather than implying a file controls it. `npm run test:pin` (35 assertions) covers every disagreement, the malformed/missing/unsupported declaration, patch-level pins and the workflow wiring. **Order matters on the first landing:** the deployed repository's `.python-version` and dev-container image have to be committed before these workflow changes are pushed, because the guard reads the deployed default branch — until then the next deploy fails with the instruction to add the file |
 | A9 | The app still runs on the *newest* Streamlit, not just the pinned one | `.github/workflows/streamlit-canary.yml`, daily: installs the newest `streamlit` from PyPI (ignoring the deployed `>=1.66,<2` ceiling) and runs `verify-streamlit-live.py` against the deployed pair; the summary states whether the installed version is inside or outside the deployed pin, and one `streamlit-canary` issue stays open while the canary is red, closing on the first passing run |
+| A12 | A green canary above the ceiling ends in a reviewable pull request, not a log line | `scripts/streamlit-ceiling.js` decides from the deployed `requirements.txt` and the version that passed — next major above the proved release, floor unchanged — and writes the review text; the `propose-ceiling` job runs only when the canary said a lift is warranted and the channel was stable, puts the one-line change on `canary/streamlit-ceiling`, and opens or updates a single pull request in the deployed repository with the canary run linked. It declines with a reason on a prerelease, an exact pin, a pin with no ceiling, a release below the floor, or a release already inside the pin; a missing token fails the job rather than skipping the review. `npm run test:ceiling` (64 assertions) covers each verdict, the byte-preserving edit incl. CRLF/markers/comments, idempotent re-application, the body text and the workflow wiring |
+| A10 | No workflow reads a deployed copy over `raw.githubusercontent.com` | `npm run test:workflows` fails on a read in any workflow file (a `run:` line or an `env:` value) and passes on a comment that explains the bug; `npm run check:workflows` runs the same guard against the four workflows this repository ships |
+| A14 | A green verdict names the deployment it judged | `consumer-parity.yml`'s website job fetches the page from `richardparslow-commits/life-policy-light` at one ref (`website_ref`, default `main`), prints the resolved commit, and passes it to `check-consumer-parity.js --deployed <page> --deployed-commit <sha> --deployed-repo <repo>`. The run then makes two claims and reports them separately: the committed page is this build plus the declared adaptations (otherwise the repository is behind), and the served page is that committed page byte for byte (otherwise the deployment has not published it) — the verdict prints `richardparslow-commits/life-policy-light@<sha>`, the run summary carries it, and `--json` carries the full SHA. Naming an older ref therefore checks an older deploy on purpose. That repository is private (unauthenticated API 404) while the other two are public, so the fetch carries `WEBSITE_READ_TOKEN` in an auth header — never in the remote URL, because a failed fetch prints its arguments — falling back to the existing push token; a failed or absent token fails the job with the instruction to add one rather than skipping the comparison. Covered by 192 parity assertions, including the deployment fixtures (named commit, stale live page, a commit behind the build, a half pair, an unfetched page) and the workflow wiring, plus end-to-end runs against the live page: at `37d743e`/`8319b13` PASS naming the commit, at `d7faf60` exit 1 with both claims failing and their causes named |
+| A16 | A page cannot claim a release it is not serving | `consumers/website.json` `releaseClaims` declares every place the predictor page states its release — the route comment, the visible footer, the FAQ sentence and the schema.org `softwareVersion`, each as literal text with `{version}` — and `check-consumer-parity.js` matches each against the build's own `HCE_VERSION` on whichever surfaces this run read: the committed page's source (`--deployed`) and the served page (the wrapper HTML the frame came from, not the embedded document). A number other than the build's, a claim that disappeared, or one appearing more often than declared fails with the claim id, both numbers and the fix (regenerate, do not edit the number). Surfaces not read are reported as not read rather than passed. The page's generator reads the same declarations and restamps them from the build, failing when it cannot find one — that is the root-cause fix for `softwareVersion` sitting at 78 while the page ran 80: it was hand-typed while the generator restamped the other two. Site suite 9/9, including a build bumped to 81 moving all four source claims and leaving the committed page alone, and a reworded claim failing by id; estimator suite 192 assertions, including the real shape (only the structured data behind), a missing claim, a duplicated claim, a release bump and the unit rules. **The live page still serves `softwareVersion` 78** until the site is pushed — the check reports exactly that and goes red, which is the finding, not a regression |
+| A15 | The drift notification names the deployment it reports on | Each comparison job declares `repo`/`commit` outputs, written in the step that checks out the deployed commit, so a job that goes red after reading it still reports what it judged (a job output survives a failed job); the `alert` job passes `toJSON(needs)` to `scripts/parity-alert.js`, which writes the issue body, the still-failing comment and the closing comment. A failed job that read a commit is named `repo@short-sha`; one that never reached its fetch is reported as "no deployment read" with the likely causes; a skipped job as "did not run" and a cancelled one as cancelled, because those never had the chance and sending someone after a token they already have is worse than saying nothing. An unknown job added to `needs` later is still reported, under its own id, instead of being dropped. The issue's guidance paragraph reads the deployment line against the expected commit: same commit = not published yet, older commit = republish, none = fix the read. `npm run test:alert` (62 assertions) covers every state, the absence of an invented commit, the preserved guidance, the closing comment naming all three deployments, the `--json`-free CLI modes, malformed `needs` input, and the workflow wiring (outputs, `$GITHUB_OUTPUT` writes, no heredoc). The alert step's shell was also exercised against a stubbed `gh`: red with no issue creates one with the body file, red with an issue comments the judged deployment, green with an issue comments and closes, green without an issue makes no issue call |
+| A11 | The website's declared adaptations are checked, not explained twice — and not *described* twice either | `consumers/website.json` holds the page's four adaptations; `check-consumer-parity.js` composes them onto the build and requires the page's document to begin with the result (`237,533` characters), reports the difference as declared by name, and fails on a moved anchor, on a page still carrying the omitted table, or on a document that is not the composition — 192 parity assertions, including the fixture where the page is the build plus the four. The page's own `scripts/embed-estimator.mjs` reads the same file: with no `--declarations` it loads `consumers/website.json` beside the build, applies `inserts`/`rewrites`/`omits` generically, refuses to write unless every anchor and count holds, and `--check` still regenerates the committed embed byte-for-byte (237,549 characters) |
 
 ## 8. Risks and rollback
 
@@ -261,13 +272,34 @@ automatically. Confirm the Streamlit Cloud page (§9).
   is generated by one command. Rollback is a one-commit revert to the previous
   `health_app.py` — the old code ignores the extra manifest file, so no data or
   artifact change is needed to roll back.
-- **CDN staleness — resolved.** `raw.githubusercontent.com` can serve a pre-push
-  copy for minutes (measured: ~3 minutes on 2026-10-16), so a dispatch just after
-  a push compared the previous release, and because the artifact and manifest
-  were two separate requests, they could come from two different commits — which
-  reports the confusing "edited outside the build". Both jobs now fetch one
-  commit with git (`streamlit_ref`, default `main`) and print the commit they
-  read, so a run names exactly what it verified and cannot splice two commits.
+- **CDN staleness — resolved for both consumers.** `raw.githubusercontent.com` can
+  serve a pre-push copy for minutes (measured: ~3 minutes on 2026-10-16), so a
+  dispatch just after a push compared the previous release, and because the
+  artifact and manifest were two separate requests, they could come from two
+  different commits — which reports the confusing "edited outside the build". Both
+  Streamlit jobs now fetch one commit with git (`streamlit_ref`, default `main`)
+  and print the commit they read, so a run names exactly what it verified and
+  cannot splice two commits. The live website read had the same shape and kept it:
+  that page answers through Cloudflare with `no-cache, must-revalidate, max-age=0`,
+  which asks a cache to revalidate rather than promising it holds nothing, so a run
+  minutes after a page deploy could compare the release before it — red for a page
+  that was already correct, or green for one that had not published. Every live
+  request now carries a fresh nonce in the query string, a URL no cache can hold an
+  entry for (measured inert on the page: same document, same frame, identical
+  srcDoc), with `no-store`/`no-cache` to cover a cache that would answer without
+  asking; an answer whose headers say a cache served it is retried with a new nonce
+  and then refused rather than compared, because comparing it is the wrong answer
+  this guard exists to stop. What remains is deployment propagation, not caching: a
+  site deploy reached the live page in about 90 seconds, and no request path
+  shortens that — a fresh read of a page that has not published yet is still the
+  previous deployment. Detecting that has to name the site's commit, which the
+  website job now reads (A14): the served page must be the page that commit
+  produces, so "not redeployed yet" and "the repository is behind this build" are
+  two different failures with two different fixes instead of one silent pass. The
+  regression itself is guarded: `npm run
+  check:workflows` fails on any read of a repository file over that CDN in a
+  workflow (A10), so the shape that produced the stale comparisons cannot come
+  back without turning a suite red.
 - **Self-consistent tampering** (artifact + manifest both hand-made): not
   detectable at boot by design; caught daily against a fresh build. Documented in
   §5 and in the Streamlit README.
@@ -292,6 +324,11 @@ drifted copy cannot fail quietly.)
   run without the secret still answers whether the pair is fit to publish.
 - Confirm the Streamlit Cloud page after the S5 push; that render check cannot be
   made from here.
+- `WEBSITE_READ_TOKEN` (or a `STREAMLIT_PUSH_TOKEN` that also covers the site
+  repository) — the website job now reads `richardparslow-commits/life-policy-light`
+  at one commit to name the deployment it judged, and that repository is private.
+  Without a token that job fails with the instruction instead of quietly dropping to
+  a live-only comparison, so a green website job means the deployment was read.
 
 **Release 80 on the website — verified on 2026-10-17, no longer blocked.** The
 earlier note here ("the live page still serves release 78") was wrong, and its
@@ -306,15 +343,45 @@ repository reached the live page in about 90 seconds, checked by refetching it.
 
 ## 10. Out of scope, natural follow-ups
 
-- The website's `ESTIMATOR_HTML` literal is generated, not hand-carried: the site's
-  `scripts/embed-estimator.mjs` rebuilds it from `dist/app.html`, applies the four
-  documented page adaptations and refuses to write unless every anchor and
-  invariant holds (`npm run embed:estimator:check` answers whether the page still
-  matches this build). Nothing here runs that check, so the link between a release
-  in this repository and the page that serves it is still a person. Its four
-  adaptations also read as drift to `check-consumer-parity.js`, which can only see
-  a presentational difference — a declared adaptation list would let both checks
-  agree instead of explaining the same thing twice.
+- **The website's four adaptations are declared once, here — done.** The four live in
+  `consumers/website.json` and are read by both sides: `check-consumer-parity.js`
+  composes them onto `dist/app.html` and holds the served page to the result, and the
+  site's `scripts/embed-estimator.mjs` applies the same file to the same build instead
+  of carrying its own copy of the CSP, the contact-card lines, the two links and the
+  omitted statement. That was the duplication the previous state left: two
+  descriptions of one page, reconciled by a person whenever a release moved an anchor.
+  Now a moved anchor, a rewritten count that no longer matches, or a missing file stops
+  generation with the adaptation's id in the message, and should the declaration and
+  the build still disagree the page's `--check` reports it as stale rather than
+  rewriting it quietly. The check used to report the page's own contact card as
+  "consumer-only lines are not in this build — check whether the copy invented them",
+  which is the opposite of true; the difference is reported as declared, by name. The
+  composition also makes the comparison exact rather than tolerant: the page's document
+  must begin with the build plus the four (237,533 characters of the 239,583 it serves —
+  the rest is the page's own render-time adapters), so a page running an older build
+  fails even when the release changed nothing underwriting-level. What stays the site's
+  own is what is genuinely its own: the release stamp, the literal's escaping, the two
+  render-time adapter constants and the route file.
+
+  **Which deployment was judged — done as far as a file can say.** The check reads the
+  page committed in `richardparslow-commits/life-policy-light` at one ref and requires
+  the served page to be that page, so the verdict names `…@<sha>` (A14). What it still
+  cannot know is which ref the site actually deployed: it judges `main` by default, and
+  a deploy from another branch, or one that never ran, has to be named with
+  `website_ref`. The served-equals-committed half is what catches the second case; the
+  first is a matter of naming the ref the deploy came from.
+
+  Verified by regenerating the committed embed from the declaration — byte-identical,
+  237,549 characters, `--check` exit 0 — and by the site's new `npm run test:embed`
+  (seven tests, now part of its `npm test`): an edited contact-card line reaches the
+  generated page, which a generator reading its own copy could not do; the committed
+  embed reproduces byte for byte; and a moved insert anchor, a rewrite count of 3 where
+  the build has 2, a declaration with `no-comparison-table` removed (stale page,
+  241,639 vs 242,831 characters), a missing file and malformed JSON each exit 1 with
+  the adaptation named. Control: making the generator ignore the declaration it is
+  given — the regression the suite exists for — turns 4 of the 7 red; restored, 7/7
+  pass. Nothing is committed yet, so the site's next `embed:estimator` run is the first
+  to use it; until these files land, the app in use carries both copies.
 - If the token stays unset, consider making the deploy job open a PR against the
   Streamlit repo instead of pushing, so the pair is always CI-built even manually.
 

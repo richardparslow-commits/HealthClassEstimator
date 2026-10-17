@@ -9,7 +9,22 @@ name: Check the live consumers against the build
 # going red cannot hide the other's result:
 #
 #   website   — the live tool page, which delivers the build through an iframe
-#               srcDoc plus its own adapters, read from the served page itself.
+#               srcDoc plus its own adapters, read from the served page itself, and
+#               the page committed in the website repository at one commit. Both are
+#               compared: the committed page must be this build plus its declared
+#               adaptations, and the served page must be that committed page. The
+#               commit is printed, so a verdict names the deployment it judged instead
+#               of saying only that the page matched.
+#               That page answers through Cloudflare, and `no-cache, must-revalidate,
+#               max-age=0` on its document is a revalidation instruction, not a
+#               promise that no shared cache still holds the previous deployment.
+#               So every read asks for a URL carrying a fresh nonce: a cache keyed
+#               on the URL cannot hold an entry for one it has never been asked
+#               for, and a run minutes after a deploy compares the deployment
+#               rather than the copy the edge was still serving. A response that
+#               says it came from a cache anyway is retried with a new nonce and
+#               then refused — never compared, because comparing it is the answer
+#               this job exists to stop being wrong.
 #   streamlit — the artifact Streamlit Community Cloud renders, read from a
 #               checkout of richardparslow-commits/health_app.py pinned to one
 #               commit. That file is the build output copied verbatim, so the
@@ -33,7 +48,10 @@ name: Check the live consumers against the build
 # engine — because then the published tool is not the tool this repository audited.
 #
 # A red run is a real answer, not a flake: it can also mean a copy has not been
-# republished with the current build yet. That is why this runs on a schedule and on
+# republished with the current build yet. A read the checker refused because a cache
+# answered it is red as well, and says so instead of naming a component — nothing
+# was compared, so there is nothing for that run to send anyone to republish.
+# That is why this runs on a schedule and on
 # demand instead of on pull requests, where a pending republish must not block
 # unrelated work. When both jobs go green, both live tools and the sources agree.
 #
@@ -60,6 +78,14 @@ on:
         description: Repository whose deployed wrapper is verified against the build
         required: false
         default: richardparslow-commits/health_app.py
+      website_repo:
+        description: Repository that holds the website's page, read at one commit so the verdict names it
+        required: false
+        default: richardparslow-commits/life-policy-light
+      website_ref:
+        description: Branch, tag or full commit SHA of the website to judge the live page against
+        required: false
+        default: main
 
 permissions:
   contents: read
@@ -68,6 +94,13 @@ jobs:
   website:
     name: Live website
     runs-on: ubuntu-latest
+    # What this job judged, for the alert job. A job output survives a failed job,
+    # so a run that goes red after reading the commit still reports which deployment
+    # it was about — and a run that failed before the fetch carries empty outputs,
+    # which the alert reads as "nothing was judged" rather than as a missing commit.
+    outputs:
+      repo: ${{ steps.deployed.outputs.repo }}
+      commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -83,13 +116,68 @@ jobs:
       - name: Check the parity check against its fixtures
         run: node test/parity.test.js
 
-      # pipefail keeps a failing check from being hidden by tee.
-      - name: Compare the live page with the build
+      # The page's committed source, at one commit, so the verdict can name the
+      # deployment it judged. Without it a green run says "the live page matches the
+      # build" and leaves open which deployment was read — the question a release
+      # running late and a cache answering for the last one both hide inside.
+      #
+      # The repository is private, so the fetch needs a token. It goes in a header
+      # rather than in the remote URL: a failed fetch prints its arguments, and a
+      # credential in a URL is a credential in a log. Failing to read the commit is a
+      # failure, not a quieter check: this job exists to report which deployment it
+      # judged, and it cannot say that about a page it never read.
+      - name: Read the deployed website at one commit
+        id: deployed
+        env:
+          REPO: ${{ inputs.website_repo || 'richardparslow-commits/life-policy-light' }}
+          REF: ${{ inputs.website_ref || 'main' }}
+          PAGE: src/routes/tools.health-class-predictor.tsx
+          TOKEN: ${{ secrets.WEBSITE_READ_TOKEN || secrets.STREAMLIT_PUSH_TOKEN }}
+        run: |
+          set -o pipefail
+          git init --quiet website
+          git -C website remote add origin "https://github.com/$REPO.git"
+          auth=()
+          if [ -n "$TOKEN" ]; then
+            auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)")
+          fi
+          if ! git -C website "${auth[@]}" fetch --quiet --depth 1 origin "$REF"; then
+            echo "::error::Could not read $REF from $REPO. That repository is private, so this needs a token with Contents: read — add it as the WEBSITE_READ_TOKEN secret, or broaden STREAMLIT_PUSH_TOKEN to cover it. This job names the deployment it judged and does not pass without reading it."
+            exit 1
+          fi
+          git -C website checkout --quiet --detach FETCH_HEAD
+          if [ ! -f "website/$PAGE" ]; then
+            echo "::error::$REPO at $(git -C website rev-parse HEAD) has no $PAGE — the page this check compares has moved or been renamed; update PAGE in this workflow."
+            exit 1
+          fi
+          cp "website/$PAGE" deployed-page.tsx
+          commit=$(git -C website rev-parse HEAD)
+          echo "DEPLOYED_WEBSITE_COMMIT=$commit" >> "$GITHUB_ENV"
+          echo "DEPLOYED_WEBSITE_REPO=$REPO" >> "$GITHUB_ENV"
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Read $REPO at $commit" | tee parity.txt
+
+      # pipefail keeps a failing check from being hidden by tee. The checker puts a
+      # fresh nonce in the request URL and refuses to compare an answer that came
+      # from a cache, so this step cannot report on a page the deploy has replaced.
+      # It also applies the page's four declared adaptations (consumers/website.json)
+      # and requires the served document to begin with the result, so a page running an
+      # older build fails here instead of passing with a presentational warning, and a
+      # release that moves an anchor the page's generator depends on fails at release
+      # time rather than when someone next regenerates the page. And it requires the
+      # served page to be the committed page it just read, so the verdict names the
+      # deployment: a commit that is not this build means the repository is behind, a
+      # live page that is not that commit means it has not been redeployed.
+      - name: Compare the live page with the build and the named deployment
         env:
           CONSUMER: ${{ inputs.consumer || 'https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor' }}
         run: |
           set -o pipefail
-          node scripts/check-consumer-parity.js --consumer "$CONSUMER" 2>&1 | tee parity.txt
+          node scripts/check-consumer-parity.js --consumer "$CONSUMER" \
+            --deployed deployed-page.tsx \
+            --deployed-commit "$DEPLOYED_WEBSITE_COMMIT" \
+            --deployed-repo "$DEPLOYED_WEBSITE_REPO" 2>&1 | tee -a parity.txt
 
       - name: Publish the website comparison to the run summary
         if: ${{ always() }}
@@ -104,6 +192,10 @@ jobs:
   streamlit:
     name: Streamlit artifact
     runs-on: ubuntu-latest
+    # Same rule as the website: the commit this job read is what the alert reports.
+    outputs:
+      repo: ${{ steps.deployed.outputs.repo }}
+      commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -127,6 +219,7 @@ jobs:
       # printed so the verdict names what it looked at. A branch, a tag or a
       # commit SHA all work, so an older deploy can be checked by naming it.
       - name: Check out the deployed repository at one commit
+        id: deployed
         env:
           REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
           REF: ${{ inputs.streamlit_ref || 'main' }}
@@ -139,7 +232,10 @@ jobs:
             exit 1
           fi
           git -C deployed checkout --quiet --detach FETCH_HEAD
-          echo "Read $REPO at $(git -C deployed rev-parse HEAD)" | tee -a streamlit.txt
+          commit=$(git -C deployed rev-parse HEAD)
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Read $REPO at $commit" | tee -a streamlit.txt
           # The manifest records the artifact's name, so the copies keep it.
           cp deployed/app_embedded.html deployed/app_embedded.manifest.json .
           echo "Read $(wc -c < app_embedded.html) bytes of artifact and $(wc -c < app_embedded.manifest.json) bytes of manifest" | tee -a streamlit.txt
@@ -181,6 +277,11 @@ jobs:
   streamlit-runtime:
     name: Streamlit runtime verification
     runs-on: ubuntu-latest
+    # Same rule again: the wrapper is verified at one commit, and that commit is
+    # what the alert names when this job is the one that went red.
+    outputs:
+      repo: ${{ steps.deployed.outputs.repo }}
+      commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -189,6 +290,7 @@ jobs:
       # wrapper and its pair over HTTP can splice two commits together, which
       # verifies a combination that never shipped.
       - name: Check out the deployed repository at one commit
+        id: deployed
         env:
           REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
           REF: ${{ inputs.streamlit_ref || 'main' }}
@@ -201,10 +303,13 @@ jobs:
             exit 1
           fi
           git -C deployed checkout --quiet --detach FETCH_HEAD
+          commit=$(git -C deployed rev-parse HEAD)
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
           mkdir -p runtime
           cp deployed/health_app.py deployed/app_embedded.html \
              deployed/app_embedded.manifest.json runtime/
-          echo "Verifying $REPO at $(git -C deployed rev-parse HEAD)"
+          echo "Verifying $REPO at $commit"
 
       - name: Prove the wrapper's verification contract
         run: |
@@ -221,6 +326,36 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The comparisons above read deployed copies, and the Streamlit ones used to read
+  # them through raw.githubusercontent.com — a CDN that keeps serving the previous
+  # commit for minutes after a push. Both now fetch one commit with git; this keeps
+  # that true. It is deliberately not in the drift alert's `needs`: a workflow that
+  # reaches for the CDN again is a regression in this repository, not a deployed copy
+  # disagreeing with the build, and reporting it as drift would send someone to
+  # republish something that is correct.
+  workflows:
+    name: Guard the workflow reads
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prove the guard against its fixtures
+        run: npm run test:workflows
+
+      # The alert reads the outputs this workflow declares, so the message and the
+      # wiring are proved here — next to the run that will send it.
+      - name: Prove the drift issue names the deployment it reports on
+        run: npm run test:alert
+
+      - name: Fail if a workflow reads a deployed copy over the CDN
+        run: npm run check:workflows
+
   # Make a red run impossible to miss. A red mark on a scheduled run is easy to
   # overlook; an open issue is not. While any comparison job is not green this job
   # keeps one labelled tracking issue open (creating it on the first failure,
@@ -228,6 +363,13 @@ jobs:
   # on the first run where every comparison job succeeds. Only a plain `success`
   # counts: a skipped or cancelled job means the comparison did not happen, which
   # must not close an issue.
+  #
+  # The text names the deployment each job judged, because that is the difference
+  # between "the deploy has not published yet", "the copy is behind this build" and
+  # "nothing was read at all" — three states the comparison can tell apart and a
+  # run URL cannot. It is generated by scripts/parity-alert.js from `needs`, whose
+  # outputs each comparison job sets as soon as it has fetched its commit (a job
+  # output survives the job failing, so a red run still reports what it judged).
   alert:
     name: Report drift to a tracking issue
     runs-on: ubuntu-latest
@@ -242,6 +384,14 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Open, update or close the drift issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -256,11 +406,11 @@ jobs:
           label=parity-drift
 
           # `result` is success, failure, cancelled or skipped; everything that is
-          # not success is reported, and only an empty list closes the issue.
-          failed=$(printf '%s' "$RESULTS" \
-            | jq -r 'to_entries[] | select(.value.result != "success") | .key' \
-            | tr '\n' ',' | sed -e 's/,$//' -e 's/,/, /g')
-          echo "Not green: ${failed:-none}"
+          # not success is reported, and only "none" closes the issue. One
+          # implementation of that rule, in the script that writes the text, so the
+          # issue and this branch cannot disagree about whether the run was green.
+          failed=$(node scripts/parity-alert.js --not-green)
+          echo "Not green: ${failed}"
 
           gh label create "$label" --repo "$REPO" --force \
             --description "A deployed copy of the estimator disagrees with the build" \
@@ -270,34 +420,21 @@ jobs:
           # sed, not head: `printf | head` can die of SIGPIPE under pipefail.
           issue=$(printf '%s\n' "$open_issues" | sed -n '1p')
 
-          if [ -n "$failed" ]; then
+          if [ "$failed" != "none" ]; then
             body=$(mktemp)
-            cat > "$body" <<BODY
-          @${OWNER} — the consumer-parity check found that a deployed copy of the estimator no longer matches the build.
-
-          - Failing job(s): ${failed}
-          - Run: ${RUN_URL}
-          - Build commit: ${HEAD_SHA}
-          - Trigger: ${EVENT}
-
-          Open the run's Summary tab for the per-consumer diff. The check compares the live website and the published Streamlit artifact against a fresh build of main — the artifact byte for byte, with its manifest — and exercises the deployed wrapper's own verification. It fails when a consumer disagrees on underwriting logic (rules, state or engine), or when the artifact is not the reviewed build.
-
-          If a copy is simply behind the build, republish it (the website from Lovable; the Streamlit app from deploy-streamlit.yml). Never edit a copy to match.
-
-          This issue closes automatically on the first run where every consumer matches again.
-          BODY
+            node scripts/parity-alert.js --body > "$body"
             if [ -z "$issue" ]; then
               gh issue create --repo "$REPO" --label "$label" \
                 --title "Consumer parity: a deployed copy disagrees with the build" \
                 --body-file "$body"
             else
               gh issue comment "$issue" --repo "$REPO" \
-                --body "Still failing: ${failed} — ${RUN_URL} (build ${HEAD_SHA}, trigger ${EVENT})."
+                --body "$(node scripts/parity-alert.js --comment)"
             fi
           elif [ -n "$issue" ]; then
+            closed_comment=$(node scripts/parity-alert.js --closed-comment)
             for n in $open_issues; do
-              gh issue comment "$n" --repo "$REPO" \
-                --body "Every consumer matches the build again: ${RUN_URL} (build ${HEAD_SHA}, trigger ${EVENT}). Closing."
+              gh issue comment "$n" --repo "$REPO" --body "$closed_comment"
               gh issue close "$n" --repo "$REPO"
             done
           else
@@ -306,6 +443,8 @@ jobs:
 
           {
             echo "### Drift alert"
-            echo "Not green: ${failed:-none}"
+            echo "Not green: ${failed}"
             echo "Open tracking issue at start: ${issue:-none}"
+            echo "Deployments judged:"
+            node scripts/parity-alert.js --deployments
           } >> "$GITHUB_STEP_SUMMARY"

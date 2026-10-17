@@ -17,6 +17,14 @@ name: Streamlit canary
 # means the wrapper needs changing before the ceiling moves, or that the ceiling
 # must stay. A pass means an upgrade is safe as far as this check can tell.
 #
+# A pass is only worth something if it can change what ships. So a green run whose
+# installed release sits above the deployed ceiling also opens a pull request that
+# raises the ceiling in the deployed requirements.txt and links this run, and a
+# green run that stays inside the ceiling does nothing — there is no lift to
+# review. The decision, the new pin and the text of the review are all computed by
+# scripts/streamlit-ceiling.js, so this workflow never restates them, and a
+# summary line cannot disagree with the pull request it describes.
+#
 # It needs no secret and pushes nothing: the deployed repository is publicly
 # readable, which Streamlit Cloud requires anyway. Dispatch it by hand with
 # channel "prerelease" to probe a release candidate before it ships as stable.
@@ -65,16 +73,10 @@ jobs:
       channel: ${{ steps.install.outputs.channel }}
       deployed_sha: ${{ steps.fetch.outputs.sha }}
       verdicts: ${{ steps.check.outputs.verdicts }}
+      ceiling_needed: ${{ steps.ceiling.outputs.needed }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
-
-      # The same interpreter the deploy workflow uses, because the wrapper is
-      # exercised through the real library rather than stubbed.
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       # The pair under test is the one Streamlit Cloud is serving, fetched from
       # the deployed repository rather than rebuilt here: a canary that tested a
@@ -90,6 +92,27 @@ jobs:
           sha=$(git -C streamlit-app rev-parse --short HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing ${DEPLOYED_REPO} at $(git -C streamlit-app rev-parse HEAD)"
+
+      # A missing version file would otherwise surface as setup-python's own
+      # "no file found", which does not say what to add or where. The deployed
+      # repository owns the declaration; this workflow only honours it.
+      - name: Require the deployed repository to declare its interpreter
+        run: |
+          if [ ! -f streamlit-app/.python-version ]; then
+            echo "::error::richardparslow-commits/health_app.py has no .python-version, so the canary cannot exercise the interpreter the deployment runs. Add a file named .python-version containing 3.12 (see that repository's README), then re-run."
+            exit 1
+          fi
+          echo "Deployed interpreter: $(cat streamlit-app/.python-version)"
+
+      # The same interpreter the deployed repository declares, and therefore the
+      # same one the deploy workflow uses: the wrapper is exercised through the
+      # real library rather than stubbed, so the interpreter is part of what is
+      # being tested. setup-python reads the deployment's own file, so there is no
+      # second copy of the version here to drift from it.
+      - name: Set up the declared Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: streamlit-app/.python-version
 
       # A failure path that has never run is a claim, not a check. This plants a
       # one-byte edit in the fetched copy on request, so the red job and the
@@ -136,11 +159,40 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           exit "$status"
 
+      # Whether this green run argues for moving the ceiling is a decision, not a
+      # sentence in a log: scripts/streamlit-ceiling.js reads the deployed pin and
+      # the version that just passed, and the propose-ceiling job acts on its
+      # answer. Only the stable channel is asked: a release candidate can differ
+      # from the release it becomes, so it must not widen a range.
+      - name: Decide whether the ceiling should move
+        id: ceiling
+        if: ${{ steps.check.outcome == 'success' && env.CHANNEL == 'latest' && env.SELF_TEST != 'true' }}
+        env:
+          INSTALLED: ${{ steps.install.outputs.version }}
+        run: |
+          set -o pipefail
+          node scripts/streamlit-ceiling.js \
+            --requirements streamlit-app/requirements.txt \
+            --installed "$INSTALLED" \
+            --json > ceiling.json
+          cat ceiling.json
+          needed=$(jq -r '.needed' ceiling.json)
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          # One line, carried to the summary step rather than written here: the
+          # summary has a heading, and a bullet appended before it would read as
+          # an orphan.
+          {
+            echo "line<<CEILING_LINE_EOF"
+            jq -r 'if .needed then "lift warranted, " + .from + " -> " + .to + " (the proposal job opens the review)" else "no lift — " + .reason end' ceiling.json
+            echo "CEILING_LINE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish the canary to the run summary
         if: ${{ always() }}
         env:
           INSTALLED: ${{ steps.install.outputs.version }}
           DEPLOYED_SHA: ${{ steps.fetch.outputs.sha }}
+          CEILING: ${{ steps.ceiling.outputs.line }}
         run: |
           previous=$(gh run list --workflow streamlit-canary.yml --limit 2 \
             --json createdAt --jq '.[1].createdAt // empty' 2>/dev/null || true)
@@ -156,6 +208,7 @@ jobs:
             echo "- Channel: \`${CHANNEL:-latest}\`"
             echo "- Installed: \`${INSTALLED:-not installed}\`"
             echo "- ${pin:-Pin relation: not reported (the live check did not reach it)}"
+            echo "- Ceiling: ${CEILING:-not decided (the live check did not pass on the stable channel)}"
             echo "- Previous canary attempt: ${previous:-none recorded}"
             if [ "${SELF_TEST:-false}" = "true" ]; then
               echo "- Self-test: the fetched pair was tampered with on purpose, so a red canary here is the expected result."
@@ -169,6 +222,138 @@ jobs:
             echo
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The ceiling lift is a review, so this job proposes one instead of pushing. The
+  # branch name is stable, so a later green run adds to the open review rather than
+  # opening a second one for the same lift: the diff a person is asked to approve
+  # should be one diff.
+  #
+  # It needs a token because the deployed repository is a different repository.
+  # The canary job deliberately does not: its verdict is about the app, and a
+  # missing secret must not make a working release look broken. This job exists
+  # only to open the review, so a warranted lift that could not be proposed fails
+  # here rather than passing quietly — the same reasoning as the deploy
+  # workflow's token gate.
+  propose-ceiling:
+    name: Propose the ceiling lift as a pull request
+    runs-on: ubuntu-latest
+    needs: canary
+    if: ${{ needs.canary.result == 'success' && needs.canary.outputs.ceiling_needed == 'true' }}
+    permissions:
+      contents: read
+    env:
+      STREAMLIT_PUSH_TOKEN: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
+      DEPLOYED_REPO: richardparslow-commits/health_app.py
+      BRANCH: canary/streamlit-ceiling
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fail when a warranted lift cannot be proposed
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' }}
+        run: |
+          echo "::error::The canary passed on Streamlit ${{ needs.canary.outputs.installed }}, above the deployed ceiling, but STREAMLIT_PUSH_TOKEN is not set, so no pull request could be opened in ${DEPLOYED_REPO}. Add a token with Contents and Pull requests read/write on that repository as the STREAMLIT_PUSH_TOKEN secret, then re-run this workflow — or raise the ceiling by hand."
+          exit 1
+
+      - name: Check out the deployed repository
+        uses: actions/checkout@v4
+        with:
+          repository: richardparslow-commits/health_app.py
+          token: ${{ env.STREAMLIT_PUSH_TOKEN }}
+          path: streamlit-app
+
+      # The review describes what the pull request actually changes, so the pin is
+      # read from the deployed repository's default branch — not from the branch
+      # this job reuses. A second green run for a newer release therefore replaces
+      # the proposal rather than adding a stale one beside it: the diff stays one
+      # base-to-target change, and the text keeps naming that same change.
+      - name: Put the lift on a branch
+        env:
+          INSTALLED: ${{ needs.canary.outputs.installed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          base=$(git -C streamlit-app symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+          if [ -z "$base" ]; then base=main; fi
+          echo "base=$base" >> "$GITHUB_ENV"
+          # The default branch as checked out, before this job switches branches.
+          cp streamlit-app/requirements.txt deployed-requirements.txt
+          node scripts/streamlit-ceiling.js \
+            --requirements deployed-requirements.txt \
+            --installed "$INSTALLED" \
+            --json --body ceiling-pr.md \
+            --run-url "$RUN_URL" \
+            --deployed-repo "$DEPLOYED_REPO" \
+            --deployed-sha "${{ needs.canary.outputs.deployed_sha }}" > ceiling.json
+          cat ceiling.json
+          echo "pr_title=$(jq -r '.title' ceiling.json)" >> "$GITHUB_ENV"
+          echo "needed=$(jq -r '.needed' ceiling.json)" >> "$GITHUB_ENV"
+          cd streamlit-app
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$BRANCH"
+            git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+            echo "Adding to the branch that already carries a lift."
+          else
+            git checkout --quiet -b "$BRANCH"
+            echo "Started the branch from $base."
+          fi
+          cd ..
+          # Idempotent: a branch already at the target is left alone, and one that
+          # carries an older ceiling is moved to this run's.
+          node scripts/streamlit-ceiling.js \
+            --requirements streamlit-app/requirements.txt \
+            --installed "$INSTALLED" \
+            --apply
+          cd streamlit-app
+          git add requirements.txt
+          if git diff --cached --quiet; then
+            echo "pushed=false" >> "$GITHUB_ENV"
+            echo "The branch already carries this ceiling, so there is nothing to push."
+          else
+            git commit --quiet -m "Raise the Streamlit ceiling for Streamlit ${INSTALLED}"
+            git push --quiet --set-upstream origin "$BRANCH"
+            echo "pushed=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ env.STREAMLIT_PUSH_TOKEN }}
+          INSTALLED: ${{ needs.canary.outputs.installed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          existing=$(gh pr list --repo "$DEPLOYED_REPO" --head "$BRANCH" --state open \
+            --json number,url --jq '.[0].url // empty')
+          if [ -n "$existing" ]; then
+            echo "### Ceiling lift already proposed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Open review: $existing" >> "$GITHUB_STEP_SUMMARY"
+            echo "The lift is already open for review at $existing."
+            if [ "$pushed" = "true" ]; then
+              # The branch moved, so the review's own description of the diff has
+              # to move with it; the comment keeps the run that moved it visible.
+              gh pr edit "$existing" --repo "$DEPLOYED_REPO" --body-file ceiling-pr.md
+              gh pr comment "$existing" --repo "$DEPLOYED_REPO" \
+                --body "The canary passed again on Streamlit ${INSTALLED}, and this run moved the branch to the ceiling above it: ${RUN_URL}"
+            fi
+            exit 0
+          fi
+          if [ "$needed" != "true" ]; then
+            echo "### Ceiling lift no longer needed" >> "$GITHUB_STEP_SUMMARY"
+            echo "The deployed pin already admits Streamlit $INSTALLED, so no review was opened." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          url=$(gh pr create --repo "$DEPLOYED_REPO" --base "$base" --head "$BRANCH" \
+            --title "$pr_title" --body-file ceiling-pr.md)
+          echo "### Ceiling lift proposed" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+          echo "Opened $url"
 
   # Same shape as the parity workflow's alert job, for the same reason: a red mark
   # on a scheduled run is easy to overlook, an open issue is not. While the canary

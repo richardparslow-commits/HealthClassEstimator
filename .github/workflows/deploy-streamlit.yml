@@ -37,16 +37,55 @@ jobs:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
 
+      # Staging needs no credentials — the deployed repository is publicly
+      # readable, which Streamlit Community Cloud requires anyway. Gating this on
+      # the token meant the sync, the no-rebuild invariant and the pair
+      # verification below had only ever run by hand, so CI could not answer
+      # whether a pair was fit to publish. Only the push needs the secret.
+      #
+      # It comes first because the deployed repository declares the interpreter:
+      # setup-python below reads streamlit-app/.python-version, so CI runs the
+      # version this repository ships rather than a second copy of it in YAML.
+      - name: Check out streamlit repo for staging (no token needed)
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' }}
+        run: |
+          if ! git clone --quiet --depth 1 --single-branch \
+               https://github.com/richardparslow-commits/health_app.py.git streamlit-app; then
+            echo "::error::Could not stage richardparslow-commits/health_app.py without a token. The repository must stay publicly readable; otherwise set STREAMLIT_PUSH_TOKEN."
+            exit 1
+          fi
+          echo "Staged $(git -C streamlit-app rev-parse HEAD) for verification"
+
+      - name: Check out streamlit repo (health_app.py)
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: richardparslow-commits/health_app.py
+          token: ${{ env.STREAMLIT_PUSH_TOKEN }}
+          path: streamlit-app
+
+      # A missing version file would otherwise surface as setup-python's own
+      # "no file found", which does not say what to add or where. The deployed
+      # repository owns the declaration; this workflow only honours it.
+      - name: Require the deployed repository to declare its interpreter
+        run: |
+          if [ ! -f streamlit-app/.python-version ]; then
+            echo "::error::richardparslow-commits/health_app.py has no .python-version, so this workflow cannot know which interpreter the deployment runs. Add a file named .python-version containing 3.12 (see that repository's README), then re-run."
+            exit 1
+          fi
+          echo "Deployed interpreter: $(cat streamlit-app/.python-version)"
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # Streamlit's own runtime is exercised below, so it needs a real Python.
+      # Streamlit's own runtime is exercised below, so it needs a real Python —
+      # the one the deployed repository declares, not one named here.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version-file: streamlit-app/.python-version
 
       - name: Run engine test suite
         run: npm test
@@ -72,29 +111,6 @@ jobs:
       # as a right one. Its writer is fixture-tested before either can ship.
       - name: Check the manifest writer
         run: npm run test:manifest
-
-      # Staging needs no credentials — the deployed repository is publicly
-      # readable, which Streamlit Community Cloud requires anyway. Gating this on
-      # the token meant the sync, the no-rebuild invariant and the pair
-      # verification below had only ever run by hand, so CI could not answer
-      # whether a pair was fit to publish. Only the push needs the secret.
-      - name: Check out streamlit repo for staging (no token needed)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' }}
-        run: |
-          if ! git clone --quiet --depth 1 --single-branch \
-               https://github.com/richardparslow-commits/health_app.py.git streamlit-app; then
-            echo "::error::Could not stage richardparslow-commits/health_app.py without a token. The repository must stay publicly readable; otherwise set STREAMLIT_PUSH_TOKEN."
-            exit 1
-          fi
-          echo "Staged $(git -C streamlit-app rev-parse HEAD) for verification"
-
-      - name: Check out streamlit repo (health_app.py)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: richardparslow-commits/health_app.py
-          token: ${{ env.STREAMLIT_PUSH_TOKEN }}
-          path: streamlit-app
 
       - name: Sync the artifact and its manifest into streamlit repo
         run: |
