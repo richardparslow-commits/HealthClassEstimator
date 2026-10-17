@@ -35,7 +35,7 @@ That pin is a promise this repository cannot keep on its own: Streamlit Cloud up
 
 `npm run test:css` guards the stylesheet against rules no element can match (`node scripts/css-audit.js` reports them, and the test fails when any are found). The stylesheet is inlined into every consumer of the build, so a rule whose class left with the interface it styled keeps describing behaviour the product no longer has — 441 lines of it had accumulated before Release 80. A class or id counts as referenced when it appears as a `class`/`id` value in `index.html` or as a string literal in `js/*.js`, which is where the app builds elements and looks them up. The audit refuses to run if a class name is ever assembled at runtime, because a fragment-built name would look unreferenced and the audit would delete a live rule.
 
-Optional real-browser checks require Playwright and its Chromium browser:
+The real-browser checks run in CI — `audit-checks.yml`'s `browser` job — and can be run by hand the same way:
 
 ```sh
 npm install --no-save playwright
@@ -44,7 +44,9 @@ npm run build
 npm run test:ui
 ```
 
-`HCE_BROWSER_PATH` can select an existing Chromium binary. The browser test starts and closes a temporary localhost server, exercises the actual interview controls, checks saved-state migration and mobile layout, and verifies the embedded output. Runtime deployment requires none of these testing dependencies.
+`HCE_BROWSER_PATH` can select an existing Chromium binary. The browser test starts and closes a temporary localhost server, exercises the actual interview controls, checks saved-state migration and mobile layout, and verifies the embedded output. Runtime deployment requires none of these testing dependencies, which is why the job installs Playwright with `--no-save` rather than adding it to this project.
+
+Nothing here trusts a suite to run: `npm run check:workflow-coverage` fails when any `test*` script is not invoked by a workflow that a push to `main` would run, and when a file in `test/` is run by no script at all, printing which workflow covers each suite. It is not a hypothetical guard. `audit-checks.yml` was scoped to pull requests and to every branch except `main` — correct while changes to `main` arrived as pull requests, and wrong from 2026-10-10, when the last one was merged: the suite that verifies the release machinery then ran nowhere on `main`, and `test/ui.test.js` was invoked by no workflow at all, because the workflow that should have run it excluded the only branch that ships. Both are wired now, and `npm run test:coverage` (51 assertions) holds the guard to the shapes that must not pass — the branch filter that caused this, a scheduled-only invocation, a command named only in a comment, a longer script name counted for a shorter one (`npm run test:builder` standing in for `test:build`), an orphaned fixture, a repository with nothing to check, and an exception written without a reason.
 
 ## Consumers of the build
 

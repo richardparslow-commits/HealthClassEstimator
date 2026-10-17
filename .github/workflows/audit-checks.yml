@@ -1,8 +1,14 @@
 name: Verify underwriting changes
+# Every branch, main included. This used to exclude main on the assumption that main
+# changes arrive as pull requests, and the last merged one was on 2026-10-10: from
+# then the suite that verifies the release machinery ran nowhere it could fail a
+# release, and the browser suite below was invoked by nothing at all. A run here is
+# what makes "the checks pass" a statement about the branch that ships, and
+# `npm run test:coverage` is the guard that keeps that true.
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -50,6 +56,38 @@ jobs:
       # fixture-tested rather than trusted.
       - name: Verify the deployed interpreter declaration
         run: npm run test:pin
+      # The suites above are only checks if something runs them where a release can
+      # see them: every `test*` script must be invoked by a workflow triggered by a
+      # push to main, and this also reports which workflow does it for each.
+      - name: Verify every suite runs when main changes
+        run: npm run check:workflow-coverage
+      - name: Verify the coverage guard against its fixtures
+        run: npm run test:coverage
+
+  # The interview is the product, and the browser suite is the only check that
+  # exercises it as an applicant does — the acknowledgment gate, the section walk,
+  # the probation screen, the AF-plus-prescription exception, mobile layout, saved-
+  # state migration and the embedded build. It ran nowhere in CI before: the workflow
+  # that should have run it excluded main. Its own job because it downloads a browser,
+  # which must not delay the checks above or hide their results if it fails.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Deliberately not saved into package.json: the shipped app has no runtime or
+      # build dependencies, and a test-only browser should not become one.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      # The suite visits /dist/app.html to check the deployment build it ships.
+      - name: Build the single-file distribution
+        run: npm run build
+      - name: Exercise the interview in a real browser
+        run: npm run test:ui
       # Two builds ship from one run — the pair that is published and the copy the
       # checks judged — and the deploy used to compare neither with the other, nor
       # read the branch back from origin afterwards. The read-back decides whether a
