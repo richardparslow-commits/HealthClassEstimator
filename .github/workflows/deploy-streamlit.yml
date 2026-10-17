@@ -9,6 +9,10 @@ name: Deploy Streamlit app
 # it, and the loose index/css/js copies it used to receive — and inline as a
 # second implementation of this build — are deleted by the sync below.
 #
+# The pair that ships is compared byte for byte with the build the checks judged,
+# and after the push the branch head is read back from origin and compared again,
+# so a run that says "published" names the commit Streamlit Cloud will serve.
+#
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
 # secrets as STREAMLIT_PUSH_TOKEN. The token is only needed to push: staging the
@@ -112,6 +116,20 @@ jobs:
       - name: Check the manifest writer
         run: npm run test:manifest
 
+      # Two builds, one pair: `release:artifact` wrote the files that ship and
+      # `npm run build` wrote the copy every check above judged. They come from the
+      # same sources and agree today, but nothing asserted it, so a divergence
+      # would have been published first and found by the next scheduled parity run
+      # — against a live copy, a day later. Compare the bytes before either moves.
+      - name: Refuse to publish an artifact the tests did not judge
+        run: |
+          if ! cmp -s app_embedded.html dist/app.html; then
+            echo "::error::app_embedded.html (the pair that ships) differs from dist/app.html (the build the CSS, builder and manifest checks judged). Both are built from the same sources in this run, so one of them is not what was reviewed; nothing has been pushed. Re-run the workflow, and if it happens again, compare the two files — the difference is the bug."
+            sha256sum app_embedded.html dist/app.html
+            exit 1
+          fi
+          echo "The pair to publish is the build the checks judged."
+
       - name: Sync the artifact and its manifest into streamlit repo
         run: |
           cp app_embedded.html app_embedded.manifest.json streamlit-app/
@@ -172,6 +190,29 @@ jobs:
             git push
           fi
 
+      # The push is the deploy, but a push is not evidence of what it left behind:
+      # it can land on a commit this run does not think it pushed, or be superseded
+      # (concurrency cancels in progress). This reads the branch head back from
+      # origin, requires it to be the commit just pushed, clones that commit, and
+      # compares the published artifact byte for byte with the one built here (the
+      # manifest is judged by its own writer's --check, since its commit and build
+      # time are provenance rather than content) — then runs the deployed
+      # repository's own pair verifier on the copy origin holds. That is what makes
+      # the run summary's "published" a claim about this build.
+      - name: Read back what the deployed repository now holds
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        env:
+          DEPLOYED_REPO: richardparslow-commits/health_app.py
+        run: |
+          set -o pipefail
+          scripts/verify-published-pair.sh \
+            --remote "https://github.com/${DEPLOYED_REPO}.git" \
+            --branch main \
+            --expect "$(git -C streamlit-app rev-parse HEAD)" \
+            --into published \
+            --commit-out published-commit.txt 2>&1 | tee published.txt
+          python3 scripts/verify-streamlit-runtime.py published 2>&1 | tee -a published.txt
+
       # A green run must never imply a deploy that did not happen. Before this
       # gate existed the workflow warned and exited 0 without pushing, so a
       # release could look shipped while Streamlit still served the old build.
@@ -192,8 +233,19 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           if [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
-            echo "### Published" >> "$GITHUB_STEP_SUMMARY"
-            echo "Pushed the built artifact and its manifest to richardparslow-commits/health_app.py; Streamlit Community Cloud redeploys on that push." >> "$GITHUB_STEP_SUMMARY"
+            PUBLISHED_SHA="$(cat published-commit.txt 2>/dev/null || true)"
+            {
+              echo "### Published"
+              if [ -n "$PUBLISHED_SHA" ]; then
+                echo "Deployed commit: \`${PUBLISHED_SHA}\` in richardparslow-commits/health_app.py — read back from origin after the push and compared byte for byte with \`dist/app.html\` and the manifest this run wrote; Streamlit Community Cloud redeploys on that push."
+              else
+                echo "The push reported success but no commit was read back, so this run cannot name what is live. See the read-back step for why."
+              fi
+              echo
+              echo '```'
+              cat published.txt 2>/dev/null || echo "The read-back produced no output."
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
             echo "No deploy token was configured, so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"

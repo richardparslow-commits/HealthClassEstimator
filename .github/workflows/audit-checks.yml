@@ -50,3 +50,11 @@ jobs:
       # fixture-tested rather than trusted.
       - name: Verify the deployed interpreter declaration
         run: npm run test:pin
+      # Two builds ship from one run — the pair that is published and the copy the
+      # checks judged — and the deploy used to compare neither with the other, nor
+      # read the branch back from origin afterwards. The read-back decides whether a
+      # release may be called published, so its cases (matching pair, divergent
+      # artifact, manifest for a different build, missing file, wrong branch head)
+      # are fixtures against a real repository rather than prose.
+      - name: Verify the publish read-back
+        run: npm run test:published

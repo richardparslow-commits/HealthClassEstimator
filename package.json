@@ -19,6 +19,8 @@
     "test:build": "node test/build.test.js",
     "test:css": "node test/css.test.js",
     "test:builder": "node test/build-guard.test.js",
-    "verify:streamlit-live": "python3 scripts/verify-streamlit-live.py"
+    "verify:streamlit-live": "python3 scripts/verify-streamlit-live.py",
+    "verify:published": "bash scripts/verify-published-pair.sh",
+    "test:published": "node test/published-pair.test.js"
   }
 }
