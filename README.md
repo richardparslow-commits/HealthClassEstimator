@@ -13,11 +13,12 @@ npm test
 npm run build
 npm run test:css
 npm run test:builder
+npm run test:manifest
 npm run test:parity
-node scripts/build-embedded.js app_embedded.html
+npm run release:artifact
 ```
 
-The standalone output is `dist/app.html`. The builder includes rules, state, engine and UI in that order and stamps the same release version as `index.html`.
+The standalone output is `dist/app.html`. The builder includes rules, state, engine and UI in that order and stamps the same release version as `index.html`. `npm run release:artifact` writes the Streamlit pair: `app_embedded.html` (the same bytes as `dist/app.html`) plus `app_embedded.manifest.json`, the sha256/size/version/builder record the deployed repository verifies before it serves anything.
 
 `npm run test:builder` runs the embedded builder against doctored copies of the sources, so its end-of-build guards are exercised rather than trusted: an added external script and a loader that survives the strip must both fail the build. That second case used to pass silently — the strip is anchored on the loader's comment, so an edit to the comment removed the only evidence the guard looked for.
 
@@ -41,13 +42,16 @@ The website embeds `dist/app.html` in an iframe and the Streamlit app receives a
 ```sh
 npm run check:consumer                                        # the live tool page
 node scripts/check-consumer-parity.js --consumer <file|url>    # any consumer
+node scripts/check-consumer-parity.js --consumer <file> --expect-identical
 ```
 
 The check compares each consumer with a fresh build and fails when they disagree on underwriting logic — `rules`, `state` or `engine` — because then the published tool is not the tool these sources describe. Presentational differences, and the adaptations a consumer is entitled to make (its own CSP, same-origin contact links, an injected accessibility shim), are reported without failing. A single missing final newline is reported as trailing whitespace rather than drift.
 
-The stylesheet audit runs in the release workflow before anything is published, and the copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide another's result: the live page is read from the served site; the Streamlit artifact from the published `app_embedded.html` in `richardparslow-commits/health_app.py`, which is the build output copied verbatim and so is expected to be byte-identical; and that repository's own builder, `health_app.py`'s `build_app_html()`, which inlines the loose `index.html`, `css` and `js` assets when the artifact is absent (a local run, or a deploy where it did not arrive) and is compared with the build ignoring only its one-line provenance stamp. The loose assets are still not compared as files, because the embedded artifact is what the deployed app renders.
+`--expect-identical` removes that presentational tolerance for a consumer that receives the build verbatim: the Streamlit deployment copies the artifact as built, so anything but byte identity there means it is not the reviewed build.
 
-That third job is not ceremony. `build_app_html()` is a second implementation of `scripts/build-embedded.js`, and it claimed byte-for-byte parity while joining its script blocks differently in three places, so a local run served a slightly different document. It also passed the stylesheet and scripts through a `re.sub` replacement string, which reads backslash escapes and `\1`-style group references: a stylesheet containing a CSS escape such as `content: "\2192"` made it fail outright with `invalid group reference`. Both are fixed, and it now also refuses to return a document that still references external assets or the cache-busting loader, which is the guard the reviewed builder has had all along. Either job going red means a published tool is not the reviewed one; `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the copy the Streamlit job then verifies.
+The copies are compared with the build daily by `.github/workflows/consumer-parity.yml`, as separate jobs so one cannot hide another's result: the live page is read from the served site; the published Streamlit artifact in `richardparslow-commits/health_app.py` must be **byte-identical** to a fresh build *and* match the manifest it ships with; and the deployed wrapper itself is exercised the way Streamlit runs it — the published pair must load and be served byte for byte, and a tampered artifact, a missing artifact, a missing manifest and a manifest whose release version lies must all be refused. A red run also opens a labelled tracking issue, and closes it on the first run where every consumer matches again, so drift cannot fail quietly. `STREAMLIT_PUSH_TOKEN` is what lets the release job publish the pair those jobs then verify.
+
+There is no second implementation of the build anywhere, and that is deliberate. `health_app.py` used to inline loose `index.html`, `css` and `js` assets whenever the artifact was absent, and it claimed byte-for-byte parity while joining its script blocks differently in three places; a stylesheet containing a CSS escape (`content: "\2192"`) made it fail outright through a `re.sub` replacement string; and its loader-strip guard could be defeated by editing the comment it was anchored on. Each was fixed in the copy rather than the cause. The wrapper now holds no build logic at all, and the assets it used to inline are deleted from the deployed repository.
 
 Policy: a change to underwriting behavior is made here, with a test, and only then regenerated into a consumer. A consumer's copy is never edited to match, and a rule never originates there. Porting a rule *into* this repository after finding it only in a copy is the one exception, and it belongs in the same change that regenerates the copy.
 

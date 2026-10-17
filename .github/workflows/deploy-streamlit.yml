@@ -1,10 +1,13 @@
 name: Deploy Streamlit app
 
 # On every push to the main branch (and on manual dispatch), run the engine
-# test suite, build the self-contained single-file HTML, and push it — plus the
-# current index/css/js assets — into the richardparslow-commits/health_app.py
-# repo. Streamlit Community Cloud watches that repo and redeploys on push, so
-# the push IS the deploy trigger.
+# test suite, build the self-contained single-file HTML and the manifest that
+# describes it, and push exactly those two files into the
+# richardparslow-commits/health_app.py repo. Streamlit Community Cloud watches
+# that repo and redeploys on push, so the push IS the deploy trigger. The
+# deployed repository holds nothing else: it verifies the pair before serving
+# it, and the loose index/css/js copies it used to receive — and inline as a
+# second implementation of this build — are deleted by the sync below.
 #
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
@@ -39,8 +42,8 @@ jobs:
       - name: Run engine test suite
         run: npm test
 
-      - name: Build single-file embedded HTML
-        run: node scripts/build-embedded.js app_embedded.html
+      - name: Build the artifact and its manifest
+        run: npm run release:artifact
 
       # Dead CSS ships inside every embedded copy, so it is checked before anything
       # is published. The audit verifies dist/app.html inlines the sheet it judged,
@@ -55,6 +58,12 @@ jobs:
       - name: Check the builder's end-of-build guards
         run: npm run test:builder
 
+      # The manifest is what the deployed repository verifies before it serves
+      # anything, so one that records the wrong thing would publish as confidently
+      # as a right one. Its writer is fixture-tested before either can ship.
+      - name: Check the manifest writer
+        run: npm run test:manifest
+
       - name: Check out streamlit repo (health_app.py)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         uses: actions/checkout@v4
@@ -63,13 +72,29 @@ jobs:
           token: ${{ env.STREAMLIT_PUSH_TOKEN }}
           path: streamlit-app
 
-      - name: Sync built app and assets into streamlit repo
+      - name: Sync the artifact and its manifest into streamlit repo
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
         run: |
-          cp app_embedded.html streamlit-app/
-          cp index.html css/styles.css streamlit-app/
-          mkdir -p streamlit-app/js
-          cp js/rules.js js/state.js js/engine.js js/app.js streamlit-app/js/
+          cp app_embedded.html app_embedded.manifest.json streamlit-app/
+          # The deployed repository holds no build inputs and no second
+          # implementation of the build: the loose copies it used to receive are
+          # removed, so nothing there could be inlined instead of the artifact.
+          rm -rf streamlit-app/index.html streamlit-app/css streamlit-app/js
+
+      - name: Refuse to publish a repository that rebuilds the estimator
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        run: |
+          if grep -q "def build_app_html" streamlit-app/health_app.py; then
+            echo "::error::streamlit-app/health_app.py still implements the embedded build — the deployed repository must verify the artifact, not rebuild it."
+            exit 1
+          fi
+          echo "streamlit-app/health_app.py holds no build implementation."
+
+      # Verify the pair the way the deployed app does, before it can be pushed:
+      # it must load and be served byte for byte, and a tampered copy must be refused.
+      - name: Verify the pair the way the deployed app does
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        run: python3 scripts/verify-streamlit-runtime.py streamlit-app
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
@@ -108,7 +133,7 @@ jobs:
         run: |
           if [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
             echo "### Published" >> "$GITHUB_STEP_SUMMARY"
-            echo "Pushed the built estimator to richardparslow-commits/health_app.py; Streamlit Community Cloud redeploys on that push." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pushed the built artifact and its manifest to richardparslow-commits/health_app.py; Streamlit Community Cloud redeploys on that push." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
             echo "No deploy token was configured, so nothing was pushed. The artifact built by this run is not live.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"

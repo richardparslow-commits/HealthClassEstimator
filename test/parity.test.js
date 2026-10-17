@@ -17,8 +17,8 @@ function ok(actual,label){assert.ok(actual,label);checks++;}
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),"hce-parity-"));
 const write=(name,content)=>{const p=path.join(dir,name);fs.writeFileSync(p,content);return p;};
 // Never throw on a non-zero exit: the exit status is the assertion.
-function check(consumer,buildFile=buildPath){
-  try{return{status:0,out:execFileSync(process.execPath,[checker,"--consumer",consumer,"--build",buildFile],{encoding:"utf8",stdio:["ignore","pipe","pipe"]})};}
+function check(consumer,buildFile=buildPath,extra=[]){
+  try{return{status:0,out:execFileSync(process.execPath,[checker,"--consumer",consumer,"--build",buildFile,...extra],{encoding:"utf8",stdio:["ignore","pipe","pipe"]})};}
   catch(e){return{status:e.status,out:String(e.stdout||""),err:String(e.stderr||"")};}
 }
 
@@ -154,6 +154,28 @@ ok(/underwriting rules\s+DIFFERS/.test(r.out),"the stale component is named");
 r=check(write("other-baseline.html",build),write("not-a-build.html","<html><body>an unrelated file</body></html>"));
 equal(r.status,1,"an unrecognisable build fails the check");
 ok(/does not contain all four components/.test(r.err),"the failure names what the build was missing");
+
+// 8. --expect-identical is what the Streamlit artifact comparison uses: that
+//    consumer receives the build output verbatim, so a presentational difference
+//    is a failure there even though it is a warning for a consumer that adapts
+//    its embed. Without the flag the same fixture passes, which is the point.
+r=check(write("forced-baseline.html",build),buildPath,["--expect-identical"]);
+equal(r.status,0,"a byte-identical consumer passes --expect-identical");
+ok(/byte-identical/.test(r.out),"the pass still reports byte identity");
+const presentationOnly=write("forced-presentation.html",build.replace("const App =","const App = /* fixture */"));
+equal(check(presentationOnly).status,0,"the same fixture passes the ordinary comparison");
+r=check(presentationOnly,buildPath,["--expect-identical"]);
+equal(r.status,1,"a presentational difference fails --expect-identical");
+ok(/requires the consumer to be\s+byte-identical/.test(r.out),"the failure says what it required");
+ok(!/PASS — underwriting logic matches the build/.test(r.out),"the forced comparison does not pass with a presentational note");
+// The failing run exits 1, so execFileSync throws and its stdout carries the JSON.
+let forcedJson,forcedStatus=0;
+try{forcedJson=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",presentationOnly,"--build",buildPath,"--expect-identical","--json"],{encoding:"utf8"}));}
+catch(e){forcedStatus=e.status;forcedJson=JSON.parse(String(e.stdout||"{}"));}
+equal(forcedStatus,1,"--expect-identical exits 1 when the documents differ");
+equal(forcedJson.ok,false,"--json reports the byte-identity failure as not ok");
+equal(forcedJson.documentIdentical,false,"--json records that the documents differ");
+equal(forcedJson.expectIdentical,true,"--json records that byte identity was required");
 
 // 7. JSON output carries the machine-readable verdict.
 const parsed=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",write("json.html",build),"--build",buildPath,"--json"],{encoding:"utf8"}));

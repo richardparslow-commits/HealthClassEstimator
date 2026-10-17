@@ -18,11 +18,15 @@
        warning, because a consumer may legitimately adapt its embed (a
        narrow CSP, same-origin contact links, an accessibility shim), but it is
        never hidden — an edit made only in a copy still needs to come back here.
+     - --expect-identical removes that tolerance entirely: the Streamlit
+       deployment receives the build output copied verbatim, so for it anything
+       but byte identity means the file it serves is not the reviewed build.
 
    Usage:
      node scripts/check-consumer-parity.js                      # the live tool page
      node scripts/check-consumer-parity.js --consumer <path>    # a local file
      node scripts/check-consumer-parity.js --build <path>       # alternate build
+     node scripts/check-consumer-parity.js --expect-identical   # fail unless byte-identical
      node scripts/check-consumer-parity.js --json
 
    <path> may be the built HTML, the website's route file that holds the embed as
@@ -55,6 +59,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--consumer") args.consumer = argv[++i];
     else if (a === "--build") args.build = argv[++i];
+    else if (a === "--expect-identical") args.expectIdentical = true;
     else if (a === "--json") args.json = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error("Unknown argument: " + a);
@@ -269,9 +274,13 @@ function compareComponent(id, consumerText, buildText) {
 function report(results, meta) {
   const critical = results.filter((r) => r.critical && r.state !== "identical");
   const presentational = results.filter((r) => !r.critical && r.state !== "identical");
+  // --expect-identical is for the Streamlit artifact, which is this build copied
+  // verbatim; there a presentational difference is a failure too.
+  const byteMismatch = meta.expectIdentical && !meta.documentIdentical;
+  const ok = critical.length === 0 && !byteMismatch;
   if (meta.json) {
-    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, documentIdentical: meta.documentIdentical, results, ok: critical.length === 0 }, null, 2));
-    return critical.length === 0;
+    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, expectIdentical: meta.expectIdentical, documentIdentical: meta.documentIdentical, results, ok }, null, 2));
+    return ok;
   }
   console.log("Consumer : " + meta.consumer);
   console.log("           (" + meta.how + ")");
@@ -297,6 +306,10 @@ function report(results, meta) {
     }
     console.log("       Then regenerate the consumer from the new build, and never edit its copy to");
     console.log("       match: that is how ISSUE-001 happened.");
+  } else if (byteMismatch) {
+    console.log("FAIL — this comparison requires the consumer to be byte-identical to the build.");
+    console.log("       Underwriting logic matches, but the documents differ; regenerate this consumer");
+    console.log("       from the build rather than adapting it. Nothing may be adapted here.");
   } else if (presentational.length) {
     console.log("PASS — underwriting logic matches the build.");
     console.log("       " + presentational.length + " presentational difference(s) above. Bring anything you want to keep back into");
@@ -309,7 +322,7 @@ function report(results, meta) {
   } else {
     console.log("PASS — this consumer is byte-identical to the build.");
   }
-  return critical.length === 0;
+  return ok;
 }
 
 async function main() {
@@ -336,6 +349,7 @@ async function main() {
     how: consumer.how,
     json: args.json,
     documentIdentical: consumer.html === build,
+    expectIdentical: args.expectIdentical,
   });
 }
 

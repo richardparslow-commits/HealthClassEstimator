@@ -8,18 +8,21 @@ name: Check the live consumers against the build
 # Both copies are compared with a fresh build here, as independent jobs, so one
 # going red cannot hide the other's result:
 #
-#   parity    — the live tool page, which delivers the build through an iframe
+#   website   — the live tool page, which delivers the build through an iframe
 #               srcDoc plus its own adapters, read from the served page itself.
 #   streamlit — the artifact Streamlit Community Cloud renders, read from
 #               richardparslow-commits/health_app.py at its published ref. That
-#               file is the build output copied verbatim, so the expected verdict
-#               is byte-identical; anything else means the deployed tool is not
-#               the reviewed one.
-#   fallback   — the second implementation of the build in that repository's
-#               health_app.py, which inlines its loose index.html/css/js assets
-#               when app_embedded.html is absent. It does not run in the deployed
-#               app, but it is what a local run serves, and it claimed byte-for-byte
-#               parity while differing in three script joins.
+#               file is the build output copied verbatim, so the verdict required
+#               here is byte-identical, and its manifest must describe it;
+#               anything else means the deployed tool is not the reviewed one.
+#   runtime   — the deployed wrapper itself, exercised the way Streamlit does.
+#               That repository holds no build logic: it verifies the pair it
+#               serves. This job proves the contract in both directions — the
+#               published pair is served byte for byte, and a tampered artifact,
+#               a missing artifact, a missing manifest and a manifest whose
+#               release version lies are all refused. The wrapper used to inline
+#               loose assets when the artifact was absent, and that second
+#               implementation of the build drifted from the reviewed one.
 #
 # Each job fails when the two disagree on underwriting logic — rules, state or
 # engine — because then the published tool is not the tool this repository audited.
@@ -49,7 +52,7 @@ on:
         required: false
         default: https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html
       streamlit_repo:
-        description: Repository whose fallback builder is compared with the build
+        description: Repository whose deployed wrapper is verified against the build
         required: false
         default: richardparslow-commits/health_app.py
 
@@ -113,14 +116,32 @@ jobs:
 
       # -f turns an HTTP error into a step failure rather than a comparison against
       # an error page; --retry rides out a transient network wobble, not a 404.
-      - name: Compare the published Streamlit artifact with the build
+      - name: Fetch the published artifact and its manifest
         env:
           SOURCE: ${{ inputs.streamlit_source || 'https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html' }}
         run: |
           set -o pipefail
-          curl -fsS --retry 3 --retry-delay 5 "$SOURCE" -o streamlit_embedded.html
-          echo "Fetched $(wc -c < streamlit_embedded.html) bytes from $SOURCE"
-          node scripts/check-consumer-parity.js --consumer streamlit_embedded.html 2>&1 | tee streamlit.txt
+          manifest="${SOURCE%/*}/app_embedded.manifest.json"
+          # Fetched under its published name: the manifest records that name, and
+          # the deployed repository must hold the file under it.
+          curl -fsS --retry 3 --retry-delay 5 "$SOURCE" -o app_embedded.html
+          curl -fsS --retry 3 --retry-delay 5 "$manifest" -o app_embedded.manifest.json
+          echo "Fetched $(wc -c < app_embedded.html) bytes from $SOURCE"
+          echo "Fetched $(wc -c < app_embedded.manifest.json) bytes from $manifest"
+
+      # This consumer receives the build output copied verbatim, so a
+      # presentational difference is drift here, not an embed adaptation.
+      - name: Require the published artifact to be the build, byte for byte
+        run: |
+          set -o pipefail
+          node scripts/check-consumer-parity.js --consumer app_embedded.html --expect-identical 2>&1 | tee streamlit.txt
+
+      # Byte identity alone would accept a manifest that describes something else,
+      # so the artifact is also held to the record it shipped with.
+      - name: Require the published manifest to describe that artifact
+        run: |
+          set -o pipefail
+          node scripts/write-artifact-manifest.js --check app_embedded.html --out app_embedded.manifest.json 2>&1 | tee -a streamlit.txt
 
       - name: Publish the Streamlit comparison to the run summary
         if: ${{ always() }}
@@ -132,80 +153,48 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # build_app_html() in that repository is a second implementation of this build:
-  # it inlines the loose index.html/css/js assets when app_embedded.html is absent
-  # (a local run, or a deploy where the artifact did not arrive). Neither job above
-  # reads that path, and it does not reliably reproduce the build — its script
-  # blocks were joined differently in three places, and a stylesheet carrying a CSS
-  # escape made it fail outright with 'invalid group reference'. Run it here and
-  # compare with the build, ignoring only the one-line provenance stamp, which
-  # names whichever builder wrote the file.
-  streamlit-fallback:
-    name: Streamlit fallback build
+  # The deployed repository used to carry a second implementation of this build:
+  # build_app_html() inlined loose index.html/css/js assets whenever
+  # app_embedded.html was absent (a local run, or a deploy where the artifact did
+  # not arrive). Nothing read that path, and it drifted from the reviewed builder
+  # in three places — script joins, a stylesheet re.sub that failed on a CSS
+  # escape, and a loader strip that could be defeated by editing its comment. It is
+  # gone: health_app.py now verifies the pair it serves and contains no build logic.
+  # This job holds it to that contract, in both directions, the way Streamlit runs
+  # it — the module renders at import time, so the harness stubs only the parts of
+  # the Streamlit API it touches.
+  streamlit-runtime:
+    name: Streamlit runtime verification
     runs-on: ubuntu-latest
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build the standalone distribution
-        run: npm run build
-
-      # -f turns an HTTP error into a step failure: a comparison against a 404 page
-      # would otherwise look like drift.
-      - name: Fetch the fallback builder and the assets it inlines
+      # -f turns an HTTP error into a step failure: a verification against a 404
+      # page would otherwise look like a pass.
+      - name: Fetch the published wrapper, artifact and manifest
         env:
           REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
         run: |
-          mkdir -p fallback/js fallback/css
+          mkdir -p runtime
           base="https://raw.githubusercontent.com/$REPO/main"
-          curl -fsS --retry 3 --retry-delay 5 "$base/health_app.py" -o fallback/health_app.py
-          curl -fsS --retry 3 --retry-delay 5 "$base/index.html" -o fallback/index.html
-          curl -fsS --retry 3 --retry-delay 5 "$base/css/styles.css" -o fallback/css/styles.css
-          for name in rules state engine app; do
-            curl -fsS --retry 3 --retry-delay 5 "$base/js/$name.js" -o "fallback/js/$name.js"
-          done
-          echo "Fetched the builder and its assets from $REPO"
+          curl -fsS --retry 3 --retry-delay 5 "$base/health_app.py" -o runtime/health_app.py
+          curl -fsS --retry 3 --retry-delay 5 "$base/app_embedded.html" -o runtime/app_embedded.html
+          curl -fsS --retry 3 --retry-delay 5 "$base/app_embedded.manifest.json" -o runtime/app_embedded.manifest.json
+          echo "Fetched the wrapper and its pair from $REPO"
 
-      # The module renders at import time, so it is imported with the parts of
-      # Streamlit it touches stubbed out; only build_app_html() is under test.
-      - name: Render the fallback document
+      - name: Prove the wrapper's verification contract
         run: |
-          cd fallback
-          python3 -c "
-          import sys, types
-          st = types.ModuleType('streamlit')
-          st.components = types.SimpleNamespace(v1=types.SimpleNamespace(html=lambda *a, **k: None))
-          st.set_page_config = st.markdown = st.caption = lambda *a, **k: None
-          sys.modules['streamlit'] = st
-          import health_app
-          document = health_app.build_app_html()
-          open('../fallback.html', 'w', encoding='utf-8').write(document)
-          print('fallback document:', len(document.encode('utf-8')), 'bytes')
-          "
+          set -o pipefail
+          python3 scripts/verify-streamlit-runtime.py runtime 2>&1 | tee runtime.txt
 
-      - name: Compare the fallback with the build
-        run: |
-          sed -E 's|// stamped by [A-Za-z_.-]+|// stamped by BUILD|' dist/app.html > build.normalised.html
-          sed -E 's|// stamped by [A-Za-z_.-]+|// stamped by BUILD|' fallback.html > fallback.normalised.html
-          if diff -u build.normalised.html fallback.normalised.html > fallback.diff; then
-            echo "PASS — the fallback build reproduces the reviewed build, stamp line aside."
-          else
-            echo "::error::The Streamlit fallback builder no longer reproduces the reviewed build. See the run summary for the first differences."
-            exit 1
-          fi
-
-      - name: Publish the fallback comparison to the run summary
+      - name: Publish the runtime verification to the run summary
         if: ${{ always() }}
         run: |
           {
-            echo "### Streamlit fallback build"
+            echo "### Streamlit runtime verification"
             echo '```'
-            cat fallback.diff 2>/dev/null || echo "No differences, or the comparison produced no output."
+            cat runtime.txt 2>/dev/null || echo "The verification produced no output."
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -219,7 +208,7 @@ jobs:
   alert:
     name: Report drift to a tracking issue
     runs-on: ubuntu-latest
-    needs: [website, streamlit, streamlit-fallback]
+    needs: [website, streamlit, streamlit-runtime]
     # always(): this job reports on the others' outcomes, so it has to run after a
     # failure — the very case it exists for.
     if: ${{ always() }}
@@ -268,7 +257,7 @@ jobs:
           - Build commit: ${HEAD_SHA}
           - Trigger: ${EVENT}
 
-          Open the run's Summary tab for the per-consumer diff. The check compares the live website, the published Streamlit artifact and the Streamlit fallback builder against a fresh build of main, and fails when they disagree on underwriting logic (rules, state or engine) — because then the published tool is not the tool this repository audited.
+          Open the run's Summary tab for the per-consumer diff. The check compares the live website and the published Streamlit artifact against a fresh build of main — the artifact byte for byte, with its manifest — and exercises the deployed wrapper's own verification. It fails when a consumer disagrees on underwriting logic (rules, state or engine), or when the artifact is not the reviewed build.
 
           If a copy is simply behind the build, republish it (the website from Lovable; the Streamlit app from deploy-streamlit.yml). Never edit a copy to match.
 

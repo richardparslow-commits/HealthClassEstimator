@@ -3,9 +3,11 @@
 
    Inlines css/styles.css into a <style> tag and js/{rules,state,engine,app}.js into
    inline <script> tags (rules -> state -> engine -> app document order), replacing the
-   dynamic cache-busted script loader. Mirrors the runtime inlining in the
-   health_app.py repo's health_app.py — kept in sync deliberately, because a
-   relative href/script src cannot resolve inside a Streamlit component iframe.
+   dynamic cache-busted script loader, because a relative href/script src cannot
+   resolve inside a Streamlit component iframe. The deployment receives this output
+   plus a manifest of it (scripts/write-artifact-manifest.js) and verifies the pair
+   before serving it; there is no second implementation of this build anywhere,
+   because the two drifted while there was one.
 
    Usage:  node scripts/build-embedded.js [output-path]
    Default output: dist/app.html

@@ -3,5 +3,6 @@
 .freebuff/
 dist/
 app_embedded.html
+app_embedded.manifest.json
 
 node_modules/
