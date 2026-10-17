@@ -28,6 +28,13 @@ name: Check the live consumers against the build
 # republished with the current build yet. That is why this runs on a schedule and on
 # demand instead of on pull requests, where a pending republish must not block
 # unrelated work. When both jobs go green, both live tools and the sources agree.
+#
+# A red run is only useful if someone sees it, so a fourth job turns the outcome into
+# a durable signal: while any comparison job is not green it keeps one labelled
+# tracking issue open — created on the first failure, updated on later ones — and on
+# the first run where every comparison job succeeds it comments and closes that
+# issue. The issue mentions the owner, so a drifted copy reaches a human instead of a
+# scheduled run failing quietly at 13:17 UTC.
 on:
   schedule:
     - cron: "17 13 * * *"
@@ -200,4 +207,93 @@ jobs:
             echo '```'
             cat fallback.diff 2>/dev/null || echo "No differences, or the comparison produced no output."
             echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Make a red run impossible to miss. A red mark on a scheduled run is easy to
+  # overlook; an open issue is not. While any comparison job is not green this job
+  # keeps one labelled tracking issue open (creating it on the first failure,
+  # commenting on later ones) and closes it — with a record of the run that did it —
+  # on the first run where every comparison job succeeds. Only a plain `success`
+  # counts: a skipped or cancelled job means the comparison did not happen, which
+  # must not close an issue.
+  alert:
+    name: Report drift to a tracking issue
+    runs-on: ubuntu-latest
+    needs: [website, streamlit, streamlit-fallback]
+    # always(): this job reports on the others' outcomes, so it has to run after a
+    # failure — the very case it exists for.
+    if: ${{ always() }}
+    concurrency:
+      group: parity-drift-alert
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open, update or close the drift issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          label=parity-drift
+
+          # `result` is success, failure, cancelled or skipped; everything that is
+          # not success is reported, and only an empty list closes the issue.
+          failed=$(printf '%s' "$RESULTS" \
+            | jq -r 'to_entries[] | select(.value.result != "success") | .key' \
+            | tr '\n' ',' | sed -e 's/,$//' -e 's/,/, /g')
+          echo "Not green: ${failed:-none}"
+
+          gh label create "$label" --repo "$REPO" --force \
+            --description "A deployed copy of the estimator disagrees with the build" \
+            --color B60205
+
+          open_issues=$(gh issue list --repo "$REPO" --label "$label" --state open --json number --jq '.[].number')
+          # sed, not head: `printf | head` can die of SIGPIPE under pipefail.
+          issue=$(printf '%s\n' "$open_issues" | sed -n '1p')
+
+          if [ -n "$failed" ]; then
+            body=$(mktemp)
+            cat > "$body" <<BODY
+          @${OWNER} — the consumer-parity check found that a deployed copy of the estimator no longer matches the build.
+
+          - Failing job(s): ${failed}
+          - Run: ${RUN_URL}
+          - Build commit: ${HEAD_SHA}
+          - Trigger: ${EVENT}
+
+          Open the run's Summary tab for the per-consumer diff. The check compares the live website, the published Streamlit artifact and the Streamlit fallback builder against a fresh build of main, and fails when they disagree on underwriting logic (rules, state or engine) — because then the published tool is not the tool this repository audited.
+
+          If a copy is simply behind the build, republish it (the website from Lovable; the Streamlit app from deploy-streamlit.yml). Never edit a copy to match.
+
+          This issue closes automatically on the first run where every consumer matches again.
+          BODY
+            if [ -z "$issue" ]; then
+              gh issue create --repo "$REPO" --label "$label" \
+                --title "Consumer parity: a deployed copy disagrees with the build" \
+                --body-file "$body"
+            else
+              gh issue comment "$issue" --repo "$REPO" \
+                --body "Still failing: ${failed} — ${RUN_URL} (build ${HEAD_SHA}, trigger ${EVENT})."
+            fi
+          elif [ -n "$issue" ]; then
+            for n in $open_issues; do
+              gh issue comment "$n" --repo "$REPO" \
+                --body "Every consumer matches the build again: ${RUN_URL} (build ${HEAD_SHA}, trigger ${EVENT}). Closing."
+              gh issue close "$n" --repo "$REPO"
+            done
+          else
+            echo "No open tracking issue to close."
+          fi
+
+          {
+            echo "### Drift alert"
+            echo "Not green: ${failed:-none}"
+            echo "Open tracking issue at start: ${issue:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
