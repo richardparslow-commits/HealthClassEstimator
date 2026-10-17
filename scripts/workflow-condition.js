@@ -14,11 +14,21 @@
    functions. Unknown syntax, an unknown function, or a bare word that is not a literal
    throws: a condition this cannot read must fail the caller, not be guessed at.
 
+   `render` is the other half of the same language: GitHub substitutes every `${{ … }}`
+   in a step's `env:` and `run:` before the shell sees it, and a harness that leaves one
+   in place is executing text GitHub would never run. It renders with the same parser and
+   evaluator, and `{ strict: true }` additionally refuses an expression whose value is
+   absent from the context — the harness equivalent of a typo that GitHub would quietly
+   turn into an empty string.
+
    The semantics are GitHub's documented ones, stated here because they are surprising:
    strings compare case-insensitively; a non-empty string is truthy even when it is
    "false"; null compares equal to the empty string and to false; and a missing context
    property is null, not an empty string. Values of different types are compared as
-   numbers (so `'' == false`), which is what GitHub documents for loose equality.
+   numbers (so `'' == false`), which is what GitHub documents for loose equality. `&&`
+   and `||` return an operand rather than a boolean — `a && b` is `b` when `a` is truthy
+   and `a` otherwise — so the ternary idiom `${{ cond && 'yes' || 'no' }}` renders the
+   word, not `true`.
 
    Usage:
      const { evaluate, parse } = require("./workflow-condition");
@@ -283,10 +293,15 @@ function evaluateTree(node, context, state) {
       return node.operator === "==" ? same : !same;
     }
     case "logic": {
-      // Short-circuit like GitHub: the right side is not evaluated when the left decides.
-      const left = truthy(evaluateTree(node.left, context, state));
-      if (node.operator === "&&") return left ? truthy(evaluateTree(node.right, context, state)) : false;
-      return left ? true : truthy(evaluateTree(node.right, context, state));
+      // GitHub returns an operand, not a boolean: `a && b` is `b` when `a` is truthy and
+      // `a` otherwise, `a || b` is `a` when `a` is truthy and `b` otherwise. Conditions
+      // only need the truthiness, but rendering does not: the ternary idiom
+      // `${{ cond && 'yes' || 'no' }}` is a string here, and a boolean-returning
+      // evaluator would render `true`. Short-circuiting is preserved — the right side is
+      // not evaluated when the left decides.
+      const left = evaluateTree(node.left, context, state);
+      if (node.operator === "&&") return truthy(left) ? evaluateTree(node.right, context, state) : left;
+      return truthy(left) ? left : evaluateTree(node.right, context, state);
     }
     default:
       throw new Error("unknown condition node `" + node.kind + "`");
@@ -299,7 +314,43 @@ function evaluate(condition, context = {}, state = {}) {
   return truthy(evaluateTree(parse(condition), context, state));
 }
 
-module.exports = { evaluate, parse, equalish, truthy };
+/* --- rendering ------------------------------------------------------------- */
+
+// GitHub's stringification for a rendered expression: null and an absent value become
+// the empty string, booleans and numbers their literal form, and an object or array its
+// JSON — which is what a `${{ toJSON(x) }}`-shaped value would produce.
+function stringify(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+const TEMPLATE = /\$\{\{([\s\S]*?)\}\}/g;
+
+// Substitute every `${{ … }}` in a string, the way GitHub does before a step runs. A
+// stray `${{` left over is an unterminated expression, not literal text: GitHub rejects
+// it, and a harness that let it through would show a shell syntax error where a workflow
+// bug is. `strict` throws when a referenced value is absent from the context, so a
+// misspelled property fails here instead of rendering as an empty string.
+function render(text, context = {}, state = {}, options = {}) {
+  const source = String(text ?? "");
+  const rendered = source.replace(TEMPLATE, (_, expression) => {
+    const inner = expression.trim();
+    if (!inner) throw new Error("an empty `${{ }}` expression cannot be rendered");
+    const value = evaluateTree(parse(inner), context, state);
+    if (options.strict && (value === null || value === undefined)) {
+      throw new Error("expression `" + inner + "` has no value in this render's context: " + source.slice(0, 120));
+    }
+    return stringify(value);
+  });
+  if (/\$\{\{/.test(rendered)) {
+    throw new Error("unterminated `${{` expression: " + rendered.slice(0, 160));
+  }
+  return rendered;
+}
+
+module.exports = { evaluate, render, parse, equalish, truthy, stringify };
 
 if (require.main === module) {
   const [first, ...rest] = process.argv.slice(2);

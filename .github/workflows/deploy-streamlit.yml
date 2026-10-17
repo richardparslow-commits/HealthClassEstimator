@@ -19,6 +19,14 @@ name: Deploy Streamlit app
 # sync. `scripts/ci-self-test.mjs` dispatches this input to prove the run's own
 # conditions and checkout in Actions.
 #
+# The same read-back also runs on a daily schedule. A dispatch is only evidence
+# when somebody remembers to dispatch, so a deployment that stopped matching this
+# build — a hand sync, a Streamlit-side redeploy, a superseded push — could stay
+# drifted for as long as nobody pushed, which is exactly the state a quiet
+# repository is in. The scheduled run is verify-only by construction: it reads
+# origin's main back and is red until the pair there is the pair this build makes.
+# It never pushes, so it cannot deploy a second time.
+#
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
 # secrets as STREAMLIT_PUSH_TOKEN. The token is only needed to push: staging the
@@ -32,6 +40,12 @@ name: Deploy Streamlit app
 on:
   push:
     branches: [main]
+  # 07:20 UTC: off the hour, and clear of the other schedules here — consumer
+  # parity at 13:17, the canary at 06:17, the deployed-app check at 00/06/12/18:23.
+  # GitHub disables a schedule after 60 days without repository activity, so a long
+  # silence still needs a dispatch (the canary states the same caveat).
+  schedule:
+    - cron: "20 7 * * *"
   workflow_dispatch:
     inputs:
       # Push runs exercise the read-back only once the token exists. Until then,
@@ -44,7 +58,10 @@ on:
         default: false
 
 concurrency:
-  group: deploy-streamlit
+  # A verify-only run must not cancel a deploy that is mid-push, and a deploy must
+  # not cancel a read-back: they write different things, so they get different
+  # groups. The ternary is GitHub's operand-returning `&&`/`||`.
+  group: deploy-streamlit-${{ (github.event_name == 'schedule' || inputs.verify_published) && 'verify' || 'deploy' }}
   cancel-in-progress: true
 
 jobs:
@@ -52,7 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       STREAMLIT_PUSH_TOKEN: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
-      VERIFY_PUBLISHED: ${{ inputs.verify_published }}
+      # A scheduled run is the read-back on its own; a dispatch says so explicitly.
+      VERIFY_PUBLISHED: ${{ github.event_name == 'schedule' || inputs.verify_published }}
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
@@ -235,11 +253,14 @@ jobs:
           DEPLOYED_REPO: richardparslow-commits/health_app.py
         run: |
           set -o pipefail
-          # A push run judges the commit it pushed; a verify-only run has pushed
-          # nothing, so origin's current main is the subject — which is the point
-          # of dispatching it after a hand sync.
+          # A push run judges the commit it pushed; a verify-only run (the schedule,
+          # or a dispatch asking for one) has pushed nothing, so origin's current main
+          # is the subject — which is the point of dispatching it after a hand sync.
+          # Expecting a commit is a push-run decision: a verify-only run (with or without a
+          # token) did not push, so requiring the staged clone's head would turn "origin
+          # moved while this ran" into "the deployment is not this build".
           expect=()
-          if [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+          if [ -n "$STREAMLIT_PUSH_TOKEN" ] && [ "$VERIFY_PUBLISHED" != "true" ]; then
             expect=(--expect "$(git -C streamlit-app rev-parse HEAD)")
           fi
           scripts/verify-published-pair.sh \
@@ -249,6 +270,13 @@ jobs:
             --into published \
             --commit-out published-commit.txt 2>&1 | tee published.txt
           python3 scripts/verify-streamlit-runtime.py published 2>&1 | tee -a published.txt
+          # Reached only when both commands above succeeded: `bash -e` aborts the step on
+          # the first failure, and `pipefail` makes a failed left-hand side of a pipeline
+          # count. The summary reads this file instead of inferring a verdict from the
+          # path the run took — a run whose read-back failed cannot be described as
+          # verified, and the commit file alone (written before the runtime check) cannot
+          # stand for a completed verification.
+          printf 'the read-back verified origin at %s\n' "$(date -u +%FT%TZ)" > published-ok.txt
 
       # A green run must never imply a deploy that did not happen. Before this
       # gate existed the workflow warned and exited 0 without pushing, so a
@@ -272,31 +300,53 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          # Verify-only is answered first. It is a decision the dispatcher made, and it
-          # holds whether or not a token is configured — a token present is what makes
-          # the read-back possible, not what turns verification into a publish.
+          # What this summary may claim is evidence, not intent. The read-back step leaves
+          # `published-ok.txt` only when both of its checks finished, and
+          # `published-commit.txt` only when it read a commit back; every branch below
+          # decides on those files. Before this, the verify-only branch was decided by the
+          # dispatch alone: a run whose read-back had failed still said "Verified, not
+          # published" and that it had judged the deployment — a claim placed directly
+          # above its own FAIL, on the shape the daily schedule takes.
+          verified=""
+          if [ -f published-ok.txt ]; then verified=yes; fi
+          PUBLISHED_SHA="$(cat published-commit.txt 2>/dev/null || true)"
+          quote_output() {
+            echo '```'
+            cat published.txt 2>/dev/null || echo "The read-back produced no output."
+            echo '```'
+          }
+
           if [ "$VERIFY_PUBLISHED" = "true" ]; then
             {
-              echo "### Verified, not published"
-              echo "This dispatch asked for verification only, so nothing was pushed; it read the deployed repository's current main back and judged it against this build."
-              echo
-              echo '```'
-              cat published.txt 2>/dev/null || echo "The read-back produced no output."
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
-            PUBLISHED_SHA="$(cat published-commit.txt 2>/dev/null || true)"
-            {
-              echo "### Published"
-              if [ -n "$PUBLISHED_SHA" ]; then
-                echo "Deployed commit: \`${PUBLISHED_SHA}\` in richardparslow-commits/health_app.py — read back from origin after the push and compared byte for byte with \`dist/app.html\` and the manifest this run wrote; Streamlit Community Cloud redeploys on that push."
+              if [ -n "$verified" ]; then
+                echo "### Verified, not published"
+                echo "This run asked for verification only, so nothing was pushed; it read the deployed repository's current main back and confirmed it is this build."
               else
-                echo "The push reported success but no commit was read back, so this run cannot name what is live. See the read-back step for why."
+                echo "### Not verified"
+                echo "This run asked for verification only, so nothing was pushed — but its read-back did not confirm that origin's current main is this build, so this run cannot say the deployment matches. Nothing was published."
               fi
               echo
-              echo '```'
-              cat published.txt 2>/dev/null || echo "The read-back produced no output."
-              echo '```'
+              quote_output
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+            {
+              # "Published" is the word a reader scans for, so it needs both halves: a
+              # commit that came back, and a read-back that finished. The commit file is
+              # written before the runtime check, so it alone cannot stand for a verified
+              # publish.
+              if [ -n "$PUBLISHED_SHA" ] && [ -n "$verified" ]; then
+                echo "### Published"
+                echo "Deployed commit: \`${PUBLISHED_SHA}\` in richardparslow-commits/health_app.py — read back from origin after the push and compared byte for byte with \`dist/app.html\` and the manifest this run wrote; Streamlit Community Cloud redeploys on that push."
+              else
+                echo "### Pushed, not verified"
+                if [ -z "$PUBLISHED_SHA" ]; then
+                  echo "The push reported success but no commit was read back, so this run cannot name or vouch for what is live. See the read-back step for why."
+                else
+                  echo "The push reported success and origin holds commit \`${PUBLISHED_SHA}\`, but the read-back did not finish its checks, so this run cannot vouch for what is live. See the read-back step for why."
+                fi
+              fi
+              echo
+              quote_output
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Not published" >> "$GITHUB_STEP_SUMMARY"

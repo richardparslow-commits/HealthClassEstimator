@@ -16,6 +16,12 @@
    (`npm run test:published`, `verify-streamlit-runtime.py`) and this step's job is to
    invoke it on the right directory and fail when it fails.
 
+   The last case runs them as one run rather than one at a time: the sync step, the push
+   step, the read-back step and the summary step, in that order, in one workdir — so the
+   commit the run claims is the commit its own push created, not one a fixture agreed to
+   call pushed. `test/publish-step.test.js` runs the sync and push; running the claim steps
+   after them is what closes the seam between "we pushed" and "we verified what is live".
+
    NB: GitHub runs a step with `bash -e`, so a failing command aborts the step. The runner
    here passes `-e` for that reason; a step whose failure only "fails" because the last
    command happened to fail is a step that leaks a claim on a bad day.
@@ -26,7 +32,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { readStep } = require("../scripts/workflow-step.js");
-const { evaluate } = require("../scripts/workflow-condition.js");
+const { evaluate, render } = require("../scripts/workflow-condition.js");
 
 const root = path.resolve(__dirname, "..");
 const workflow = path.join(root, ".github/workflows/deploy-streamlit.yml");
@@ -41,6 +47,7 @@ function equal(actual, expected, label) {
 }
 
 const readback = readStep(workflow, "deploy", "Read back what the deployed repository now holds");
+const sync = readStep(workflow, "deploy", "Sync the artifact and its manifest into streamlit repo");
 const gate = readStep(workflow, "deploy", "Fail when the deploy token is not configured (main)");
 const warning = readStep(workflow, "deploy", "Explain the skipped push on a non-main ref");
 const push = readStep(workflow, "deploy", "Commit and push (triggers Streamlit Cloud redeploy)");
@@ -77,7 +84,11 @@ const deployedUrl = "https://github.com/" + deployedRepo + ".git";
 // pushed commit from, `dist/app.html` is the build the read-back compares against, and
 // `scripts/` is the repository's own scripts (symlinked, so the shell under test is the
 // one this checkout ships, including the manifest checker it calls).
-function fixture() {
+// `seeded` decides whether origin starts holding the pair. The read-back cases below only
+// need something live to compare against, so they seed it; the chain case needs the sync
+// and push steps to create the commit, so it starts from the deployed repository as it
+// really is — wrapper, requirements, README, no artifact.
+function fixture({ seeded = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-claim-"));
   const bare = path.join(dir, "deployed.git");
   const seed = path.join(dir, "seed");
@@ -87,8 +98,12 @@ function fixture() {
     path.join(seed, "health_app.py"),
     'import streamlit as st\nst.iframe("app_embedded.html", height=2400)\n',
   );
-  fs.copyFileSync(ARTIFACT, path.join(seed, "app_embedded.html"));
-  fs.copyFileSync(MANIFEST, path.join(seed, "app_embedded.manifest.json"));
+  fs.writeFileSync(path.join(seed, "requirements.txt"), "streamlit>=1.66,<2\n");
+  fs.writeFileSync(path.join(seed, "README.md"), "# deployed\n");
+  if (seeded) {
+    fs.copyFileSync(ARTIFACT, path.join(seed, "app_embedded.html"));
+    fs.copyFileSync(MANIFEST, path.join(seed, "app_embedded.manifest.json"));
+  }
   mustGit(["add", "-A"], seed);
   mustGit(
     ["-c", "user.name=seed", "-c", "user.email=seed@example.invalid", "commit", "-m", "published pair"],
@@ -101,6 +116,10 @@ function fixture() {
   mustGit(["clone", bare, path.join(dir, "streamlit-app")], dir);
   fs.mkdirSync(path.join(dir, "dist"));
   fs.copyFileSync(ARTIFACT, path.join(dir, "dist", "app.html"));
+  // `release:artifact` leaves the pair beside the workspace, which is where the sync step
+  // copies it from — in every case, seeded or not.
+  fs.copyFileSync(ARTIFACT, path.join(dir, "app_embedded.html"));
+  fs.copyFileSync(MANIFEST, path.join(dir, "app_embedded.manifest.json"));
 
   // The repository's scripts, copied rather than symlinked: the read-back resolves its
   // own root from `dirname $0/..`, and `cd` through a symlinked `scripts/..` lands back in
@@ -128,25 +147,19 @@ function fixture() {
   return { dir, bare, log: path.join(dir, "python3.log") };
 }
 
-// GitHub renders `${{ … }}` into a step's shell before bash ever sees it. A harness can
-// either render the expressions it is told about, or fail on the ones it is not — never
-// leave one to reach bash, where `${{` is a syntax error that would look like a step
-// failure. The table is explicit, so a step that gains an expression has to be taught to
-// this file rather than quietly running with a literal placeholder.
-function render(step, values) {
-  const found = [...step.script.matchAll(/\$\{\{\s*([^}]+?)\s*\}\}/g)].map((match) => match[1]);
-  const unknown = found.filter((expression) => !(expression in values));
-  if (unknown.length) {
-    throw new Error(
-      "step `" + step.name + "` uses expressions this harness does not render: " + unknown.join(", "),
-    );
-  }
-  return step.script.replace(/\$\{\{\s*([^}]+?)\s*\}\}/g, (_, expression) => values[expression]);
+// GitHub renders `${{ … }}` into a step's shell before bash ever sees it, and this uses
+// the same parser and evaluator as the `if:` conditions rather than a second expression
+// implementation. `strict` refuses an expression absent from the context, so a step that
+// gains one has to be given a value here instead of quietly rendering an empty string —
+// and a stray `${{` fails rather than reaching bash as a syntax error that would look
+// like a step failure.
+function renderStep(step, context) {
+  return render(step.script, context, {}, { strict: true });
 }
 
 // The step's shell, run the way GitHub runs it (`bash -e`), with the job's env.
-function run(step, fixture_, extraEnv = {}, expressions = {}) {
-  const script = render(step, expressions);
+function run(step, fixture_, extraEnv = {}, context = {}) {
+  const script = renderStep(step, context);
   const env = {
     ...process.env,
     PATH: path.join(fixture_.dir, "bin") + ":" + process.env.PATH,
@@ -167,6 +180,17 @@ function run(step, fixture_, extraEnv = {}, expressions = {}) {
     env,
   });
 }
+
+// The read-back's evidence: the commit it named, the output it produced, and the marker it
+// leaves only when both of its checks finished. Cleared between runs, because a marker
+// left by an earlier passing run would make a later failing one look verified.
+function clearEvidence(fixture_) {
+  for (const name of ["published-commit.txt", "published.txt", "published-ok.txt"]) {
+    fs.rmSync(path.join(fixture_.dir, name), { force: true });
+  }
+  fs.rmSync(fixture_.log, { force: true });
+}
+const evidence = (fixture_, name) => path.join(fixture_.dir, name);
 
 function pythonCalls(fixture_) {
   try {
@@ -222,9 +246,35 @@ ok(wouldRun(summary, {}, { success: false }), "the summary is written even when 
 ok("DEPLOYED_REPO" in readback.env, "the read-back's remote is the step's own variable");
 ok("SOURCE_SHA" in summary.env, "and the summary's expected commit message is the run's source commit");
 
-const jobEnv = fs.readFileSync(workflow, "utf8").slice(fs.readFileSync(workflow, "utf8").indexOf("  deploy:"));
+const workflowText = fs.readFileSync(workflow, "utf8");
+const preamble = workflowText.slice(0, workflowText.indexOf("jobs:"));
+const jobEnv = workflowText.slice(workflowText.indexOf("  deploy:"));
+const event = (name, inputs = {}) => ({ github: { event_name: name, ref: "refs/heads/main" }, inputs });
+
 ok(/STREAMLIT_PUSH_TOKEN:\s*\$\{\{\s*secrets\.STREAMLIT_PUSH_TOKEN\s*\}\}/.test(jobEnv), "the token is mapped from the secret at job level");
-ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), "and the dispatch input is mapped there too, where the conditions read it");
+
+// The job's `VERIFY_PUBLISHED` is what every condition below reads, so it is rendered in
+// the three events rather than pattern-matched: the schedule has to decide it on its own,
+// and a push has to leave it unset. A regex on `inputs.verify_published` passed while the
+// schedule silently read nothing.
+const verifyEnv = /VERIFY_PUBLISHED:\s*(\$\{\{[^}]*\}\})/.exec(jobEnv);
+ok(verifyEnv, "the read-back decision is mapped where the conditions read it");
+equal(render(verifyEnv[1], event("schedule")), "true", "a scheduled run decides verification for itself");
+equal(render(verifyEnv[1], event("push")), "", "a push leaves it unset");
+equal(render(verifyEnv[1], event("workflow_dispatch", { verify_published: true })), "true", "a verify dispatch still asks for it");
+equal(render(verifyEnv[1], event("workflow_dispatch", { verify_published: false })), "false", "and an ordinary dispatch does not");
+
+ok(/^\s*schedule:\s*$/m.test(preamble), "the workflow is scheduled, so drift is caught without a push");
+ok(/cron:\s*"20 7 \* \* \*"/.test(preamble), "daily, at an off-the-hour time clear of the other schedules");
+
+// A scheduled verification and a deploying push must not cancel each other. The group is
+// the only expression that encodes that, so it is rendered too.
+const group = /^\s*group:\s*(\S.*)$/m.exec(preamble);
+ok(group, "the workflow declares a concurrency group");
+equal(render(group[1], event("schedule")), "deploy-streamlit-verify", "a scheduled verification gets its own group");
+equal(render(group[1], event("workflow_dispatch", { verify_published: true })), "deploy-streamlit-verify", "as does a verify dispatch");
+equal(render(group[1], event("push")), "deploy-streamlit-deploy", "while a push deploys in the deploy group");
+equal(render(group[1], event("workflow_dispatch", { verify_published: false })), "deploy-streamlit-deploy", "and an ordinary dispatch with it, so a schedule cannot cancel a deploy");
 
 /* --- the read-back: what it expects and what a failure does ---------------- */
 
@@ -259,14 +309,15 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
   mustGit(["-c", "user.name=other", "-c", "user.email=other@example.invalid", "commit", "-m", "superseded"], other);
   mustGit(["push", "origin", "main"], other);
   const moved = mustGit(["rev-parse", "main"], fx.bare);
-  fs.rmSync(path.join(fx.dir, "published-commit.txt"), { force: true });
-  fs.rmSync(fx.log, { force: true });
+  ok(fs.existsSync(evidence(fx, "published-ok.txt")), "a completed read-back leaves the marker the summary reads");
+  clearEvidence(fx);
 
   const run2 = run(readback, fx, { STREAMLIT_PUSH_TOKEN: "token" });
   ok(run2.status !== 0, "a branch head that is not the pushed commit fails the read-back");
   ok(run2.stdout.includes("origin's main is " + moved + ", not " + pushed), "naming both commits: " + run2.stdout.slice(0, 200));
   ok(/Nothing was compared/.test(run2.stdout), "and saying that nothing was compared, so the copy was never verified");
   ok(!fs.existsSync(path.join(fx.dir, "published-commit.txt")), "so no commit is written for the summary to claim");
+  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "and no completed-verification marker either");
   equal(pythonCalls(fx), [], "and the runtime verifier is never asked to bless a copy this run did not push");
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
@@ -282,6 +333,77 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
   ok(fs.existsSync(commitOut), "a verify-only read-back writes the commit it verified");
   equal(fs.readFileSync(commitOut, "utf8").trim(), head, "and names the commit origin holds");
   equal(pythonCalls(fx), ["scripts/verify-streamlit-runtime.py published"], "with the runtime check run on it");
+
+  // ...and the same holds when a token is configured: expecting the commit `streamlit-app`
+  // was staged at is a push-run decision. A verify-only run with a token that required it
+  // would report "the branch moved" as "the deployment is not this build" whenever someone
+  // synced by hand while it ran — which is precisely the drift it is scheduled to find.
+  const other = path.join(fx.dir, "other");
+  mustGit(["clone", fx.bare, other], fx.dir);
+  fs.writeFileSync(path.join(other, "README.md"), "synced by hand\n");
+  mustGit(["add", "-A"], other);
+  mustGit(["-c", "user.name=other", "-c", "user.email=other@example.invalid", "commit", "-m", "hand sync"], other);
+  mustGit(["push", "origin", "main"], other);
+  const synced = mustGit(["rev-parse", "main"], fx.bare);
+  ok(fs.existsSync(evidence(fx, "published-ok.txt")), "the verify-only read-back leaves the marker too");
+  clearEvidence(fx);
+
+  const tokenised = run(readback, fx, { STREAMLIT_PUSH_TOKEN: "token", VERIFY_PUBLISHED: "true" });
+  equal(tokenised.status, 0, "a verify-only run with a token judges what origin holds now: " + tokenised.stderr);
+  equal(fs.readFileSync(commitOut, "utf8").trim(), synced, "and names the commit it read back, not the staged one");
+  ok(!tokenised.stdout.includes("not " + head), "without calling the hand sync a build mismatch: " + tokenised.stdout.slice(0, 200));
+  equal(pythonCalls(fx), ["scripts/verify-streamlit-runtime.py published"], "and the runtime check still runs on it");
+  fs.rmSync(fx.dir, { recursive: true, force: true });
+}
+
+{
+  // One run, end to end: the steps that publish and the steps that claim the publish,
+  // executed in order in the same workdir. Every other case here hands the read-back a
+  // fixture that already looks pushed; this one makes the push happen, then asks the
+  // read-back to verify it, so the claim is about this run's own commit. A push step that
+  // committed the wrong tree, or a read-back that expected `github.sha` instead of the
+  // clone, would pass the separate cases and fail here.
+  const fx = fixture({ seeded: false });
+  const source = "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091";
+  const deployed = path.join(fx.dir, "streamlit-app");
+
+  const synced = run(sync, fx);
+  equal(synced.status, 0, "the sync step stages the pair: " + synced.stderr);
+  ok(
+    fs.existsSync(path.join(deployed, "app_embedded.html")) &&
+      fs.existsSync(path.join(deployed, "app_embedded.manifest.json")),
+    "the pair the checks judged is in the deployed checkout, manifest beside it",
+  );
+
+  const published = run(push, fx, { STREAMLIT_PUSH_TOKEN: "token", SOURCE_SHA: source });
+  equal(published.status, 0, "the push step publishes: " + published.stderr);
+  const pushed = mustGit(["rev-parse", "HEAD"], deployed);
+  equal(mustGit(["rev-parse", "main"], fx.bare), pushed, "and origin holds the commit it created");
+  equal(
+    mustGit(["log", "-1", "--format=%s", "main"], fx.bare),
+    "Sync from HealthClassEstimator " + source.slice(0, 7),
+    "under a commit message that names the source commit",
+  );
+  const deployedBytes = fs.readFileSync(path.join(deployed, "app_embedded.html"), "utf8");
+  equal(deployedBytes, fs.readFileSync(path.join(fx.dir, "dist", "app.html"), "utf8"), "and publishes the pair that ships, byte for byte");
+
+  const verified = run(readback, fx, { STREAMLIT_PUSH_TOKEN: "token" });
+  equal(verified.status, 0, "the read-back verifies the commit in the same run: " + verified.stderr);
+  const named = fs.readFileSync(path.join(fx.dir, "published-commit.txt"), "utf8").trim();
+  equal(named, pushed, "the commit the run claims is the commit its own push created");
+  ok(verified.stdout.includes("Commit: " + pushed), "naming it in the read-back's verdict: " + verified.stdout.slice(-80));
+  equal(pythonCalls(fx), ["scripts/verify-streamlit-runtime.py published"], "with the runtime check run on the copy origin now holds");
+
+  const out = path.join(fx.dir, "summary.md");
+  const summarised = run(summary, fx, {
+    STREAMLIT_PUSH_TOKEN: "token",
+    SOURCE_SHA: source,
+    GITHUB_STEP_SUMMARY: out,
+  });
+  equal(summarised.status, 0, "the summary step runs");
+  const text = fs.readFileSync(out, "utf8");
+  ok(/### Published/.test(text), "and the run says it published");
+  ok(text.includes("Deployed commit: `" + pushed + "`"), "naming the commit the read-back verified: " + text.slice(0, 200));
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
 
@@ -294,6 +416,7 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
   ok(mismatch.status !== 0, "a published artifact that is not this build fails the read-back");
   ok(/the published artifact is not the build this repository produced/.test(mismatch.stdout), "naming the two hashes: " + mismatch.stdout.slice(0, 220));
   ok(!fs.existsSync(path.join(fx.dir, "published-commit.txt")), "and nothing is written for the summary to publish");
+  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "with no marker a summary cannot describe it as verified");
   equal(pythonCalls(fx), [], "and the runtime verifier is not run on an unverified copy");
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
@@ -305,6 +428,11 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
   const failed = run(readback, fx, { STREAMLIT_PUSH_TOKEN: "token", STUB_PYTHON_STATUS: "1" });
   ok(failed.status !== 0, "a deployed runtime that refuses the pair fails the step");
   ok(/PASS — the pair origin holds is the build this repository produced/.test(fs.readFileSync(path.join(fx.dir, "published.txt"), "utf8")), "the read-back's verdict is still kept for the summary");
+  // The commit file exists at this point — it is written before the runtime check — which
+  // is why the summary reads the marker instead. A run whose last check failed must not be
+  // describable as published on the strength of the file it wrote earlier.
+  ok(fs.existsSync(evidence(fx, "published-commit.txt")), "the commit file exists even though the run failed");
+  ok(!fs.existsSync(evidence(fx, "published-ok.txt")), "but the completed-verification marker does not");
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
 
@@ -323,7 +451,7 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
     warning,
     fx,
     { STREAMLIT_PUSH_TOKEN: undefined, VERIFY_PUBLISHED: undefined },
-    { "github.ref": "refs/heads/feature" },
+    { github: { ref: "refs/heads/feature" } },
   );
   equal(other.status, 0, "a non-main run without the token does not fail the branch: " + other.stderr);
   ok(/::warning::STREAMLIT_PUSH_TOKEN is not set/.test(other.stdout), "but warns that nothing was pushed");
@@ -337,11 +465,14 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
   const sha = "642f75f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
   const log = "PASS — the pair origin holds is the build this repository produced.\nCommit: " + sha + "\n";
 
-  // Published, with a commit read back.
+  // Published: a commit read back and a read-back that finished. Both are the evidence;
+  // the commit file alone is written before the runtime check, so it cannot stand for the
+  // whole step.
   {
     const fx = fixture();
     fs.writeFileSync(path.join(fx.dir, "published-commit.txt"), sha + "\n");
     fs.writeFileSync(path.join(fx.dir, "published.txt"), log);
+    fs.writeFileSync(path.join(fx.dir, "published-ok.txt"), "the read-back verified origin at 2026-10-17T12:00:00Z\n");
     const out = path.join(fx.dir, "summary.md");
     const runSummary = run(summary, fx, {
       STREAMLIT_PUSH_TOKEN: "token",
@@ -357,6 +488,29 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 
+  // A commit came back but the read-back did not finish — the runtime verifier refused
+  // the pair after the commit file was written. The summary must not call that published.
+  {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.dir, "published-commit.txt"), sha + "\n");
+    fs.writeFileSync(
+      path.join(fx.dir, "published.txt"),
+      log + "FAIL — the deployed runtime refused the published pair\n",
+    );
+    const out = path.join(fx.dir, "summary.md");
+    run(summary, fx, {
+      STREAMLIT_PUSH_TOKEN: "token",
+      SOURCE_SHA: "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+      GITHUB_STEP_SUMMARY: out,
+    });
+    const text = fs.readFileSync(out, "utf8");
+    ok(/### Pushed, not verified/.test(text), "a push whose read-back did not finish is not called published");
+    ok(!/### Published/.test(text), "and the heading a reader scans for is absent");
+    ok(text.includes("origin holds commit `" + sha + "`"), "it still names the commit origin holds, so the reader can go and look: " + text.slice(0, 220));
+    ok(/did not finish its checks/.test(text), "and says the verification did not finish");
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
+
   // A push reported success but nothing came back: the summary must say it cannot name
   // what is live, never invent a commit.
   {
@@ -369,8 +523,10 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
       GITHUB_STEP_SUMMARY: out,
     });
     const text = fs.readFileSync(out, "utf8");
-    ok(/The push reported success but no commit was read back/.test(text), "it says the commit is unknown: " + text.slice(0, 160));
-    ok(/cannot name what is live/.test(text), "and that the run cannot name what is live");
+    ok(/### Pushed, not verified/.test(text), "it does not head the section \"Published\": a push it could not read back is not a publish this run can vouch for: " + text.slice(0, 160));
+    ok(!/### Published/.test(text), "so the one word a reader scans for is not there");
+    ok(/The push reported success but no commit was read back/.test(text), "it says the commit is unknown");
+    ok(/cannot name or vouch for what is live/.test(text), "and that the run cannot vouch for what is live");
     ok(!/Deployed commit: `/.test(text), "and names no commit it did not read");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
@@ -383,6 +539,7 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
     const fx = fixture();
     fs.writeFileSync(path.join(fx.dir, "published-commit.txt"), sha + "\n");
     fs.writeFileSync(path.join(fx.dir, "published.txt"), log);
+    fs.writeFileSync(path.join(fx.dir, "published-ok.txt"), "the read-back verified origin\n");
     const out = path.join(fx.dir, "summary.md");
     run(summary, fx, {
       STREAMLIT_PUSH_TOKEN: token,
@@ -393,9 +550,54 @@ ok(/VERIFY_PUBLISHED:\s*\$\{\{\s*inputs\.verify_published\s*\}\}/.test(jobEnv), 
     const where = token ? "even with a token configured" : "without a token";
     const text = fs.readFileSync(out, "utf8");
     ok(/### Verified, not published/.test(text), "it says the run verified a copy it did not publish (" + where + ")");
+    ok(/confirmed it is this build/.test(text), "because the read-back left the marker that says so (" + where + ")");
     ok(/nothing was pushed/.test(text), "explaining why there is no deployed commit (" + where + "): " + text.slice(0, 160));
     ok(!/### Published/.test(text), "and does not claim a publish (" + where + ")");
     ok(!/No deploy token was configured/.test(text), "nor blames a missing token for a decision the dispatch made (" + where + ")");
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
+
+  // Verify-only, read-back failed: the shape the daily schedule takes against a stale
+  // deployment. The summary used to say "Verified, not published" and that it had judged
+  // the deployment, directly above this FAIL — a claim derived from the dispatch rather
+  // than from anything the run did.
+  {
+    const fx = fixture();
+    fs.writeFileSync(
+      path.join(fx.dir, "published.txt"),
+      "FAIL — the published artifact is not the build this repository produced: origin 238132 bytes, build 245183 bytes\n",
+    );
+    const out = path.join(fx.dir, "summary.md");
+    run(summary, fx, {
+      STREAMLIT_PUSH_TOKEN: undefined,
+      VERIFY_PUBLISHED: "true",
+      SOURCE_SHA: "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+      GITHUB_STEP_SUMMARY: out,
+    });
+    const text = fs.readFileSync(out, "utf8");
+    ok(/### Not verified/.test(text), "a failed read-back is not reported as verified: " + text.slice(0, 160));
+    ok(!/### Verified/.test(text), "the word the run cannot support is absent");
+    ok(!/judged it against this build/.test(text), "nor the sentence that claimed it had compared the deployment");
+    ok(/nothing was pushed/.test(text), "it still says the run published nothing");
+    ok(/cannot say the deployment matches/.test(text), "and that it cannot vouch for the deployment");
+    ok(/FAIL — the published artifact is not the build this repository produced/.test(text), "while quoting what the read-back did find");
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
+
+  // Verify-only where the read-back never wrote a line: no output, no marker. "Nothing was
+  // compared" must not become "verified" either.
+  {
+    const fx = fixture();
+    const out = path.join(fx.dir, "summary.md");
+    run(summary, fx, {
+      STREAMLIT_PUSH_TOKEN: undefined,
+      VERIFY_PUBLISHED: "true",
+      SOURCE_SHA: "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+      GITHUB_STEP_SUMMARY: out,
+    });
+    const text = fs.readFileSync(out, "utf8");
+    ok(/### Not verified/.test(text), "a run with no read-back output is not verified");
+    ok(/The read-back produced no output/.test(text), "and says the read-back produced no verdict: " + text.slice(0, 200));
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 

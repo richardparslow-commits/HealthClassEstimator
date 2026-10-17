@@ -15,14 +15,21 @@
    conditions of `deploy-streamlit.yml` through every run shape: token or no token, main
    or another ref, push or verify-only dispatch. A mistyped gate now fails here.
 
-   It also parses every `if:` in every workflow in the repository, so a condition this
-   evaluator cannot read is a failure rather than a step nobody judged.
+   It also parses every `if:` in every workflow in the repository *and requires a run
+   shape to evaluate it*: a gate that only parses is a gate nobody decided, and a typo in
+   one (a misspelled output, an env name that is never set) is invisible until the step it
+   guards stops running. The sweep fails on a condition with no shape here, so a new gate
+   has to be given one.
+
+   `render` is the same language used where GitHub substitutes `${{ … }}` into a step's
+   shell; it is held to GitHub's stringification here so the harnesses that execute steps
+   can stop carrying their own expression renderer.
 */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { evaluate, parse, equalish, truthy } = require("../scripts/workflow-condition.js");
-const { readStep } = require("../scripts/workflow-step.js");
+const { evaluate, render, parse, equalish, truthy } = require("../scripts/workflow-condition.js");
+const { readStep, readJobCondition } = require("../scripts/workflow-step.js");
 
 const root = path.resolve(__dirname, "..");
 const workflow = path.join(root, ".github/workflows/deploy-streamlit.yml");
@@ -39,8 +46,14 @@ function throws(fn, pattern, label) {
   assert.throws(fn, pattern, label);
   checks++;
 }
+// Every condition exercised here is recorded, and the sweep at the end requires the set
+// to cover every `if:` in the repository. A condition with no run shape fails the suite
+// rather than being read and believed.
+const COVERED = new Set();
 function runs(step, context, state = {}) {
-  return evaluate(step.condition, context, state);
+  const condition = (typeof step === "string" ? step : step.condition).trim();
+  COVERED.add(condition);
+  return evaluate(condition, context, state);
 }
 
 /* --- the semantics this evaluator has to get right ------------------------ */
@@ -97,6 +110,32 @@ throws(() => parse("env.X == 'open"), /unterminated string/, "an unterminated st
 throws(() => parse("mystery()"), /unknown function/, "an unknown function is refused");
 throws(() => parse("a b"), /trailing input/, "trailing input is refused rather than ignored");
 throws(() => parse("env.X == 'a' 'b'"), /trailing input/, "so is a missing operator");
+
+/* --- rendering: the other use of the same language ------------------------ */
+
+equal(render("ref ${{ github.ref }}", { github: { ref: "refs/heads/main" } }), "ref refs/heads/main", "render substitutes an expression inside text");
+equal(
+  render("${{ env.A }}/${{ env.B }}", { env: { A: "one", B: "two" } }),
+  "one/two",
+  "and every expression in the string, not only the first",
+);
+equal(render("${{ env.ON }}", { env: { ON: true } }), "true", "a boolean renders as its literal form");
+equal(render("${{ env.OFF }}", { env: { OFF: false } }), "false", "including false, not the string 'false'");
+equal(render("${{ env.N }}", { env: { N: 42 } }), "42", "a number renders as its digits");
+equal(render("[${{ env.MISSING }}]", {}), "[]", "an absent value renders as the empty string, as GitHub does");equal(render("${{ env.A == 'x' }}", { env: { A: "X" } }),
+  "true",
+  "rendering uses the same comparison semantics as a condition",
+);
+equal(render("${{ true && 'yes' || 'no' }}"), "yes", "the ternary idiom renders the chosen operand, not a boolean");
+equal(render("${{ false && 'yes' || 'no' }}"), "no", "including the fallback");
+equal(render("${{ 'a' && 'b' }}"), "b", "&& returns its last operand");
+equal(render("${{ env.MISSING || 'default' }}"), "default", "|| returns the first truthy operand, so a default works");
+equal(render("${{ 0 || 'zero-is-falsy' }}"), "zero-is-falsy", "including when the left is the number zero");
+equal(evaluate("${{ 'a' && 'b' }}"), true, "while a condition only asks whether the operand is truthy");
+throws(() => render("${{ env.MISSING }}", {}, {}, { strict: true }), /has no value in this render's context/, "strict rendering refuses a value the context does not have");
+throws(() => render("${{ open"), /unterminated/, "an unterminated expression is refused, never left for bash");
+throws(() => render("${{ }}"), /empty `\$\{\{ \}\}` expression/, "an empty expression is refused");
+throws(() => render("${{ mystery() }}"), /unknown function/, "an unknown function is refused by the renderer too");
 
 /* --- the real conditions, in every run shape ------------------------------ */
 
@@ -206,7 +245,102 @@ equal(
   "without its dispatch clause the push would publish from a verify-only dispatch",
 );
 
+/* --- the other workflows' gates, decided rather than read ------------------ */
+
+// The release's remaining conditions: which staging checkout runs, and the summary that
+// must run even after something above it failed.
+const stagingClone = readStep(workflow, "deploy", "Check out streamlit repo for staging (no token needed)");
+const tokenClone = readStep(workflow, "deploy", "Check out streamlit repo (health_app.py)");
+const verified = readStep(workflow, "deploy", "Publish the verification to the run summary");
+equal(runs(stagingClone, context({})), true, "the public staging clone runs without a token");
+equal(runs(stagingClone, context({ token: "token" })), false, "and is skipped when the token can clone with credentials");
+equal(runs(tokenClone, context({ token: "token" })), true, "the credentialed checkout runs with a token");
+equal(runs(tokenClone, context({})), false, "and not without one");
+equal(runs(verified, {}, { success: false, failure: true }), true, "the verification summary is published even when the run failed");
+
+// The canary's gates. Neither is on the release path, and a typo in either would stop
+// the tamper self-test or the ceiling review without a parse error: exactly the kind of
+// gate the old sweep read and believed.
+const canaryWorkflow = path.join(root, ".github/workflows/streamlit-canary.yml");
+const tamper = readStep(canaryWorkflow, "canary", "Tamper the fetched pair (self-test only)");
+const ceiling = readStep(canaryWorkflow, "canary", "Decide whether the ceiling should move");
+const proposal = readJobCondition(canaryWorkflow, "propose-ceiling");
+const liftGate = readStep(canaryWorkflow, "propose-ceiling", "Fail when a warranted lift cannot be proposed");
+
+equal(runs(tamper, { env: { SELF_TEST: "true" } }), true, "the canary tampers the pair when the dispatch asks");
+equal(runs(tamper, { env: { SELF_TEST: "false" } }), false, "and not on an ordinary run");
+equal(
+  runs(ceiling, { env: { CHANNEL: "latest", SELF_TEST: "false" }, steps: { check: { outcome: "success" } } }),
+  true,
+  "a green stable canary decides whether to move the ceiling",
+);
+equal(
+  runs(ceiling, { env: { CHANNEL: "prerelease", SELF_TEST: "false" }, steps: { check: { outcome: "success" } } }),
+  false,
+  "a prerelease does not",
+);
+equal(
+  runs(ceiling, { env: { CHANNEL: "latest", SELF_TEST: "false" }, steps: { check: { outcome: "failure" } } }),
+  false,
+  "nor does a failed check",
+);
+equal(
+  runs(ceiling, { env: { CHANNEL: "latest", SELF_TEST: "true" }, steps: { check: { outcome: "success" } } }),
+  false,
+  "nor a self-test run",
+);
+equal(
+  runs(proposal, { needs: { canary: { result: "success", outputs: { ceiling_needed: "true" } } } }),
+  true,
+  "the proposal job runs when the canary says the ceiling should move",
+);
+equal(
+  runs(proposal, { needs: { canary: { result: "failure", outputs: { ceiling_needed: "true" } } } }),
+  false,
+  "but not when the canary failed",
+);
+equal(
+  runs(proposal, { needs: { canary: { result: "success", outputs: { ceiling_needed: "false" } } } }),
+  false,
+  "nor when it says the ceiling should not move",
+);
+equal(runs(proposal, { needs: { canary: { result: "success", outputs: {} } } }), false, "nor when the output is missing");
+equal(runs(liftGate, { env: { STREAMLIT_PUSH_TOKEN: "" } }), true, "a warranted lift without a token fails instead of passing quietly");
+equal(runs(liftGate, { env: { STREAMLIT_PUSH_TOKEN: "token" } }), false, "and with one it does not");
+
+// Parsing cannot see these: both conditions are well-formed and both decide false.
+// Evaluation in a shape where the gate should run is what makes them fail here.
+equal(
+  runs({ condition: proposal.replace("ceiling_needed", "ceiling_need") }, { needs: { canary: { result: "success", outputs: { ceiling_needed: "true" } } } }),
+  false,
+  "a misspelled output name stops the proposal it should have started",
+);
+equal(
+  runs({ condition: ceiling.condition.replace("env.CHANNEL", "env.CHANEL") }, { env: { CHANNEL: "latest", SELF_TEST: "false" }, steps: { check: { outcome: "success" } } }),
+  false,
+  "and a misspelled env name stops the ceiling decision",
+);
+
 /* --- every condition in the repository parses ----------------------------- */
+
+// A `needs.<job>.outputs.<name>` path is a cross-job contract, and a renamed output is
+// the typo evaluation alone would only catch if some shape happened to expect it. The
+// job named in the condition has to declare the output.
+function declaresOutput(lines, job, output) {
+  const start = lines.findIndex((line) => line === "  " + job + ":");
+  if (start < 0) return false;
+  let inOutputs = false;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^ {2}[A-Za-z_][\w-]*:/.test(lines[i])) break;
+    if (lines[i] === "    outputs:") {
+      inOutputs = true;
+      continue;
+    }
+    if (inOutputs && /^ {4}\S/.test(lines[i])) inOutputs = false;
+    if (inOutputs && new RegExp("^ {6}" + output + ":").test(lines[i])) return true;
+  }
+  return false;
+}
 
 const workflowDir = path.join(root, ".github/workflows");
 const files = fs.readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name)).sort();
@@ -223,15 +357,45 @@ for (const file of files) {
     if (/^\s*if:/.test(line)) ifLines += 1;
     const match = /^\s*if:\s*(\S.*)$/.exec(line);
     if (!match) return;
+    const condition = match[1].trim();
     conditions += 1;
     try {
-      parse(match[1]);
+      parse(condition);
     } catch (error) {
       throw new Error(file + " line " + (index + 1) + ": " + error.message);
+    }
+    // Parsing is not judging. A condition no shape above evaluates is a gate this suite
+    // would only read — the state this file exists to end — so adding an `if:` here means
+    // adding a shape that decides it.
+    if (!COVERED.has(condition)) {
+      throw new Error(
+        file + " line " + (index + 1) + ": no run shape evaluates `" + condition + "`. Add a case that decides it in test/workflow-condition.test.js.",
+      );
+    }
+    for (const [, job, output] of condition.matchAll(/needs\.([\w-]+)\.outputs\.([\w-]+)/g)) {
+      if (!declaresOutput(lines, job, output)) {
+        throw new Error(
+          file + " line " + (index + 1) + ": `" + condition + "` reads needs." + job + ".outputs." + output + ", but job `" + job + "` declares no such output.",
+        );
+      }
     }
   });
 }
 equal(conditions, ifLines, "every `if:` in every workflow was a condition this evaluator read (" + conditions + ")");
+const distinct = new Set(
+  files.flatMap((file) =>
+    fs
+      .readFileSync(path.join(workflowDir, file), "utf8")
+      .split("\n")
+      .map((line) => /^\s*if:\s*(\S.*)$/.exec(line)?.[1].trim())
+      .filter(Boolean),
+  ),
+);
+equal(
+  [...distinct].filter((condition) => !COVERED.has(condition)),
+  [],
+  "every distinct condition in the repository was decided by a run shape, not only parsed (" + distinct.size + ")",
+);
 ok(conditions >= 15, "and the sweep saw every workflow, not one of them (" + files.length + " files)");
 
 // A job-level `if:` is not a step, and `readStep` only reads steps; the sweep above is

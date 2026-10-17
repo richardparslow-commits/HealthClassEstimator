@@ -79,6 +79,22 @@ function readStep(workflowPath, job, stepName) {
   return { name: stepName, job, condition, env, script: body.join("\n").replace(/\n+$/, "") + "\n" };
 }
 
+// A job-level `if:`, which decides whether any of its steps exist to judge. `readStep`
+// only reads steps; the canary's ceiling proposal is a job gate, and leaving it unread
+// would leave the one condition that opens the review unjudged.
+function readJobCondition(workflowPath, job) {
+  const lines = require("node:fs").readFileSync(workflowPath, "utf8").split("\n");
+  const where = require("node:path").basename(workflowPath);
+  const start = lines.findIndex((line) => line === "  " + job + ":");
+  if (start < 0) throw new Error("no job `" + job + "` in " + where);
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^ {2}[A-Za-z_][\w-]*:/.test(lines[i])) break;
+    const match = /^ {4}if:\s*(\S.*)$/.exec(lines[i]);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 // One execution of a step's shell. Not `bash -e`: GitHub runs step scripts with `-e`, but
 // each step that needs `-u`/pipefail says so itself, and a harness that silently added
 // options could hide a step that forgot them.
@@ -91,4 +107,4 @@ function runStep(step, { cwd, env = {} } = {}) {
   return spawnSync("bash", ["-c", step.script], { cwd, encoding: "utf8", env: child });
 }
 
-module.exports = { readStep, runStep };
+module.exports = { readStep, readJobCondition, runStep };
