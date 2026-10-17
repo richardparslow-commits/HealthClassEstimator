@@ -10,11 +10,16 @@ name: Check the live consumers against the build
 #
 #   website   — the live tool page, which delivers the build through an iframe
 #               srcDoc plus its own adapters, read from the served page itself.
-#   streamlit — the artifact Streamlit Community Cloud renders, read from
-#               richardparslow-commits/health_app.py at its published ref. That
-#               file is the build output copied verbatim, so the verdict required
-#               here is byte-identical, and its manifest must describe it;
-#               anything else means the deployed tool is not the reviewed one.
+#   streamlit — the artifact Streamlit Community Cloud renders, read from a
+#               checkout of richardparslow-commits/health_app.py pinned to one
+#               commit. That file is the build output copied verbatim, so the
+#               verdict required here is byte-identical, and its manifest must
+#               describe it; anything else means the deployed tool is not the
+#               reviewed one. The checkout is a git fetch of one commit, not a
+#               download from raw.githubusercontent.com: that CDN goes on serving
+#               the previous commit for minutes after a push, and two independent
+#               requests can even return an artifact and a manifest from two
+#               different commits.
 #   runtime   — the deployed wrapper itself, exercised the way Streamlit does.
 #               That repository holds no build logic: it verifies the pair it
 #               serves. This job proves the contract in both directions — the
@@ -47,10 +52,10 @@ on:
         description: Website URL or workspace file to compare with the build
         required: false
         default: https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor
-      streamlit_source:
-        description: Published Streamlit artifact URL to compare with the build
+      streamlit_ref:
+        description: Branch, tag or full commit SHA of streamlit_repo to verify
         required: false
-        default: https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html
+        default: main
       streamlit_repo:
         description: Repository whose deployed wrapper is verified against the build
         required: false
@@ -114,27 +119,37 @@ jobs:
       - name: Check the parity check against its fixtures
         run: node test/parity.test.js
 
-      # -f turns an HTTP error into a step failure rather than a comparison against
-      # an error page; --retry rides out a transient network wobble, not a 404.
-      - name: Fetch the published artifact and its manifest
+      # One commit, read atomically. Fetching the two files over HTTP can straddle
+      # a push — that CDN keeps serving the previous commit for minutes — and an
+      # artifact from one commit with a manifest from another reads as "edited
+      # outside the build", sending someone to republish a copy that is already
+      # correct. A fetch of one commit cannot split, and the commit it read is
+      # printed so the verdict names what it looked at. A branch, a tag or a
+      # commit SHA all work, so an older deploy can be checked by naming it.
+      - name: Check out the deployed repository at one commit
         env:
-          SOURCE: ${{ inputs.streamlit_source || 'https://raw.githubusercontent.com/richardparslow-commits/health_app.py/main/app_embedded.html' }}
+          REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
+          REF: ${{ inputs.streamlit_ref || 'main' }}
         run: |
           set -o pipefail
-          manifest="${SOURCE%/*}/app_embedded.manifest.json"
-          # Fetched under its published name: the manifest records that name, and
-          # the deployed repository must hold the file under it.
-          curl -fsS --retry 3 --retry-delay 5 "$SOURCE" -o app_embedded.html
-          curl -fsS --retry 3 --retry-delay 5 "$manifest" -o app_embedded.manifest.json
-          echo "Fetched $(wc -c < app_embedded.html) bytes from $SOURCE"
-          echo "Fetched $(wc -c < app_embedded.manifest.json) bytes from $manifest"
+          git init --quiet deployed
+          git -C deployed remote add origin "https://github.com/$REPO.git"
+          if ! git -C deployed fetch --quiet --depth 1 origin "$REF"; then
+            echo "::error::Could not fetch $REF from $REPO. Name a branch, a tag, or a full commit SHA; an abbreviated SHA is not a ref."
+            exit 1
+          fi
+          git -C deployed checkout --quiet --detach FETCH_HEAD
+          echo "Read $REPO at $(git -C deployed rev-parse HEAD)" | tee -a streamlit.txt
+          # The manifest records the artifact's name, so the copies keep it.
+          cp deployed/app_embedded.html deployed/app_embedded.manifest.json .
+          echo "Read $(wc -c < app_embedded.html) bytes of artifact and $(wc -c < app_embedded.manifest.json) bytes of manifest" | tee -a streamlit.txt
 
       # This consumer receives the build output copied verbatim, so a
       # presentational difference is drift here, not an embed adaptation.
       - name: Require the published artifact to be the build, byte for byte
         run: |
           set -o pipefail
-          node scripts/check-consumer-parity.js --consumer app_embedded.html --expect-identical 2>&1 | tee streamlit.txt
+          node scripts/check-consumer-parity.js --consumer app_embedded.html --expect-identical 2>&1 | tee -a streamlit.txt
 
       # Byte identity alone would accept a manifest that describes something else,
       # so the artifact is also held to the record it shipped with.
@@ -170,18 +185,26 @@ jobs:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@v4
 
-      # -f turns an HTTP error into a step failure: a verification against a 404
-      # page would otherwise look like a pass.
-      - name: Fetch the published wrapper, artifact and manifest
+      # Same rule as the artifact job: one commit, fetched with git. Reading the
+      # wrapper and its pair over HTTP can splice two commits together, which
+      # verifies a combination that never shipped.
+      - name: Check out the deployed repository at one commit
         env:
           REPO: ${{ inputs.streamlit_repo || 'richardparslow-commits/health_app.py' }}
+          REF: ${{ inputs.streamlit_ref || 'main' }}
         run: |
+          set -o pipefail
+          git init --quiet deployed
+          git -C deployed remote add origin "https://github.com/$REPO.git"
+          if ! git -C deployed fetch --quiet --depth 1 origin "$REF"; then
+            echo "::error::Could not fetch $REF from $REPO. Name a branch, a tag, or a full commit SHA; an abbreviated SHA is not a ref."
+            exit 1
+          fi
+          git -C deployed checkout --quiet --detach FETCH_HEAD
           mkdir -p runtime
-          base="https://raw.githubusercontent.com/$REPO/main"
-          curl -fsS --retry 3 --retry-delay 5 "$base/health_app.py" -o runtime/health_app.py
-          curl -fsS --retry 3 --retry-delay 5 "$base/app_embedded.html" -o runtime/app_embedded.html
-          curl -fsS --retry 3 --retry-delay 5 "$base/app_embedded.manifest.json" -o runtime/app_embedded.manifest.json
-          echo "Fetched the wrapper and its pair from $REPO"
+          cp deployed/health_app.py deployed/app_embedded.html \
+             deployed/app_embedded.manifest.json runtime/
+          echo "Verifying $REPO at $(git -C deployed rev-parse HEAD)"
 
       - name: Prove the wrapper's verification contract
         run: |
