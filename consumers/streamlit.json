@@ -1,0 +1,9 @@
+{
+  "consumer": "streamlit",
+  "repo": "richardparslow-commits/health_app.py",
+  "deployedUrl": "https://life-insurance-health-class-predictor.streamlit.app/",
+  "notes": [
+    "The URL is declared here because it lived only in the deployed repository's README: no check in this repository could name the service it is supposed to be judging.",
+    "scripts/verify-streamlit-deployed.mjs loads this URL in a browser; the scheduled run of that check is also the traffic that keeps a Community Cloud app from sleeping."
+  ]
+}

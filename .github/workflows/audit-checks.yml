@@ -94,3 +94,11 @@ jobs:
         run: npm run build
       - name: Exercise the interview in a real browser
         run: npm run test:ui
+      # Fixtures for the check that loads the deployed app. It sits here because it
+      # needs the browser above, and its subject is the deployment rather than the
+      # build: a local page can be stale in ways the published app is not, and the
+      # live app nests the estimator one frame deeper than any fixture assumed until
+      # 2026-10-17. Running it every branch keeps the check honest on the day the
+      # scheduled workflow goes red.
+      - name: Verify the deployed-app check against its fixtures
+        run: npm run test:deployed

@@ -245,9 +245,13 @@ ok(
   audit.indexOf("      - name: Verify the publish read-back") < audit.indexOf("  browser:"),
   "the offline publish read-back runs in the verify job, not after the browser job's installer"
 );
-ok(
-  (browser.match(/^      - name: /gm) || []).length === 3,
-  "and the browser job holds only the installer, the build and the browser suite: " + (browser.match(/^      - name: .*$/gm) || []).join(" | ")
+// The reason this is a list of commands and not a step count: what must not live in
+// there is an offline suite, so the assertion names the three commands that belong.
+const browserCommands = (browser.match(/npm run [a-z:]+/g) || []).sort();
+equal(
+  browserCommands.join(", "),
+  "npm run build, npm run test:deployed, npm run test:ui",
+  "and the browser job holds only the installer, the build and the two suites that need a browser: " + browserCommands.join(", ")
 );
 ok(/npm install --no-save playwright/.test(browser), "which installs playwright without adding it to the project's dependencies");
 ok(/npx playwright install --with-deps chromium/.test(browser), "and the browser it drives");

@@ -1,0 +1,64 @@
+name: Verify the deployed app
+
+# Every other check in this repository stays on the near side of the deployment: the
+# wrapper is verified with Streamlit stubbed, then through Streamlit's own AppTest, and
+# the parity jobs judge the bytes in the deployed repository. None of them contacts the
+# service, and on 2026-10-17 that showed: the deployed app answered a browser with
+# "Zzzz — This app has gone to sleep due to inactivity", the URL was written down only
+# in the deployed repository's README, and no workflow had ever requested it.
+#
+# This runs scripts/verify-streamlit-deployed.mjs against the URL declared in
+# consumers/streamlit.json: a headless Chromium loads the app, clicks the wake button
+# when the sleep screen is showing, waits for the estimator's frame, and checks that
+# the frame runs this repository's release with its controls present. A red run means a
+# visitor would not get the tool, and the summary says whether it arrived awake or
+# asleep and how long waking took.
+#
+# Twice a day would not be enough to keep it awake: Streamlit Community Cloud suspends
+# an app that gets no traffic, so the check is also the traffic. Every six hours leaves
+# room to spare against an idle window of half a day, and each run reports which state
+# it found, so the cadence can be judged from the logs instead of assumed.
+
+on:
+  schedule:
+    # Off the hour, and off the canary's 06:17 and the parity workflow's 13:17, so the
+    # three do not queue behind each other. GitHub cron is always UTC.
+    - cron: "23 0,6,12,18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: deployed-app
+  cancel-in-progress: false
+
+jobs:
+  deployed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Not saved into package.json: this repository ships no runtime or build
+      # dependencies, and a browser used by one check must not become one.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Load the deployed app the way a visitor does
+        run: |
+          set -o pipefail
+          npm run verify:deployed 2>&1 | tee deployed.txt
+
+      - name: Publish the verdict to the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### The deployed app, loaded in a browser"
+            echo
+            echo '```'
+            cat deployed.txt 2>/dev/null || echo "The check produced no output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
