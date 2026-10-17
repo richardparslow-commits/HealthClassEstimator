@@ -14,8 +14,10 @@ name: Deploy Streamlit app
 # so a run that says "published" names the commit Streamlit Cloud will serve.
 #
 # Dispatching with `verify_published` runs that read-back on its own — origin's
-# current main against this build, pushing nothing — so the deployed copy can be
-# judged from CI without the token, including after a hand sync.
+# current main against this build, pushing nothing, whether or not a token is
+# configured — so the deployed copy can be judged from CI, including after a hand
+# sync. `scripts/ci-self-test.mjs` dispatches this input to prove the run's own
+# conditions and checkout in Actions.
 #
 # Required setup: create a personal access token with "Contents: read/write"
 # scope on richardparslow-commits/health_app.py and add it to this repo's
@@ -189,10 +191,24 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
+        # `verify_published` means verify-only, whether or not the token happens to be
+        # configured: the dispatch promises that nothing is pushed, and the summary
+        # below reports the run as verified rather than published. Gating on the token
+        # alone made that promise depend on a secret the dispatcher cannot see — so a
+        # verify run in a configured repository would publish, which is the opposite of
+        # what the input says and what the self-test dispatches.
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' && env.VERIFY_PUBLISHED != 'true' }}
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
+          # The commit message is the only link from the deployed commit back to the
+          # source commit, so the source has to be there: an empty one publishes "Sync
+          # from HealthClassEstimator " — a release nobody can trace. Tested explicitly
+          # rather than left to `set -u`, because bash 3.2 (macOS) does not treat an
+          # unset variable inside ${VAR:0:7} as an error and bash 5 (the runner) does;
+          # a step must not behave differently on the shell that happens to run it.
+          set -euo pipefail
+          : "${SOURCE_SHA:?the source commit is missing — the deployed commit would name nothing}"
           cd streamlit-app
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -244,7 +260,10 @@ jobs:
           exit 1
 
       - name: Explain the skipped push on a non-main ref
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && github.ref != 'refs/heads/main' }}
+        # A verify-only dispatch is not a skipped push — it asked for none, and the
+        # summary already says "Verified, not published". Without this clause the
+        # warning blames the ref for a decision the dispatcher made.
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.VERIFY_PUBLISHED != 'true' && github.ref != 'refs/heads/main' }}
         run: |
           echo "::warning::STREAMLIT_PUSH_TOKEN is not set. The engine suite ran and the single-file HTML was built, but nothing was pushed. Only runs on main are required to deploy; this run is on ${{ github.ref }}."
 
@@ -253,7 +272,19 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          if [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+          # Verify-only is answered first. It is a decision the dispatcher made, and it
+          # holds whether or not a token is configured — a token present is what makes
+          # the read-back possible, not what turns verification into a publish.
+          if [ "$VERIFY_PUBLISHED" = "true" ]; then
+            {
+              echo "### Verified, not published"
+              echo "This dispatch asked for verification only, so nothing was pushed; it read the deployed repository's current main back and judged it against this build."
+              echo
+              echo '```'
+              cat published.txt 2>/dev/null || echo "The read-back produced no output."
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
             PUBLISHED_SHA="$(cat published-commit.txt 2>/dev/null || true)"
             {
               echo "### Published"
@@ -262,15 +293,6 @@ jobs:
               else
                 echo "The push reported success but no commit was read back, so this run cannot name what is live. See the read-back step for why."
               fi
-              echo
-              echo '```'
-              cat published.txt 2>/dev/null || echo "The read-back produced no output."
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$VERIFY_PUBLISHED" = "true" ]; then
-            {
-              echo "### Verified, not published"
-              echo "No deploy token was configured, so this run pushed nothing; it read the deployed repository's current main back and judged it against this build."
               echo
               echo '```'
               cat published.txt 2>/dev/null || echo "The read-back produced no output."

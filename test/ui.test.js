@@ -4,8 +4,14 @@
 const {chromium}=require("playwright"),fs=require("fs"),path=require("path"),http=require("http"),assert=require("node:assert/strict");
 const root=path.resolve(__dirname,"..");
 const expectedVersion=fs.readFileSync(path.join(root,"index.html"),"utf8").match(/var HCE_VERSION = "(\d+)"/)[1];
+// The host page an embedder makes when it gives the app a frame far taller than the window
+// it is shown in: Streamlit's `st.iframe(..., height=2400)` is this, measured on the
+// deployed app on 2026-10-17 with the interview's Next button 1,361px below the fold.
+const OVERSIZED_HOST='<iframe style="width:100%;height:2400px;border:0" src="/dist/app.html"></iframe>';
 const server=http.createServer((req,res)=>{
-  const name=decodeURIComponent(new URL(req.url,"http://localhost").pathname),file=path.resolve(root,"."+(name === "/"?"/index.html":name));
+  const name=decodeURIComponent(new URL(req.url,"http://localhost").pathname);
+  if(name === "/oversized-host"){res.writeHead(200,{"Content-Type":"text/html"});res.end("<!doctype html><html><body style=\"margin:0\">"+OVERSIZED_HOST+"</body></html>");return;}
+  const file=path.resolve(root,"."+(name === "/"?"/index.html":name));
   if(!file.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}
   fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);res.end();return;}res.setHeader("Content-Type",file.endsWith(".js")?"text/javascript":file.endsWith(".css")?"text/css":"text/html");res.end(data);});
 });
@@ -33,6 +39,18 @@ const server=http.createServer((req,res)=>{
     page.setDefaultTimeout(10000);
     await page.goto(local);await page.locator("#productId").waitFor({state:"attached"});
     assert.equal(await page.locator(".app-main").evaluate(n=>n.inert),true,"Acknowledgment makes interview inert");
+    // The gate is embedded in a frame whose height the predictor page fixes, so its way
+    // forward has to be on screen inside that frame. It used to be the last thing in a
+    // scroller nobody knew scrolled: 1,300px below the fold on a phone. The card now fits
+    // the frame and only its text moves, so assert that rather than assume it.
+    const acceptOnScreen=()=>page.evaluate(()=>{const r=document.getElementById("ack-accept").getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;});
+    assert.equal(await acceptOnScreen(),true,"The acknowledgment's continue button is on screen without scrolling");
+    await page.setViewportSize({width:390,height:844});assert.equal(await acceptOnScreen(),true,"and in a phone-sized frame");
+    await page.setViewportSize({width:390,height:420});assert.equal(await acceptOnScreen(),true,"and in a landscape phone's frame, where the card scrolls instead");
+    assert.equal(await page.evaluate(()=>{const c=document.querySelector(".ack-card");return c.scrollHeight>c.clientHeight?getComputedStyle(c).overflowY==="auto":true;}),true,"and the acknowledgment text stays reachable there");
+    // A browser tab is window-shaped, so the oversized-frame panel must not apply to it.
+    assert.equal(await page.evaluate(()=>document.documentElement.classList.contains("oversized-frame")),false,"a browser tab is not treated as an embedder's oversized frame");
+    await page.setViewportSize({width:1280,height:900});
     await page.locator("#ack-check").check();await page.locator("#ack-accept").click();
     assert.equal(await page.locator(".app-main").evaluate(n=>n.inert),false);
     await sel("productId","banner_opterm");await fill("dob","1991-10-08");await sel("sex","male");await sel("state","TX");await fill("faceAmount",500000);await sel("termYears","20");
@@ -76,6 +94,27 @@ const server=http.createServer((req,res)=>{
     await page.reload();await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.locator("#productId").inputValue(),"");assert.match(await page.locator(".migration-notice").innerText(),/reconfirm/);await nav("Criminal history");assert.equal(await page.locator("#probationCurrent").inputValue(),"");
     // Validate the actual deployment build has all four scripts in order.
     await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
-    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests and embedded build.");
+    // An embedder can make this document's viewport far taller than the window it is shown
+    // in, and everything the app positioned against the viewport then landed at the bottom
+    // of a document the visitor cannot see the whole of. The app now takes the height of
+    // the window it is actually shown in and scrolls inside itself, so this is the
+    // deployed geometry — a 2,400px frame in a 900px window — judged from inside the app.
+    const framed=await context.newPage();
+    await framed.goto(local+"/oversized-host");
+    const estimator=await (async()=>{for(let i=0;i<60;i++){const f=framed.frames().find(c=>c.url().includes("/dist/app.html"));if(f&&await f.evaluate(()=>!!document.getElementById("btn-next")).catch(()=>false))return f;await framed.waitForTimeout(200);}return null;})();
+    assert.ok(estimator,"the oversized frame loads the build");
+    assert.equal(await estimator.evaluate(()=>{const r=document.getElementById("ack-accept").getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),true,"the acknowledgment's way forward is inside the window, not at the bottom of the frame");
+    assert.equal(await estimator.evaluate(()=>{const r=document.getElementById("btn-next").getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),true,"and so is the interview's, before it has been reached");
+    await estimator.locator("#ack-check").check();await estimator.locator("#ack-accept").click();
+    const panel=await estimator.evaluate(()=>{const b=document.body,f=document.querySelector(".app-footer").getBoundingClientRect();return {scrolls:b.scrollHeight>b.clientHeight,band:Math.round(b.getBoundingClientRect().height),footerBottom:Math.round(f.bottom)};});
+    assert.equal(panel.scrolls,true,"the app scrolls inside the panel, so a question taller than it is still reachable");
+    assert.ok(panel.footerBottom<=panel.band&&panel.footerBottom>=panel.band-160,"with the footer at the panel's bottom edge");
+    const scrolled=await estimator.evaluate(()=>{const b=document.body;b.scrollTop=b.scrollHeight;const f=document.querySelector(".app-footer").getBoundingClientRect();return {footerBottom:Math.round(f.bottom),band:Math.round(b.getBoundingClientRect().height)};});
+    assert.ok(scrolled.footerBottom<=scrolled.band&&scrolled.footerBottom>=scrolled.band-160,"still there when the content scrolls under it");
+    const advanced=await estimator.evaluate(()=>{document.body.scrollTop=document.body.scrollHeight;document.getElementById("btn-next").click();return new Promise(resolve=>setTimeout(()=>resolve({scrollTop:Math.round(document.body.scrollTop),heading:document.querySelector("#step-content h2").textContent}),120));});
+    assert.equal(advanced.scrollTop,0,"a step change returns the panel to the top, where the new question is");
+    assert.equal(advanced.heading,"Residency & travel","and the next step is the one on screen");
+    await framed.close();
+    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests, embedded build and the oversized-frame panel.");
   } catch(e) {console.error("Page text:",(await page.locator("body").innerText()).slice(-1800)); await page.screenshot({path:path.join(root,"..","ui-failure.png"),fullPage:true});throw e;} finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

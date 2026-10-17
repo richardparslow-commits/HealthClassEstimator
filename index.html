@@ -19,6 +19,14 @@
     <h2 id="ack-title" tabindex="-1">Before you continue</h2>
     <p class="ack-sub">Acknowledgment &amp; disclaimer &mdash; please read before using this tool.</p>
 
+    <!-- The acknowledgment text scrolls; the checkbox and the continue button do not.
+         The gate is embedded in a frame with a fixed height, and the full text is
+         taller than that frame at every viewport, so on a phone the button used to sit
+         more than a thousand pixels below everything visible: the only way forward was
+         to scroll a fixed overlay with no idea that it scrolled. The card now fits the
+         frame and only this region moves. -->
+    <div class="ack-body">
+
     <div class="ack-section">
       <h3>What this tool is</h3>
       <ul class="ack-list">
@@ -64,12 +72,16 @@
       <span class="ack-contact-note">Life Policy Pilot contact form</span>
     </div>
 
-    <label class="ack-check">
-      <input type="checkbox" id="ack-check">
-      <span>I have read and accept the acknowledgment and disclaimer above &mdash; including that this tool is <strong>only an estimating aid</strong>, that it is <strong>not an offer of life insurance</strong>, that <strong>my answers are saved in this browser only</strong>, and that <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</span>
-    </label>
-    <button class="btn btn-primary" id="ack-accept" type="button" disabled>I acknowledge &mdash; continue</button>
-    <p class="ack-hint">You must acknowledge before entering any applicant information.</p>
+    </div>
+
+    <div class="ack-actions">
+      <label class="ack-check">
+        <input type="checkbox" id="ack-check">
+        <span>I have read and accept the acknowledgment and disclaimer above &mdash; including that this tool is <strong>only an estimating aid</strong>, that it is <strong>not an offer of life insurance</strong>, that <strong>my answers are saved in this browser only</strong>, and that <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</span>
+      </label>
+      <button class="btn btn-primary" id="ack-accept" type="button" disabled>I acknowledge &mdash; continue</button>
+      <p class="ack-hint">You must acknowledge before entering any applicant information.</p>
+    </div>
   </div>
 </div>
 
@@ -162,7 +174,7 @@
      in order when async=false, preserving the rules -> state -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "80";
+    var HCE_VERSION = "82";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");

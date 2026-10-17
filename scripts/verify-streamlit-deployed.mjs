@@ -21,7 +21,18 @@
    clicks the wake button when the sleep screen is showing and measures how long the
    wake took, waits for the estimator frame, and then judges what a visitor would see —
    the frame is present, it carries this repository's release version, its
-   acknowledgment gate and product select are there, and nothing inside it threw.
+   acknowledgment gate and product select are there, nothing inside it threw, and, when
+   the way forward is on screen, it takes it: the acknowledgment is ticked, continue is
+   pressed, and the interview has to arrive with its steps rendered and focus in it.
+
+   The last part is the difference between a document and a tool. On 2026-10-17 this
+   build with its interview script emptied — every marker, the version stamp, the gate
+   and the footer intact, an embedder's 746px frame, and no handler on anything — passed
+   this check: the gate was in the window, so the layout verdict was green, and the
+   visitor could never get past it. Markers survive a script that never runs, so the
+   only way to tell a working copy from a dead one is to use it. What the interaction
+   changes on the deployment is a session's own acknowledgment, kept in sessionStorage:
+   nothing is submitted and no data leaves the browser.
 
    The run is also the traffic that keeps the app awake, which is why it is scheduled
    more than once a day: a daily check against a service that sleeps on idle would
@@ -39,13 +50,19 @@
      node scripts/verify-streamlit-deployed.mjs --expect-version <n>  # release to require
      node scripts/verify-streamlit-deployed.mjs --timeout-ms <ms>   # how long to wait
      node scripts/verify-streamlit-deployed.mjs --json              # machine-readable
+     node scripts/verify-streamlit-deployed.mjs --json-out <file>   # the same, written beside the human verdict
 
-   Exit status: 0 when a browser gets this release; 1 when it does not (sleep screen
-   that will not wake, no frame, another release, missing anchors, an error inside the
-   frame); 2 on a usage error.
+   `--json-out` is for the workflow: the alert reads what this check judged from the
+   file rather than from its printed text, so a red scheduled run can say what a
+   visitor got without parsing a person's prose.
+
+   Exit status: 0 when a browser gets this release and can use it; 1 when it does not
+   (sleep screen that will not wake, no frame, another release, missing or unreachable
+   anchors, a gate that does not yield, an interview that renders nothing, an error
+   inside the frame); 2 on a usage error.
 */
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -89,6 +106,7 @@ function parseArgs(argv) {
     else if (a === "--expect-version") { args.expectedVersion = valueFor(argv, i, "--expect-version"); i++; }
     else if (a === "--timeout-ms") { args.timeoutMs = Number(valueFor(argv, i, "--timeout-ms")); i++; }
     else if (a === "--json") args.json = true;
+    else if (a === "--json-out") { args.jsonOut = valueFor(argv, i, "--json-out"); i++; }
     else if (a === "--help" || a === "-h") args.help = true;
     else {
       console.error("ERROR: unknown argument " + a);
@@ -145,6 +163,7 @@ async function observe(page, timeoutMs, consoleErrors = []) {
   // window has no HCE_VERSION, so the frame that defines the version is the one that
   // is actually running the tool. Measured against the live app on 2026-10-17; without
   // this the check reported the wrapper frame and called a working app broken.
+  let running = null;
   const readFrame = async () => {
     let markersOnly = null;
     for (const frame of page.frames()) {
@@ -153,8 +172,12 @@ async function observe(page, timeoutMs, consoleErrors = []) {
       if (!carriesEstimator(html)) continue;
       const version = await frame.evaluate(() => window.HCE_VERSION).catch(() => null);
       const found = { url: frame.url(), bytes: html.length, version: typeof version === "string" ? version : null, acknowledgment: true };
-      if (found.version) return found;
+      if (found.version) {
+        running = frame;
+        return found;
+      }
       markersOnly = markersOnly ?? found;
+      running = running ?? frame;
     }
     return markersOnly;
   };
@@ -179,7 +202,217 @@ async function observe(page, timeoutMs, consoleErrors = []) {
 
   const frameErrors = found ? consoleErrors.filter((one) => one.from === found.url || one.from === "about:srcdoc") : [];
   const body = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
-  return { url: page.url(), sawSleepScreen, clickedWake, wakeMs, frame: found, body, frameErrors, consoleErrors, elapsedMs: Date.now() - started };
+  const layout = found && running ? await measureLayout(page, running) : null;
+  const interview = found && running && layout ? await exerciseInterview(running, layout, timeoutMs) : null;
+  return { url: page.url(), sawSleepScreen, clickedWake, wakeMs, frame: found, layout, interview, body, frameErrors, consoleErrors, elapsedMs: Date.now() - started };
+}
+
+// Where the way forward is, in the coordinates the visitor's window uses.
+//
+// Presence is not reach. The app positions its acknowledgment gate and its footer
+// against the frame's viewport, and an embedder may make that viewport far taller than
+// the window: Streamlit's `st.iframe(..., height=2400)` did, and on 2026-10-17 the
+// continue button sat 1,765px down a 900px window while every check called the app
+// healthy. So the frame is scrolled into view as a visitor scrolls to the tool, and the
+// two controls that move a visitor forward are measured against the window.
+//
+// `boundingBox()` of a frame element is in the main page's coordinates even when the
+// frame is nested, which is what makes the offset through Streamlit's component frame
+// honest without walking the tree by hand.
+async function measureLayout(page, frame) {
+  const viewport = page.viewportSize() ?? { width: 1280, height: 900 };
+  const handle = await frame.frameElement().catch(() => null);
+  if (handle) {
+    await handle.evaluate((el) => el.scrollIntoView({ block: "start" })).catch(() => {});
+    await page.waitForTimeout(150);
+  }
+  const box = handle ? await handle.boundingBox().catch(() => null) : null;
+  const rects = await frame
+    .evaluate(() => {
+      const read = (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      };
+      return { accept: read("#ack-accept"), next: read("#btn-next"), frameHeight: window.innerHeight, frameWidth: window.innerWidth };
+    })
+    .catch(() => null);
+  if (!rects) return null;
+  const offsetY = box ? box.y : 0;
+  const offsetX = box ? box.x : 0;
+  const at = (r) =>
+    r && {
+      top: Math.round(r.top),
+      windowTop: Math.round(r.top + offsetY),
+      windowBottom: Math.round(r.bottom + offsetY),
+      windowLeft: Math.round(r.left + offsetX),
+      windowRight: Math.round(r.right + offsetX),
+    };
+  return {
+    viewport: { width: viewport.width, height: viewport.height },
+    frameHeight: Math.round(rects.frameHeight),
+    frameWidth: Math.round(rects.frameWidth),
+    accept: at(rects.accept),
+    next: at(rects.next),
+  };
+}
+
+/* --- what a visitor does with it ------------------------------------------ */
+
+// The gate in the app: the continue button is disabled until the acknowledgment is
+// ticked, accepting hides the gate (the `.hidden` class), renders the interview's step
+// pills into #steps-nav and focuses #productId. Read as visibility rather than as a
+// class, so a copy that hides the gate some other way is judged by what a visitor sees.
+const GATE_STATE = () => {
+  const gate = document.querySelector("#ack-gate");
+  const accept = document.querySelector("#ack-accept");
+  const box = gate ? gate.getBoundingClientRect() : null;
+  const style = gate ? getComputedStyle(gate) : null;
+  const shown = !!gate && !gate.hidden && style.display !== "none" && style.visibility !== "hidden" && !!box && box.height > 0;
+  return {
+    present: !!gate,
+    open: shown,
+    steps: document.querySelectorAll(".step-pill").length,
+    acceptEnabled: !!accept && !accept.disabled,
+    focused: (document.activeElement && document.activeElement.id) || null,
+  };
+};
+
+const clickBrief = (error) => String(error && error.message ? error.message : error).split("\n")[0].slice(0, 200);
+
+// Takes the gate as a visitor does, and then holds the copy to being a tool.
+//
+// The interaction only happens when the gate is inside the window: a gate a visitor
+// cannot reach is already named by the layout judgement, and clicking something off
+// screen would report the same defect twice in words that suggest a different one. A
+// copy whose gate is already accepted — an embedder that remembered the acknowledgment —
+// is judged on the interview alone.
+async function exerciseInterview(frame, layout, timeoutMs) {
+  const wait = Math.min(timeoutMs ?? 15000, 15000);
+  const problems = [];
+  const read = () => frame.evaluate(GATE_STATE).catch(() => null);
+  const first = await read();
+  if (!first) return { attempted: false, accepted: false, steps: 0, problems, reason: "the frame could not be read" };
+  if (!first.present) return { attempted: false, accepted: false, steps: first.steps, problems, reason: "the frame has no acknowledgment gate" };
+
+  if (!first.open) {
+    // A copy whose acknowledgment is remembered opens on the interview; a copy whose
+    // script never ran opens on nothing, because the gate ships closed and the script
+    // is what opens it. The steps are what tells them apart.
+    if (first.steps === 0) {
+      problems.push(
+        "the acknowledgment gate is closed and the interview rendered no step pills (.step-pill): nothing is running behind the document, so a visitor gets neither the gate nor the tool",
+      );
+      return { attempted: false, accepted: false, steps: 0, problems, reason: "the gate is closed with no interview behind it" };
+    }
+    return { attempted: false, accepted: true, steps: first.steps, problems, reason: null };
+  }
+
+  if (!layout || !layout.accept || !inWindow(layout.accept, layout))
+    return {
+      attempted: false,
+      accepted: false,
+      steps: first.steps,
+      problems,
+      reason: "the gate is not on screen, so a visitor cannot accept it — the layout verdict names that",
+    };
+
+  const check = frame.locator("#ack-check");
+  if ((await check.count().catch(() => 0)) === 0) {
+    problems.push("the acknowledgment gate has no checkbox (#ack-check), so its continue button can never be enabled");
+    return { attempted: true, accepted: false, steps: first.steps, problems, reason: "no checkbox" };
+  }
+  try {
+    if (!(await check.isChecked().catch(() => false))) await check.click({ timeout: wait });
+  } catch (error) {
+    problems.push("a visitor's click on the acknowledgment's checkbox did not land: " + clickBrief(error));
+    return { attempted: true, accepted: false, steps: first.steps, problems, reason: "the checkbox could not be ticked" };
+  }
+
+  const ticked = await read();
+  if (ticked && !ticked.acceptEnabled) {
+    problems.push(
+      "the acknowledgment's continue button stayed disabled after the checkbox was ticked — the gate's own script is not running, so no visitor can accept it",
+    );
+    return { attempted: true, accepted: false, steps: ticked.steps, problems, reason: "continue stayed disabled" };
+  }
+
+  try {
+    await frame.locator("#ack-accept").click({ timeout: wait });
+  } catch (error) {
+    problems.push("a visitor's click on the acknowledgment's continue button did not land: " + clickBrief(error));
+    return { attempted: true, accepted: false, steps: first.steps, problems, reason: "the continue button could not be clicked" };
+  }
+
+  // Bounded, polling: the tool may render in a frame or two. No fixed sleep, because a
+  // copy that never answers must fail the run rather than wait it out.
+  const yielded = await frame
+    .waitForFunction(
+      () => {
+        const gate = document.querySelector("#ack-gate");
+        const style = gate ? getComputedStyle(gate) : null;
+        const closed = !gate || gate.hidden || style.display === "none" || style.visibility === "hidden";
+        return closed && document.querySelectorAll(".step-pill").length > 0;
+      },
+      null,
+      { timeout: wait },
+    )
+    .then(() => true)
+    .catch(() => false);
+
+  const after = await read();
+  const steps = after ? after.steps : 0;
+  if (!yielded) {
+    problems.push(
+      steps === 0
+        ? "the acknowledgment gate is on screen and its continue button was clicked, but nothing happened: no step pills rendered. Every marker this check looks for is in the document and the tool behind them is not running, so a visitor sees the gate and can go no further."
+        : "the acknowledgment gate was accepted and the interview rendered " +
+          steps +
+          " step pills, but the gate stayed on screen over it",
+    );
+    return { attempted: true, accepted: false, steps, problems, reason: null };
+  }
+
+  // Focus is what makes the first answer reachable without a mouse; the site's own e2e
+  // requires the same of this build in its frame.
+  if (after && after.focused !== "productId")
+    problems.push(
+      "the gate was accepted and the interview rendered, but focus stayed on " +
+        JSON.stringify(after.focused) +
+        " instead of the first product question (#productId)",
+    );
+
+  return { attempted: true, accepted: true, steps, focused: after ? after.focused : null, problems, reason: null };
+}
+
+// In the window, not merely in the document. A control whose top is below the window is
+// unreachable without scrolling something the visitor may not know scrolls; that is the
+// defect this measurement exists to name.
+// Area matters as much as position: an element with nothing on screen — the gate a copy
+// ships closed, a control hidden with display:none — sits at 0×0 in the top-left corner
+// and would otherwise pass as "in the window".
+const inWindow = (r, layout) =>
+  r.windowBottom > r.windowTop &&
+  r.windowRight > r.windowLeft &&
+  r.windowTop >= 0 &&
+  r.windowBottom <= layout.viewport.height &&
+  r.windowLeft >= 0 &&
+  r.windowRight <= layout.viewport.width;
+
+function unreachable(label, rect, layout) {
+  if (rect.windowBottom <= rect.windowTop || rect.windowRight <= rect.windowLeft)
+    return label + " has no area on screen (" + (rect.windowRight - rect.windowLeft) + " × " + (rect.windowBottom - rect.windowTop) + "px), so nothing a visitor does can press it";
+  const below = Math.max(0, rect.windowTop - layout.viewport.height);
+  const embedder =
+    layout.frameHeight > layout.viewport.height * 1.4
+      ? "; the frame is " +
+        layout.frameHeight +
+        "px tall in a " +
+        layout.viewport.height +
+        "px window, and the embedder sets that height (Streamlit's st.iframe uses 2400), so the app's fixed footer sits at the bottom of a document the visitor cannot see the whole of"
+      : "; the frame is " + layout.frameHeight + "px tall in a " + layout.viewport.height + "px window";
+  return label + " is at " + rect.windowTop + "px" + (below ? " — " + below + "px below the fold" : "") + embedder;
 }
 
 export function verdict({ expectedVersion, observed }) {
@@ -216,6 +449,15 @@ export function verdict({ expectedVersion, observed }) {
       );
     for (const error of observed.frameErrors) problems.push("inside the estimator frame: " + error.text);
   }
+  if (observed.frame && observed.layout) {
+    const layout = observed.layout;
+    if (!layout.accept) problems.push("the estimator frame has no acknowledgment continue button (#ack-accept), so a visitor has no way to accept the gate");
+    else if (!inWindow(layout.accept, layout)) problems.push(unreachable("the acknowledgment's continue button", layout.accept, layout));
+    if (!layout.next) problems.push("the estimator frame has no interview Next button (#btn-next), so an accepted gate leads nobody anywhere");
+    else if (!inWindow(layout.next, layout)) problems.push(unreachable("the interview's Next button", layout.next, layout));
+  }
+  // What the interaction found: the gate yielded, the interview arrived, focus moved.
+  if (observed.interview) for (const problem of observed.interview.problems) problems.push(problem);
   const lines = [];
   if (observed.wakeMs !== null) lines.push("State  : asleep on arrival — woken by this check in " + observed.wakeMs + " ms");
   else lines.push(observed.sawSleepScreen ? "State  : sleep screen seen (wake not clicked)" : "State  : awake on arrival");
@@ -230,11 +472,38 @@ export function verdict({ expectedVersion, observed }) {
         JSON.stringify(observed.frame.version) +
         ", acknowledgment gate and product select present",
     );
+  if (observed.interview)
+    lines.push(
+      "Interview : " +
+        (observed.interview.reason
+          ? "not reached — " + observed.interview.reason
+          : observed.interview.attempted
+            ? observed.interview.steps +
+              " steps after accepting the gate" +
+              (observed.interview.focused ? ", focus on " + observed.interview.focused : "")
+            : "gate already accepted — " + observed.interview.steps + " steps"),
+    );
+  if (observed.layout)
+    lines.push(
+      "Layout : " +
+        (observed.layout.accept ? "continue button at " + observed.layout.accept.windowTop + "px" : "no continue button") +
+        ", " +
+        (observed.layout.next ? "Next at " + observed.layout.next.windowTop + "px" : "no Next button") +
+        ", frame " +
+        observed.layout.frameHeight +
+        "px tall in a " +
+        observed.layout.viewport.height +
+        "px window",
+    );
   return { problems, lines, ok: problems.length === 0 };
 }
 
-function report(result, json) {
+function report(result, json, jsonOut) {
   const payload = { ok: result.ok, problems: result.problems, lines: result.lines };
+  // Written before the human verdict is printed: the alert reads this file, so a run
+  // that printed a verdict must always have one beside it. An absent file is read as
+  // "nothing was judged" rather than as a pass.
+  if (jsonOut) writeFileSync(jsonOut, JSON.stringify(payload, null, 2) + "\n");
   if (json) {
     console.log(JSON.stringify(payload, null, 2));
     return result.ok ? 0 : 1;
@@ -289,7 +558,7 @@ async function main(argv) {
     const hostOnly = observed.consoleErrors.filter((one) => !observed.frameErrors.includes(one));
     if (hostOnly.length && !args.json)
       console.log("       Host page errors (not judged, they are Streamlit's shell): " + hostOnly.slice(0, 3).map((one) => one.text).join("; "));
-    return report(result, args.json);
+    return report(result, args.json, args.jsonOut);
   } finally {
     await browser.close();
   }

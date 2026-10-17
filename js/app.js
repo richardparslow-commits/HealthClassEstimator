@@ -297,17 +297,42 @@ const App = (() => {
     const popup=window.open("","_blank");if(!popup){toast("Allow the print window to open in this browser.");return;}
     popup.document.title="HealthClassEstimator acknowledgment";let accepted="Not recorded";try{accepted=sessionStorage.getItem("hce_ack_time_v2")||accepted;}catch{}
     popup.document.body.appendChild(node("h1",null,"Acknowledgment record"));popup.document.body.appendChild(node("p",null,"App version "+window.HCE_VERSION+" · Accepted: "+accepted));
-    const card=$(".ack-card").cloneNode(true);card.querySelectorAll("button,input,.ack-contact-row,.ack-hint").forEach(n=>n.remove());popup.document.body.appendChild(card);popup.focus();popup.print();
+    const card=$(".ack-card").cloneNode(true);card.querySelectorAll("button,input,.ack-actions,.ack-contact-row,.ack-hint").forEach(n=>n.remove());popup.document.body.appendChild(card);popup.focus();popup.print();
   }
   function init() {
     try {const current=localStorage.getItem(STORAGE_KEY),old=localStorage.getItem(LEGACY_KEY);if(current||old){state=InterviewState.migrate(JSON.parse(current||old));migrationNotice=!!state.migrated;}}catch{migrationNotice=true;}
-    $("#btn-next").addEventListener("click",()=>{if(step===steps.length-1)results=true;else step++;render();window.scrollTo(0,0);});
-    $("#btn-back").addEventListener("click",()=>{if(results){results=false;focusStepHeading=true;}else if(step>0)step--;render();window.scrollTo(0,0);});
+    // The frame is not the window: an embedder can make this document's viewport far
+    // taller than the window it is shown in (Streamlit's `st.iframe(..., height=2400)`
+    // does), and a footer positioned against the viewport then lands at the bottom of a
+    // document the visitor cannot see the whole of — measured on the deployed app on
+    // 2026-10-17, the interview's Next button sat 1,361px below the fold. So the app
+    // takes the height of the window it is actually shown in — the embedding window
+    // where the frame can read it, a plausible 800px where it cannot — and scrolls
+    // inside itself; the stylesheet turns that into the window-shaped panel the embedder
+    // should have made. A 746px website frame, a phone or a browser tab never matches.
+    const root=document.documentElement;
+    const fitToWindow=()=>{
+      if(window.self===window.top||window.innerHeight<=1400){root.classList.remove("oversized-frame");return;}
+      let band=Math.min(window.innerHeight,800);
+      try {
+        const space=window.parent.innerHeight-window.frameElement.getBoundingClientRect().top-8;
+        if(isFinite(space))band=space;
+      } catch {}
+      root.style.setProperty("--window-band",Math.max(240,Math.min(window.innerHeight,band))+"px");
+      root.classList.add("oversized-frame");
+    };
+    // A step change returns to the top of the tool, so the way forward is never left
+    // where the previous question's answers were: the panel's own scroll position when
+    // the app is a panel, the window's when it is a document of its own.
+    const backToTop=()=>{if(root.classList.contains("oversized-frame"))document.body.scrollTop=0;else window.scrollTo(0,0);};
+    $("#btn-next").addEventListener("click",()=>{if(step===steps.length-1)results=true;else step++;render();backToTop();});
+    $("#btn-back").addEventListener("click",()=>{if(results){results=false;focusStepHeading=true;}else if(step>0)step--;render();backToTop();});
     $("#btn-save").addEventListener("click",()=>{save();toast("Draft saved on this device.");});$("#btn-print-ack").addEventListener("click",printAck);
     // Reserve the actual fixed footer height, including wrapped mobile links.
     const footer=$(".app-footer"),fitFooter=()=>document.documentElement.style.setProperty("--footer-h",footer.getBoundingClientRect().height+"px");
     if(typeof ResizeObserver === "function")new ResizeObserver(fitFooter).observe(footer);
-    window.addEventListener("resize",fitFooter);render();fitFooter();ack();
+    window.addEventListener("resize",fitFooter);window.addEventListener("resize",fitToWindow);
+    fitToWindow();render();fitFooter();ack();
   }
   init();return {reset};
 })();

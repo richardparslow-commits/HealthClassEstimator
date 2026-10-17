@@ -1,0 +1,79 @@
+name: Prove the CI machinery in Actions
+# Dispatch this when the question is not "does the code pass locally" but "does GitHub
+# itself run these workflows the way we say it does". It starts the release (verify-only)
+# and the audit suite, waits for both, reads each run's own step record back from the
+# API, and writes a receipt naming the run IDs and what every asserted step concluded.
+#
+# The gap it closes is the one every harness here used to end with: "not verified: the
+# workflow has not run in Actions". A local suite can execute a step's shell, and
+# `workflow-condition.js` can decide an `if:` from GitHub's documented semantics, but
+# neither can say that GitHub's evaluation agreed, that actions/checkout produced the
+# tree, or which commit a run judged. Only a run can.
+#
+# The release is always dispatched with verify_published=true, which pushes nothing —
+# the condition on the push step carries that clause even when a token is configured,
+# and the receipt fails the run if the push step did not skip. The audit dispatch proves
+# the checkout, the whole offline suite, the condition evaluator and the coverage guard
+# in the same place a push would run them.
+#
+# A deploy already in progress stops this before anything is dispatched: runs in the
+# deploy concurrency group cancel one another, and a self-test must not abort somebody's
+# release.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch the release and audit runs should judge (they are dispatched on it)"
+        type: string
+        default: main
+        required: false
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ci-self-test
+  cancel-in-progress: false
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `gh` is preinstalled on the runner. GH_TOKEN is the job's own token: dispatching
+      # a workflow needs Actions write on this repository, which is all this grants.
+      - name: Dispatch both workflows, wait, and hold them to what GitHub ran
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REF: ${{ inputs.ref }}
+        run: |
+          set -o pipefail
+          node scripts/ci-self-test.mjs \
+            --repo "${{ github.repository }}" \
+            --ref "$TARGET_REF" \
+            --receipt ci-self-test-receipt.json \
+            --markdown ci-self-test-receipt.md
+
+      # Written even when the verdict failed: the receipt names the runs that were
+      # started, which is what an operator needs to go and look at them.
+      - name: Publish the receipt to the run summary
+        if: ${{ always() }}
+        run: |
+          if [ -f ci-self-test-receipt.md ]; then
+            cat ci-self-test-receipt.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The self-test produced no receipt: it failed before any run could be dispatched." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the receipt with the run
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-self-test-receipt
+          path: ci-self-test-receipt.json
+          if-no-files-found: warn

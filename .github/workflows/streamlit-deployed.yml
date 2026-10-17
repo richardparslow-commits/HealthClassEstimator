@@ -9,15 +9,25 @@ name: Verify the deployed app
 #
 # This runs scripts/verify-streamlit-deployed.mjs against the URL declared in
 # consumers/streamlit.json: a headless Chromium loads the app, clicks the wake button
-# when the sleep screen is showing, waits for the estimator's frame, and checks that
-# the frame runs this repository's release with its controls present. A red run means a
-# visitor would not get the tool, and the summary says whether it arrived awake or
-# asleep and how long waking took.
+# when the sleep screen is showing, waits for the estimator's frame, checks that the
+# frame runs this repository's release with its controls in the visitor's window — and
+# then uses it: ticks the acknowledgment, presses continue, and requires the interview
+# to arrive. A red run means a visitor would not get the tool, and the summary says
+# whether it arrived awake or asleep and how long waking took. Without the last part a
+# copy whose script never ran passed this job on 2026-10-17.
 #
 # Twice a day would not be enough to keep it awake: Streamlit Community Cloud suspends
 # an app that gets no traffic, so the check is also the traffic. Every six hours leaves
 # room to spare against an idle window of half a day, and each run reports which state
 # it found, so the cadence can be judged from the logs instead of assumed.
+#
+# A red run used to live only in the Actions tab, which is how the app could be asleep
+# (or serve an older release) while every check here passed. The `alert` job below keeps
+# one labelled issue open while the check is red, and the issue quotes the check's own
+# verdict — the state it found and the problem it named — because "the run is red" is
+# not the fact anyone needs: a sleeping app is woken by the check and passes, an app on
+# another release has to be republished, and a browser that never installed needs
+# neither.
 
 on:
   schedule:
@@ -33,6 +43,14 @@ concurrency:
 jobs:
   deployed:
     runs-on: ubuntu-latest
+    # What the alert reports on. The check's report is reduced to these three by the
+    # script that also writes the issue, so the notification and the verdict cannot
+    # disagree about what was seen. Job outputs survive a failed job, which is the case
+    # they are for.
+    outputs:
+      outcome: ${{ steps.report.outputs.outcome }}
+      state: ${{ steps.report.outputs.state }}
+      problems: ${{ steps.report.outputs.problems }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,10 +65,21 @@ jobs:
           npm install --no-save playwright
           npx playwright install --with-deps chromium
 
-      - name: Load the deployed app the way a visitor does
+      - name: Load the deployed app the way a visitor does, and accept its gate
         run: |
           set -o pipefail
-          npm run verify:deployed 2>&1 | tee deployed.txt
+          npm run verify:deployed -- --json-out deployed.json 2>&1 | tee deployed.txt
+
+      # A red job is not always a broken app: this records which it was. A report that
+      # is absent (the browser never installed, the step was stopped) becomes
+      # "unknown", and the issue then says the app was not judged instead of claiming
+      # it is serving the wrong build.
+      - name: Record what the check found, for the alert
+        id: report
+        if: ${{ always() }}
+        env:
+          REPORT_FILE: deployed.json
+        run: node scripts/deployed-app-alert.js --outputs >> "$GITHUB_OUTPUT"
 
       - name: Publish the verdict to the run summary
         if: ${{ always() }}
@@ -62,3 +91,87 @@ jobs:
             cat deployed.txt 2>/dev/null || echo "The check produced no output."
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # One issue per repository, opened on the first failing run, commented while it keeps
+  # failing, and commented on and closed by the first run that passes. The decision and
+  # the text come from scripts/deployed-app-alert.js, so the workflow cannot open an
+  # issue for a run that never finished, close one on a run that did not look, or
+  # report a problem the check did not name.
+  #
+  # The step below is executed, not just described: `npm run test:alert-step` reads this
+  # `run:` block out of the file and drives it against a stubbed `gh`, so an edit here
+  # that would call gh with an unset variable, drop the label or file a second issue
+  # fails on the branch. Keep the step self-contained and the `env:` keys it reads.
+  alert:
+    name: Report a failing deployed app
+    runs-on: ubuntu-latest
+    needs: [deployed]
+    # always(): this job reports on the check's outcome, so it has to run after a
+    # failure — the very case it exists for.
+    if: ${{ always() }}
+    concurrency:
+      group: deployed-app-alert
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out HealthClassEstimator
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          RESULT: ${{ needs.deployed.result }}
+          OUTCOME: ${{ needs.deployed.outputs.outcome }}
+          STATE: ${{ needs.deployed.outputs.state }}
+          PROBLEMS: ${{ needs.deployed.outputs.problems }}
+        run: |
+          set -euo pipefail
+          label=deployed-app-drift
+
+          # success / failure / cancelled / skipped: only a red run is reported, and a
+          # cancelled or skipped one is left alone because it never looked at the app.
+          state=$(node scripts/deployed-app-alert.js --state)
+          echo "Deployed app: ${state}"
+          if [ "$state" = "unknown" ]; then
+            echo "The job did not finish (${RESULT}), so the issue is left as it is."
+            exit 0
+          fi
+
+          gh label create "$label" --repo "$REPO" --force \
+            --description "A browser does not get the deployed app" \
+            --color B60205
+
+          open_issues=$(gh issue list --repo "$REPO" --label "$label" --state open --json number --jq '.[].number')
+          # sed, not head: `printf | head` can die of SIGPIPE under pipefail.
+          issue=$(printf '%s\n' "$open_issues" | sed -n '1p')
+
+          if [ "$state" = "failing" ]; then
+            if [ -z "$issue" ]; then
+              body=$(mktemp)
+              node scripts/deployed-app-alert.js --body > "$body"
+              gh issue create --repo "$REPO" --label "$label" \
+                --title "Deployed app: a browser does not get this release" \
+                --body-file "$body"
+            else
+              gh issue comment "$issue" --repo "$REPO" \
+                --body "$(node scripts/deployed-app-alert.js --comment)"
+            fi
+          elif [ -n "$issue" ]; then
+            closed_comment=$(node scripts/deployed-app-alert.js --closed-comment)
+            for n in $open_issues; do
+              gh issue comment "$n" --repo "$REPO" --body "$closed_comment"
+              gh issue close "$n" --repo "$REPO"
+            done
+          fi

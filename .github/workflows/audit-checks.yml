@@ -8,6 +8,10 @@ name: Verify underwriting changes
 on:
   pull_request:
   push:
+  # Dispatchable so the CI self-test (`.github/workflows/self-test.yml`) can run this
+  # suite once in Actions and read its step record back: the point is not the code but
+  # GitHub's execution of it — checkout, expression evaluation, and every step running.
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -56,6 +60,49 @@ jobs:
       # fixture-tested rather than trusted.
       - name: Verify the deployed interpreter declaration
         run: npm run test:pin
+      # The deployed-app issue is the only thing anyone sees when the six-hourly
+      # browser check goes red, and it has to tell a sleeping app from a browser that
+      # never installed — or from an app whose gate led nowhere. Its verdict, its text
+      # and its workflow wiring are offline fixtures, so they run here rather than in
+      # the job that downloads Chromium.
+      - name: Verify the deployed-app alert reports the verdict it read
+        run: npm run test:deployed-alert
+      # The suite above holds the decision and the workflow's text; this executes the
+      # alert job's own shell against a `gh` that records what it was asked to do. The
+      # step is the last hop between a red six-hourly check and a person, and the
+      # deployed app is red today (release 80 against a newer build), so whether the
+      # issue is opened has to be something this repository has watched happen.
+      - name: Verify the alert job's shell opens, updates and closes the issue
+        run: npm run test:alert-step
+      # The release's gates and its push, run against a local bare repository playing the
+      # deployed one. The read-back beneath them was already fixture-tested; what was only
+      # read was the shell that decides whether a release happens — the `cmp` gate, the
+      # staging copy, the refusal to publish a repository that rebuilds the estimator, and
+      # the commit whose message links the deployed commit to its source. A release
+      # workflow is the one place where reading instead of running is most expensive.
+      - name: Verify the release gates and push against a local remote
+        run: npm run test:publish-step
+      # The gates and the push are run above; this runs what the run then *says*. The
+      # read-back invocation (which commit it expects, from which remote, and whether a
+      # failure stops the step), the token gates, and the run summary are what a person
+      # reads as "published" — and the shape that matters is a green run whose deployment
+      # still serves the previous build, which only that text distinguishes.
+      - name: Verify the release read-back, gates and summary against a local remote
+        run: npm run test:publish-claim
+      # The suite above runs a step's shell, but GitHub decides whether to run it at all
+      # from the step's `if:`. Until this existed that decision was matched as text, so
+      # a gate naming the wrong variable, or an `&&` where `||` was meant, passed while
+      # the step it guarded never ran. The conditions are now evaluated against the
+      # job's own variables in every run shape, and every `if:` in every workflow has to
+      # parse, so a condition nobody can read is a failure rather than a step nobody
+      # judged.
+      - name: Verify the workflow conditions decide the run shapes they claim
+        run: npm run test:condition
+      # The self-test dispatches the release and this suite and holds each run's own
+      # step record to what the conditions claim; its fixtures play the API with a fake
+      # `gh`, because the real one only answers inside a run.
+      - name: Verify the CI self-test against the API's answers
+        run: npm run test:self-test
       # The suites above are only checks if something runs them where a release can
       # see them: every `test*` script must be invoked by a workflow triggered by a
       # push to main, and this also reports which workflow does it for each.
@@ -98,7 +145,10 @@ jobs:
       # needs the browser above, and its subject is the deployment rather than the
       # build: a local page can be stale in ways the published app is not, and the
       # live app nests the estimator one frame deeper than any fixture assumed until
-      # 2026-10-17. Running it every branch keeps the check honest on the day the
-      # scheduled workflow goes red.
+      # 2026-10-17. It also serves this build with its interview script taken out — the
+      # copy that passed the check before it took the gate — so a regression in that
+      # judgement fails here, on a branch, rather than six hours later against a
+      # service nobody can use. Running it every branch keeps the check honest on the
+      # day the scheduled workflow goes red.
       - name: Verify the deployed-app check against its fixtures
         run: npm run test:deployed

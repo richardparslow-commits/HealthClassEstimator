@@ -224,6 +224,11 @@ equal(parsed.results.filter(x=>x.critical).length,3,"--json marks the three unde
 //    older build passes whenever the release changed nothing underwriting-level.
 const declaration=require("../consumers/website.json");
 const {composeDeclared,loadDeclarations,verifyReleaseClaims,buildVersion,claimPattern}=require("../scripts/check-consumer-parity.js");
+// The release these fixtures state, read from the build rather than typed: a fixture
+// pinned to a number fails on the next bump with a stale-claim error that reads like a
+// regression in the check (release 82, 2026-10-17). `PREVIOUS` is an older release, for
+// the fixtures that have to fail.
+const RELEASE=buildVersion(build),PREVIOUS=String(Number(RELEASE)-2);
 // The page's generator, written here independently of the checker: place the added
 // lines, rewrite the links, drop the statement. `skip` leaves an adaptation out, which
 // is how the fixtures place the page in the states that must fail.
@@ -256,10 +261,10 @@ const pageAdapters="<style>\n  .page-adapter{display:none}\n</style>\n<script>\n
 // The page states its release outside the embedded document: the footer, the FAQ
 // answer (also serialised into FAQPage structured data, so twice) and the schema.org
 // softwareVersion. A page that is this build has to carry them, saying this release.
-const pageChrome="<p>Release 80 · Updated October 16, 2026 (UTC) · Maintained by Richard Parslow</p>\n"+
-  "<p>This page runs HealthClassEstimator release 80, generated from the reviewed build.</p>\n"+
-  '<script type="application/ld+json">{"@type":"SoftwareApplication","softwareVersion":"80"}</script>\n'+
-  '<script type="application/ld+json">{"@type":"FAQPage","mainEntity":[{"acceptedAnswer":{"text":"This page runs HealthClassEstimator release 80, generated from the reviewed build."}}]}</script>\n';
+const pageChrome="<p>Release "+RELEASE+" · Updated October 16, 2026 (UTC) · Maintained by Richard Parslow</p>\n"+
+  "<p>This page runs HealthClassEstimator release "+RELEASE+", generated from the reviewed build.</p>\n"+
+  '<script type="application/ld+json">{"@type":"SoftwareApplication","softwareVersion":"'+RELEASE+'"}</script>\n'+
+  '<script type="application/ld+json">{"@type":"FAQPage","mainEntity":[{"acceptedAnswer":{"text":"This page runs HealthClassEstimator release '+RELEASE+', generated from the reviewed build."}}]}</script>\n';
 // The real page delivers the estimator through an iframe srcDoc, with its release
 // claims in the page around the frame. Building the fixture the same way keeps the
 // claims out of the document being compared, which is what the live read sees too.
@@ -410,36 +415,38 @@ ok(/This job names the deployment it judged and does not pass without reading it
 //     claims are declared once (consumers/website.json) and checked against the build's
 //     HCE_VERSION wherever this run read them: the committed page's source, and the
 //     served page.
-equal(buildVersion(build),"80","the build's version is read from HCE_VERSION");
+ok(/^\d+$/.test(RELEASE),"the build's version is read from HCE_VERSION");
+equal(RELEASE,fs.readFileSync(path.join(root,"index.html"),"utf8").match(/var HCE_VERSION = "(\d+)"/)[1],"and it is the release index.html declares, so the fixtures move with it");
 ok(declaration.releaseClaims.length>=5,"the page declares each place it states its release");
 ok(declaration.releaseClaims.every((c)=>c.pattern.includes("{version}")),"every claim names where its number goes");
-const chromeWith=(version)=>pageChrome.replace(/release 80|Release 80/g,"release "+version).replace(/"softwareVersion":"80"/,'"softwareVersion":"'+version+'"');
+const chromeWith=(version)=>pageChrome.replace(new RegExp("release "+RELEASE,"g"),"release "+version).replace(new RegExp("Release "+RELEASE,"g"),"Release "+version).replace('"softwareVersion":"'+RELEASE+'"','"softwareVersion":"'+version+'"');
 const claimed=(page)=>check(write("claims-"+Math.random().toString(16).slice(2)+".html",page),buildPath,declared);
 // The passing fixture states the build's release everywhere it declares, and says so.
 const declaredPass=check(write("claims-pass.html",declaredPage),buildPath,declared);
 equal(declaredPass.status,0,"a page that states this release in every declared place passes");
-ok(/Release  : 80 — 3 claim\(s\) agree, 0 disagree, 4 on a surface this run did not read/.test(declaredPass.out),"the served page's claims agree, and the source-only ones are reported as not read");
-ok(/It states release 80 in all 3 of the places it declares/.test(declaredPass.out),"the declared pass says the page states this release");
+ok(new RegExp("Release  : "+RELEASE+" — 3 claim\\(s\\) agree, 0 disagree, 4 on a surface this run did not read").test(declaredPass.out),"the served page's claims agree, and the source-only ones are reported as not read");
+ok(new RegExp("It states release "+RELEASE+" in all 3 of the places it declares").test(declaredPass.out),"the declared pass says the page states this release");
 // The real bug, as a fixture: only the structured data is behind.
-const staleJsonLd=write("claims-stale-json.html",pageOf(declaredDocument).replace('"softwareVersion":"80"','"softwareVersion":"78"'));
+const staleJsonLd=write("claims-stale-json.html",pageOf(declaredDocument).replace('"softwareVersion":"'+RELEASE+'"','"softwareVersion":"'+PREVIOUS+'"'));
 r3=check(staleJsonLd,buildPath,declared);
 equal(r3.status,1,"a page whose structured data names an older release fails");
 ok(/FAIL — the page states a release that is not this build/.test(r3.out),"the failure says what kind of problem it is");
-ok(/"structured-data-version-served" states release 78, this build is release 80/.test(r3.out),"the failing claim and both numbers are named");
+ok(new RegExp('"structured-data-version-served" states release '+PREVIOUS+', this build is release '+RELEASE).test(r3.out),"the failing claim and both numbers are named");
 ok(/regenerate the page from this build; do not correct the number by hand/.test(r3.out),"the fix is regeneration, not editing the claim");
 ok(/underwriting engine\s+identical/.test(r3.out),"the tool itself was the right build, so the fault is the claim alone");
 // A claim the page stopped carrying is the same drift in a quieter form.
-r3=claimed(pageOf(declaredDocument).replace(/<p>Release 80 · Updated[^<]*<\/p>/,""));
+r3=claimed(pageOf(declaredDocument).replace(new RegExp("<p>Release "+RELEASE+" · Updated[^<]*</p>"),""));
 equal(r3.status,1,"a page that stopped stating its release fails");
 ok(/"footer-stamp" appears 0 time\(s\)/.test(r3.out),"the missing claim is named with its count");
 // A claim stated twice is not the declaration either.
-r3=claimed(pageOf(declaredDocument).replace("</main>","<p>Release 80 · Updated again</p></main>"));
+r3=claimed(pageOf(declaredDocument).replace("</main>","<p>Release "+RELEASE+" · Updated again</p></main>"));
 equal(r3.status,1,"a duplicated claim fails");
 ok(/"footer-stamp" appears 2 time\(s\)/.test(r3.out),"the duplicate is counted");
 // A release bump moves every claim at once; nothing may be left behind.
-r3=check(write("claims-next-build.html",pageOf(declaredDocument)),write("build-81.html",build.replace('window.HCE_VERSION = "80"','window.HCE_VERSION = "81"')),declared);
+const nextRelease=String(Number(RELEASE)+1);
+r3=check(write("claims-next-build.html",pageOf(declaredDocument)),write("build-next.html",build.replace('window.HCE_VERSION = "'+RELEASE+'"','window.HCE_VERSION = "'+nextRelease+'"')),declared);
 equal(r3.status,1,"a page that has not moved to the next release fails");
-ok(/"footer-stamp" states release 80, this build is release 81/.test(r3.out),"each stale claim is reported against the new build");
+ok(new RegExp('"footer-stamp" states release '+RELEASE+', this build is release '+nextRelease).test(r3.out),"each stale claim is reported against the new build");
 // The rules themselves, as units: a surface this run did not read is not a pass.
 const unitClaims=[{id:"both",pattern:"release {version}",count:1,in:["source","page"]}];
 let unit=verifyReleaseClaims(unitClaims,{source:{text:"release 80",label:"source"},page:{text:"release 80",label:"page"}},"80");

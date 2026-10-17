@@ -204,27 +204,58 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .domain-table tr:last-child td { border-bottom: none; }
 
 /* ---- Acknowledgment gate --------------------------------------------- */
+/* The gate is shown inside an iframe whose height the page fixes, so the card is sized
+   to the frame and only its text scrolls. The action row — checkbox, continue button,
+   hint — is a flex item that never scrolls, which is what keeps the way forward on
+   screen at phone height instead of a thousand pixels below it.
+
+   `100%` here is the frame, not the window, and the two are not the same document: the
+   Streamlit wrapper embeds this app at `st.iframe(..., height=2400)`, so a frame-relative
+   card was 1,165px tall on a desktop and 2,145px on a phone, and centring it in a
+   2,400px overlay put the continue button 1,765px down a 900px window — the way forward
+   existed only at the end of a scroll of a document the visitor cannot see the whole of.
+   So the card is capped at a plausible window and anchored to the top of the frame: in
+   a frame taller than any window it now starts where the visitor is looking, whatever
+   height the embedder chose. The cap is defence in depth — a frame sized to the window
+   (the website uses 746px) is still the right way to embed this. */
 .ack-gate {
   position: fixed;
   inset: 0;
   z-index: 1000;
   background: rgba(8, 20, 33, .68);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 24px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .ack-card {
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 24px 64px rgba(8, 20, 33, .4);
   max-width: 720px;
+  max-height: min(100%, 41rem);
   width: 100%;
   padding: 26px 30px 24px;
   border-top: 6px solid var(--teal);
-  margin: auto;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
+.ack-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding-right: 4px;
+}
+.ack-actions {
+  flex: none;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 2px;
+}
+.ack-actions .ack-check { margin-top: 12px; }
 .ack-brand {
   font-size: 11.5px;
   letter-spacing: .14em;
@@ -287,6 +318,32 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 .ack-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--teal); }
 .ack-hint { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
 
+/* The predictor page embeds this gate in a phone-sized frame: tighter padding buys the
+   acknowledgment text room and keeps the action row from wrapping to three lines. */
+@media (max-width: 560px) {
+  .ack-gate { padding: 10px; }
+  .ack-card { padding: 18px 18px 16px; border-radius: 12px; }
+  .ack-card h2 { font-size: 20px; }
+  .ack-section { padding: 9px 11px; }
+  .ack-list, .ack-disclaimer, .ack-sub { font-size: 13px; }
+  .ack-check { font-size: 13.5px; }
+}
+
+/* A landscape phone gets a frame about 420px tall, where a fixed action row would leave
+   no room to read the acknowledgment at all. Below this height the card scrolls as one
+   and the action row sticks to its bottom edge, so the text stays reachable and the
+   button stays on screen. */
+@media (max-height: 560px) {
+  .ack-card { display: block; overflow-y: auto; padding-bottom: 0; }
+  .ack-body { overflow: visible; }
+  .ack-actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding: 2px 0 16px;
+  }
+}
+
 /* ---- Footer ---------------------------------------------------------- */
 .app-footer {
   position: fixed;
@@ -297,6 +354,42 @@ table.domain-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
   backdrop-filter: blur(6px);
   z-index: 30;
 }
+
+/* The frame is not the window, and an embedder may make it much taller than one:
+   Streamlit's `st.iframe(..., height=2400)` does, and on 2026-10-17 the deployed app put
+   the interview's Next button 1,361px below the fold of a 900px window — a footer fixed
+   to the *frame's* bottom, on a document the visitor cannot see the whole of. js/app.js
+   measures the window the app is actually shown in (the embedding window where the frame
+   can read it, a plausible 800px where it cannot) and marks this case; the app then
+   becomes the window-shaped panel the embedder should have made: it takes the top of the
+   frame at the height that is visible, scrolls inside itself, and keeps Back / Save draft
+   / Next at the bottom edge of that panel, where a browser tab puts them. The gate is
+   capped to the same band and the toast stays inside it. A 746px website frame, a phone,
+   an iPad and a browser tab are all window-shaped and never match the condition, so
+   nothing about them changes. */
+/* `overflow: hidden` here is what makes the body a scroller at all. With the root left at
+   `visible`, an overflow set on the body is propagated to the viewport — the frame — and
+   the body never scrolls, so the footer stays in flow at the bottom of a 2,400px frame
+   with nothing to stick to. (Measured: 1,718px, i.e. unchanged.) The root cannot be the
+   scroller either: the document's scrollport is the frame's viewport and a height on the
+   root does not shrink it, so the band has to be the body's own box. */
+html.oversized-frame {
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+}
+/* The band is a definite height, so a short question puts the footer at the panel's bottom
+   edge rather than floating it above empty space; taller content grows the body past it
+   and the sticky footer stays at that edge while the content scrolls under. */
+html.oversized-frame body {
+  height: var(--window-band, 800px);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html.oversized-frame .app-footer { position: sticky; bottom: 0; }
+html.oversized-frame .ack-gate { height: var(--window-band, 800px); inset: 0 0 auto 0; }
+html.oversized-frame .toast { position: sticky; bottom: 12px; }
 .footer-inner {
   max-width: 1060px;
   margin: 0 auto;
