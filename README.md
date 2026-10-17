@@ -16,9 +16,15 @@ npm run test:builder
 npm run test:manifest
 npm run test:parity
 npm run release:artifact
+
+# The deployed wrapper, exercised two ways (the second needs Streamlit):
+python3 scripts/verify-streamlit-runtime.py <staged-deploy-checkout>
+python3 scripts/verify-streamlit-live.py <staged-deploy-checkout>
 ```
 
 The standalone output is `dist/app.html`. The builder includes rules, state, engine and UI in that order and stamps the same release version as `index.html`. `npm run release:artifact` writes the Streamlit pair: `app_embedded.html` (the same bytes as `dist/app.html`) plus `app_embedded.manifest.json`, the sha256/size/version/builder record the deployed repository verifies before it serves anything.
+
+`verify-streamlit-runtime.py` proves the deployed wrapper's verification contract against a stubbed Streamlit API — a good pair is served, and a tampered artifact, a missing artifact, a missing manifest, a manifest naming another file and a manifest whose version lies are each refused. `verify-streamlit-live.py` runs the same wrapper through Streamlit's real runtime with `AppTest`, which is the only check that can see the library itself: it caught the wrapper rendering through `st.components.v1.html`, an API Streamlit removes after 2026-06-01 — a date already past — so one upgrade would have taken the deployed app down with no change here. The deployed app now renders through `st.iframe` and requires `streamlit>=1.66`.
 
 `npm run test:builder` runs the embedded builder against doctored copies of the sources, so its end-of-build guards are exercised rather than trusted: an added external script and a loader that survives the strip must both fail the build. That second case used to pass silently — the strip is anchored on the loader's comment, so an edit to the comment removed the only evidence the guard looked for.
 

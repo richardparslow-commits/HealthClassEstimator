@@ -42,6 +42,12 @@ jobs:
         with:
           node-version: 20
 
+      # Streamlit's own runtime is exercised below, so it needs a real Python.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Run engine test suite
         run: npm test
 
@@ -112,6 +118,17 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/verify-streamlit-runtime.py streamlit-app 2>&1 | tee verified.txt
+
+      # The stubbed harness proves the verification logic against a fake Streamlit
+      # API, which cannot see an API the real library has scheduled for removal:
+      # st.components.v1.html was one, and an upgrade would have broken the
+      # deployed app with no change in this repository. This runs the staged app
+      # through Streamlit's own runtime.
+      - name: Exercise the staged app in Streamlit's real runtime
+        run: |
+          set -o pipefail
+          python -m pip install --quiet --disable-pip-version-check -r streamlit-app/requirements.txt
+          python scripts/verify-streamlit-live.py streamlit-app 2>&1 | tee -a verified.txt
 
       - name: Publish the verification to the run summary
         if: ${{ always() }}

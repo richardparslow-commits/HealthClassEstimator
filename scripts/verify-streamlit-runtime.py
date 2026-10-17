@@ -48,6 +48,10 @@ import pathlib, sys, types
 root = pathlib.Path(sys.argv[1])
 served = []
 st = types.ModuleType("streamlit")
+# Both the API the wrapper renders through today and the one it replaced: this
+# harness has to be able to run the previous deployed wrapper too, or the proof
+# that it fails the old code could not be repeated.
+st.iframe = lambda document, *a, **k: served.append(document)
 st.components = types.SimpleNamespace(v1=types.SimpleNamespace(html=lambda document, *a, **k: served.append(document)))
 st.set_page_config = st.markdown = st.caption = lambda *a, **k: None
 sys.modules["streamlit"] = st

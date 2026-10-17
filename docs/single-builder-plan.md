@@ -229,7 +229,9 @@ to the current artifact, so the redeploy changes no served bytes).
 **S6 — dispatch both workflows and read the receipts.**
 `consumer-parity.yml` (no inputs): expect `Live website` green, `Streamlit
 artifact` green **with strict byte identity**, `Streamlit runtime` green 6/6 —
-and no `streamlit-fallback` job. `deploy-streamlit.yml`: expect green through
+and no `streamlit-fallback` job. `deploy-streamlit.yml` also runs
+`verify-streamlit-live.py` (3/3) against the staged checkout under a real
+Streamlit install; that check found the deprecated rendering API. `deploy-streamlit.yml`: expect green through
 engine suite, build, CSS audit, builder guards, then the token gate (still the
 only failure on `main`, as designed).
 *Done when:* both runs show the expected jobs.
@@ -249,7 +251,7 @@ automatically. Confirm the Streamlit Cloud page (§9).
 | A5 | Runtime refuses broken pairs and serves good ones | `verify-streamlit-runtime.py` 6/6 PASS; proven to fail on the old code in S2 |
 | A6 | Deploy job stages exactly the pair + deletions, verifies it, and pushes it | Staging, sync, no-rebuild invariant and runtime verification now run on **every** push (token not needed); only the push itself waits for the token (S7) |
 | A7 | No underwriting or rendering change | engine suite (10,332 assertions), build/css/builder/parity/manifest suites unchanged green; artifact hash unchanged |
-| A8 | Local `streamlit run` works | pair is committed; the app never needs Node or loose assets again |
+| A8 | The app runs under Streamlit itself | `verify-streamlit-live.py` 3/3 on the staged checkout (real `AppTest` runtime), plus a real `streamlit run` rendering release 80 in a browser — and it found `st.components.v1.html`, which is now `st.iframe` |
 
 ## 8. Risks and rollback
 
