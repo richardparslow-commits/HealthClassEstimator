@@ -81,16 +81,20 @@ ok(/Nothing has been built or published/.test(gate.script), "and says that it st
 
 /* --- the probe's shape ---------------------------------------------------- */
 
-ok(/push --dry-run/.test(probe.script), "the probe asks the server to authorise the push and sends nothing");
-ok(/GIT_TERMINAL_PROMPT=0/.test(probe.script), "and cannot hang on a credential prompt with nothing to type into it");
-ok(/refs\/heads\/preflight-credential-check/.test(probe.script), "a scratch ref is the destination, so the answer is about the credential rather than the state of main");
-ok(/STREAMLIT_DEPLOY_KEY/.test(probe.script) && /STREAMLIT_PUSH_TOKEN/.test(probe.script), "it reads both credentials, as the push does");
-ok(/remote="git@github\.com:\$\{DEPLOYED_REPO\}\.git"/.test(probe.script), "the key path is given as a URL, so it does not depend on which checkout ran");
+// The step is a call into `scripts/verify-push-credential.sh`, shared with the daily
+// credential check, so the shape assertions belong to the script — the ones below run it.
+const probeScript = fs.readFileSync(path.join(root, "scripts", "verify-push-credential.sh"), "utf8");
+ok(/bash scripts\/verify-push-credential\.sh streamlit-app/.test(probe.script), "the step runs the shared script against the staging clone");
+ok(/push --dry-run/.test(probeScript), "the probe asks the server to authorise the push and sends nothing");
+ok(/GIT_TERMINAL_PROMPT=0/.test(probeScript), "and cannot hang on a credential prompt with nothing to type into it");
+ok(/refs\/heads\/preflight-credential-check/.test(probeScript), "a scratch ref is the destination, so the answer is about the credential rather than the state of main");
+ok(/STREAMLIT_DEPLOY_KEY/.test(probeScript) && /STREAMLIT_PUSH_TOKEN/.test(probeScript), "it reads both credentials, as the push does");
+ok(/remote="git@github\.com:\$\{DEPLOYED_REPO\}\.git"/.test(probeScript), "the key path is given as a URL, so it does not depend on which checkout ran");
 // The credential goes in a file (`GIT_SSH_COMMAND`) or a header, never in the remote: a
 // failed push prints its arguments, which is how a credential reaches a log.
-ok(!/github\.com\/[^"\s]*\$\{?(STREAMLIT|key)/.test(probe.script), "and no credential is interpolated into that URL");
-ok(/IdentitiesOnly=yes/.test(probe.script) && /BatchMode=yes/.test(probe.script), "with the key file named and no agent or prompt able to answer for it");
-ok(probe.script.includes("${auth[@]+\"${auth[@]}\"}"), "and an empty-safe array expansion, because the key path passes no `-c` at all");
+ok(!/github\.com\/[^"\s]*\$\{?(STREAMLIT|key)/.test(probeScript), "and no credential is interpolated into that URL");
+ok(/IdentitiesOnly=yes/.test(probeScript) && /BatchMode=yes/.test(probeScript), "with the key file named and no agent or prompt able to answer for it");
+ok(probeScript.includes("${auth[@]+\"${auth[@]}\"}"), "and an empty-safe array expansion, because the key path passes no `-c` at all");
 
 /* --- the reader that finds these steps ----------------------------------- */
 
@@ -131,6 +135,14 @@ function fixture({ shallow = false } = {}) {
   const staged = path.join(dir, "streamlit-app");
   if (shallow) mustGit(["clone", "--quiet", "--depth", "1", "file://" + bare, staged], dir);
   else mustGit(["clone", "--quiet", bare, staged], dir);
+  // The step calls the shared script, so the fixture provides it where the step's own
+  // working directory expects: the copy is of the real file, not a stand-in, because what
+  // runs here is the shell a runner would run and the script a runner would fetch.
+  fs.mkdirSync(path.join(dir, "scripts"), { recursive: true });
+  fs.copyFileSync(
+    path.join(root, "scripts", "verify-push-credential.sh"),
+    path.join(dir, "scripts", "verify-push-credential.sh"),
+  );
   const gitconfig = path.join(dir, "preflight-gitconfig");
   fs.writeFileSync(
     gitconfig,

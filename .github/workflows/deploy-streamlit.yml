@@ -158,46 +158,12 @@ jobs:
             echo "No push credential is configured, so there is nothing to prove."
             exit 0
           fi
-          # Chosen exactly as the push step chooses it, so the credential proved here is
-          # the one that will publish.
-          auth=()
-          if [ -n "$STREAMLIT_DEPLOY_KEY" ]; then
-            key="${RUNNER_TEMP:-/tmp}/streamlit_preflight_key"
-            printf '%s\n' "$STREAMLIT_DEPLOY_KEY" > "$key"
-            chmod 600 "$key"
-            export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
-            remote="git@github.com:${DEPLOYED_REPO}.git"
-            echo "Proving the deploy key can push to ${DEPLOYED_REPO}."
-          else
-            auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$STREAMLIT_PUSH_TOKEN" | base64 -w0)")
-            remote="https://github.com/${DEPLOYED_REPO}.git"
-            echo "Proving STREAMLIT_PUSH_TOKEN can push to ${DEPLOYED_REPO}."
-          fi
-          # Fails rather than waits: a credential prompt on a runner is a hang, and the
-          # thing being tested is absent.
-          export GIT_TERMINAL_PROMPT=0
-          set +e
-          output="$(git -C streamlit-app ${auth[@]+"${auth[@]}"} push --dry-run "$remote" HEAD:refs/heads/preflight-credential-check 2>&1)"
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo "The credential can push to ${DEPLOYED_REPO}: the server authorised a dry-run push and received nothing."
-            exit 0
-          fi
-          echo "$output"
-          reason="was refused by the server"
-          # Order matters: a key ssh cannot parse also fails the handshake, so the refusal
-          # that follows says "Permission denied (publickey)" and would be reported as a
-          # revoked key. The unreadable key is the cause and is asked for first.
-          case "$output" in
-            *"read only"*) reason="is marked read-only on that repository, so it can read the deployed copy and never update it" ;;
-            *"invalid format"*|*"error in libcrypto"*|*"Load key"*) reason="is not a usable private key, so the secret's value looks pasted incompletely" ;;
-            *"Permission denied (publickey)"*) reason="is not accepted for that repository: it was deleted or revoked, or it belongs to another repository" ;;
-            *"Repository not found"*) reason="is accepted but is not authorised for that repository" ;;
-            *"Invalid username or password"*|*"Authentication failed"*|*"403"*) reason="was rejected: the token is expired, revoked, or lacks Contents read/write on that repository" ;;
-          esac
-          echo "::error::The push credential ${reason}. This release would have built and verified the pair and then failed at the push, so it stopped here instead: nothing has been built or published. Fix the credential and re-run — a read/write deploy key on ${DEPLOYED_REPO} as the STREAMLIT_DEPLOY_KEY secret (gh repo deploy-key add <key>.pub -R ${DEPLOYED_REPO} --allow-write, then gh secret set STREAMLIT_DEPLOY_KEY), or a PAT with Contents read/write on it as STREAMLIT_PUSH_TOKEN."
-          exit 1
+          # One implementation, shared with the daily check in `streamlit-credential.yml`,
+          # so the two cannot disagree about what a refusal means. The script writes the
+          # key to a file or wraps the token in a header, pushes a scratch ref with
+          # `--dry-run` (the server authorises it and receives nothing), and reports the
+          # cause and the fix without the credential.
+          bash scripts/verify-push-credential.sh streamlit-app
 
       # A missing version file would otherwise surface as setup-python's own
       # "no file found", which does not say what to add or where. The deployed

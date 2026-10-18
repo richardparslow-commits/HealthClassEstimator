@@ -91,6 +91,14 @@ jobs:
       # suite answers them the way the server does and records the argv it was handed.
       - name: Verify the release proves its credential before it builds
         run: npm run test:preflight
+      # The release refuses in seconds, which only helps a release. A key revoked between
+      # releases is invisible until one needs it, so a daily workflow asks the same script
+      # the same question and files an issue while the answer is no. This executes the
+      # check against a real remote and the alert step against a stubbed `gh` — the issue
+      # is the only thing anybody sees, and "it is opened" has to be something this
+      # repository has watched happen.
+      - name: Verify the credential check and the issue it files
+        run: npm run test:credential
       # The gates and the push are run above; this runs what the run then *says*. The
       # read-back invocation (which commit it expects, from which remote, and whether a
       # failure stops the step), the token gates, and the run summary are what a person
