@@ -211,7 +211,7 @@ const deploy = fs.readFileSync(path.join(root, ".github", "workflows", "deploy-s
 const gateAt = deploy.indexOf("Refuse to publish an artifact the tests did not judge");
 const pushAt = deploy.indexOf("Commit and push (triggers Streamlit Cloud redeploy)");
 const readBackAt = deploy.indexOf("Read back what the deployed repository now holds");
-const tokenGateAt = deploy.indexOf("Fail when the deploy token is not configured (main)");
+const tokenGateAt = deploy.indexOf("Fail when no push credential is configured (main)");
 
 ok(gateAt > 0, "the workflow compares the pair it ships with the build the tests judged");
 ok(
@@ -224,7 +224,7 @@ ok(deploy.includes("scripts/verify-published-pair.sh"), "the read-back is the fi
 ok(/--expect "\$\(git -C streamlit-app rev-parse HEAD\)"/.test(deploy), "the read-back requires origin to be the commit this run pushed");
 ok(/--commit-out published-commit\.txt/.test(deploy), "and records that commit for the summary");
 ok(/python3 scripts\/verify-streamlit-runtime\.py published/.test(deploy), "the deployed commit is run through the same pair verifier as the staged copy");
-ok(readBackAt < tokenGateAt, "the token gate stays last, so its message is what a tokenless run ends on");
+ok(readBackAt < tokenGateAt, "the credential gate stays last, so its message is what a run with no credential ends on");
 const readBackStep = deploy.slice(readBackAt, deploy.indexOf("- name:", readBackAt + 10));
 ok(/Deployed commit: .+\$\{PUBLISHED_SHA\}/.test(deploy), "the run summary names the commit that is live");
 ok(
@@ -244,16 +244,16 @@ ok(
   "the input is mapped to an env var, since the inputs context cannot be read in if: — and a scheduled run decides it too, which is what makes the daily read-back verify-only",
 );
 ok(
-  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN != '' \|\| env\.VERIFY_PUBLISHED == 'true' \}\}/.test(readBackStep),
-  "the read-back runs for a verify-only dispatch as well as for a push"
+  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN != '' \|\| env\.STREAMLIT_DEPLOY_KEY != '' \|\| env\.VERIFY_PUBLISHED == 'true' \}\}/.test(readBackStep),
+  "the read-back runs for a push with either credential, and for a verify-only dispatch"
 );
 ok(
-  /expect=\(\)[\s\S]*if \[ -n "\$STREAMLIT_PUSH_TOKEN" \] && \[ "\$VERIFY_PUBLISHED" != "true" \]; then[\s\S]*expect=\(--expect "\$\(git -C streamlit-app rev-parse HEAD\)"\)/.test(readBackStep),
-  "but only a push run requires origin to be the commit it pushed: a verify-only run judges whatever main is, token or no token"
+  /expect=\(\)[\s\S]*if \[ "\$VERIFY_PUBLISHED" != "true" \] && \{ \[ -n "\$STREAMLIT_PUSH_TOKEN" \] \|\| \[ -n "\$STREAMLIT_DEPLOY_KEY" \]; \}; then[\s\S]*expect=\(--expect "\$\(git -C streamlit-app rev-parse HEAD\)"\)/.test(readBackStep),
+  "but only a push run requires origin to be the commit it pushed: a verify-only run judges whatever main is, credential or none"
 );
 ok(
-  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN == '' && env\.VERIFY_PUBLISHED != 'true' && github\.ref == 'refs\/heads\/main' \}\}/.test(deploy),
-  "a verify-only run is not failed by the token gate it deliberately has no token for"
+  /if: \$\{\{ env\.STREAMLIT_PUSH_TOKEN == '' && env\.STREAMLIT_DEPLOY_KEY == '' && env\.VERIFY_PUBLISHED != 'true' && github\.ref == 'refs\/heads\/main' \}\}/.test(deploy),
+  "a verify-only run is not failed by the credential gate it deliberately has no credential for"
 );
 ok(/### Verified, not published/.test(deploy), "and its summary says it verified rather than published");
 ok(

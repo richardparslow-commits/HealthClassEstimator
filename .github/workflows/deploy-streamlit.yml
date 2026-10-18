@@ -27,16 +27,26 @@ name: Deploy Streamlit app
 # origin's main back and is red until the pair there is the pair this build makes.
 # It never pushes, so it cannot deploy a second time.
 #
-# Required setup: create a personal access token with "Contents: read/write"
-# scope on richardparslow-commits/health_app.py and add it to this repo's
-# secrets as STREAMLIT_PUSH_TOKEN. The token is only needed to push: staging the
-# deployed repository and verifying the pair happen on every run, so the steps
-# that decide whether a pair may ship are exercised whether or not it is set.
-# On main, a run without the secret still fails at the token gate, so a release
-# can never look published when it is not.
+# Required setup: a credential that may push to richardparslow-commits/health_app.py,
+# as either of two secrets. The one this repository now has is a read/write **deploy
+# key** on that repository, stored here as STREAMLIT_DEPLOY_KEY — a keypair scoped to
+# that one public repository and revocable with `gh repo deploy-key delete`. A personal
+# access token with "Contents: read/write" on it (STREAMLIT_PUSH_TOKEN) also works, and
+# is used when no deploy key is configured. A credential is only needed to push:
+# staging the deployed repository and verifying the pair happen on every run, so the
+# steps that decide whether a pair may ship are exercised whether or not one is set. On
+# main, a run with neither fails at the credential gate, so a release can never look
+# published when it is not.
 #
-# NB: the `secrets` context cannot be read inside `if:` expressions, so the
-# token is mapped to a job-level `env` var and the steps test `env.X` instead.
+# Why a deploy key and not the token that was asked for: the token never existed, so on
+# main every release run failed its own gate and the deployed copy could only be updated
+# by hand — which is how the app came to serve release 80 for a day while this
+# repository was at 82 (issue #7). A credential this repository can be given, reaching
+# exactly one public repository, is worth more than a broader one that has to exist
+# before anything can ship.
+#
+# NB: the `secrets` context cannot be read inside `if:` expressions, so each credential
+# is mapped to a job-level `env` var and the steps test `env.X` instead.
 on:
   push:
     branches: [main]
@@ -53,7 +63,7 @@ on:
       # back and judged without publishing anything — the same comparison, with
       # origin's current main as the subject instead of a commit this run pushed.
       verify_published:
-        description: "Read the deployed repository's current main back and check it is this build (pushes nothing; works without the token)"
+        description: "Read the deployed repository's current main back and check it is this build (pushes nothing; needs no credential)"
         type: boolean
         default: false
 
@@ -69,6 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       STREAMLIT_PUSH_TOKEN: ${{ secrets.STREAMLIT_PUSH_TOKEN }}
+      STREAMLIT_DEPLOY_KEY: ${{ secrets.STREAMLIT_DEPLOY_KEY }}
       # A scheduled run is the read-back on its own; a dispatch says so explicitly.
       VERIFY_PUBLISHED: ${{ github.event_name == 'schedule' || inputs.verify_published }}
     steps:
@@ -209,15 +220,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push (triggers Streamlit Cloud redeploy)
-        # `verify_published` means verify-only, whether or not the token happens to be
-        # configured: the dispatch promises that nothing is pushed, and the summary
+        # `verify_published` means verify-only, whether or not a credential happens to
+        # be configured: the dispatch promises that nothing is pushed, and the summary
         # below reports the run as verified rather than published. Gating on the token
         # alone made that promise depend on a secret the dispatcher cannot see — so a
         # verify run in a configured repository would publish, which is the opposite of
-        # what the input says and what the self-test dispatches.
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' && env.VERIFY_PUBLISHED != 'true' }}
+        # what the input says and what the self-test dispatches. A run with no
+        # credential at all has nothing to push with, and the gate below fails it.
+        if: ${{ (env.STREAMLIT_PUSH_TOKEN != '' || env.STREAMLIT_DEPLOY_KEY != '') && env.VERIFY_PUBLISHED != 'true' }}
         env:
           SOURCE_SHA: ${{ github.sha }}
+          DEPLOYED_REPO: richardparslow-commits/health_app.py
         run: |
           # The commit message is the only link from the deployed commit back to the
           # source commit, so the source has to be there: an empty one publishes "Sync
@@ -230,12 +243,36 @@ jobs:
           cd streamlit-app
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The credential is chosen here rather than left to whatever the staging
+          # checkout happened to configure, because staging is a public read: with a
+          # deploy key the remote becomes SSH and the key a file git is told to use,
+          # and with a token the push carries it in a header. Never in the remote URL:
+          # a failed push prints its arguments, and that is how a credential reaches a
+          # log.
+          auth=()
+          if [ -n "$STREAMLIT_DEPLOY_KEY" ]; then
+            key="${RUNNER_TEMP:-/tmp}/streamlit_deploy_key"
+            printf '%s\n' "$STREAMLIT_DEPLOY_KEY" > "$key"
+            chmod 600 "$key"
+            git remote set-url origin "git@github.com:${DEPLOYED_REPO}.git"
+            export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+            echo "Pushing with the deploy key for ${DEPLOYED_REPO}."
+          elif [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+            auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$STREAMLIT_PUSH_TOKEN" | base64 -w0)")
+            echo "Pushing with STREAMLIT_PUSH_TOKEN."
+          fi
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to deploy - streamlit repo already current."
           else
             git commit -m "Sync from HealthClassEstimator ${SOURCE_SHA:0:7}"
-            git push
+            # `${auth[@]+"${auth[@]}"}`: an empty array under `set -u` is an unbound variable
+            # on bash 3.2 (macOS, where this repository is developed) and fine on bash 5
+            # (the runner), and a step must not behave differently on the shell that
+            # happens to run it — which is what the deploy key path would have hit, since
+            # it pushes with no arguments at all. The array comes before the subcommand
+            # because that is where `git -c` goes; the key path expands to a bare `git push`.
+            git ${auth[@]+"${auth[@]}"} push
           fi
 
       # The push is the deploy, but a push is not evidence of what it left behind:
@@ -248,7 +285,7 @@ jobs:
       # repository's own pair verifier on the copy origin holds. That is what makes
       # the run summary's "published" a claim about this build.
       - name: Read back what the deployed repository now holds
-        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' || env.VERIFY_PUBLISHED == 'true' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN != '' || env.STREAMLIT_DEPLOY_KEY != '' || env.VERIFY_PUBLISHED == 'true' }}
         env:
           DEPLOYED_REPO: richardparslow-commits/health_app.py
         run: |
@@ -260,7 +297,7 @@ jobs:
           # token) did not push, so requiring the staged clone's head would turn "origin
           # moved while this ran" into "the deployment is not this build".
           expect=()
-          if [ -n "$STREAMLIT_PUSH_TOKEN" ] && [ "$VERIFY_PUBLISHED" != "true" ]; then
+          if [ "$VERIFY_PUBLISHED" != "true" ] && { [ -n "$STREAMLIT_PUSH_TOKEN" ] || [ -n "$STREAMLIT_DEPLOY_KEY" ]; }; then
             expect=(--expect "$(git -C streamlit-app rev-parse HEAD)")
           fi
           scripts/verify-published-pair.sh \
@@ -281,19 +318,19 @@ jobs:
       # A green run must never imply a deploy that did not happen. Before this
       # gate existed the workflow warned and exited 0 without pushing, so a
       # release could look shipped while Streamlit still served the old build.
-      - name: Fail when the deploy token is not configured (main)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.VERIFY_PUBLISHED != 'true' && github.ref == 'refs/heads/main' }}
+      - name: Fail when no push credential is configured (main)
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.STREAMLIT_DEPLOY_KEY == '' && env.VERIFY_PUBLISHED != 'true' && github.ref == 'refs/heads/main' }}
         run: |
-          echo "::error::STREAMLIT_PUSH_TOKEN is not set, so richardparslow-commits/health_app.py was NOT updated and this release is not live. Create a PAT with Contents read/write on that repository, add it as the STREAMLIT_PUSH_TOKEN secret, then re-run this workflow."
+          echo "::error::No push credential is configured, so richardparslow-commits/health_app.py was NOT updated and this release is not live. Add a read/write deploy key on that repository as the STREAMLIT_DEPLOY_KEY secret (gh repo deploy-key add … --allow-write, then gh secret set STREAMLIT_DEPLOY_KEY), or a PAT with Contents read/write on it as STREAMLIT_PUSH_TOKEN; then re-run this workflow."
           exit 1
 
       - name: Explain the skipped push on a non-main ref
         # A verify-only dispatch is not a skipped push — it asked for none, and the
         # summary already says "Verified, not published". Without this clause the
         # warning blames the ref for a decision the dispatcher made.
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.VERIFY_PUBLISHED != 'true' && github.ref != 'refs/heads/main' }}
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.STREAMLIT_DEPLOY_KEY == '' && env.VERIFY_PUBLISHED != 'true' && github.ref != 'refs/heads/main' }}
         run: |
-          echo "::warning::STREAMLIT_PUSH_TOKEN is not set. The engine suite ran and the single-file HTML was built, but nothing was pushed. Only runs on main are required to deploy; this run is on ${{ github.ref }}."
+          echo "::warning::No push credential is configured (neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN). The engine suite ran and the single-file HTML was built, but nothing was pushed. Only runs on main are required to deploy; this run is on ${{ github.ref }}."
 
       - name: Summarise what this run published
         if: ${{ always() }}
@@ -339,7 +376,7 @@ jobs:
               echo
               quote_output
             } >> "$GITHUB_STEP_SUMMARY"
-          elif [ -n "$STREAMLIT_PUSH_TOKEN" ]; then
+          elif [ -n "$STREAMLIT_PUSH_TOKEN" ] || [ -n "$STREAMLIT_DEPLOY_KEY" ]; then
             {
               # "Published" is the word a reader scans for, so it needs both halves: a
               # commit that came back, and a read-back that finished. The commit file is
@@ -361,5 +398,5 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
-            echo "No deploy token was configured, so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
+            echo "No push credential was configured — neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN — so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
           fi

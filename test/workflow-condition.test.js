@@ -12,8 +12,9 @@
    these workflows use. This file holds it to GitHub's documented semantics (strings
    compare case-insensitively, a non-empty string is truthy even when it is "false", null
    compares equal to '' and false, mixed types compare as numbers) and then puts the real
-   conditions of `deploy-streamlit.yml` through every run shape: token or no token, main
-   or another ref, push or verify-only dispatch. A mistyped gate now fails here.
+  conditions of `deploy-streamlit.yml` through every run shape: a deploy key, a token, or
+  neither, on main or another ref, as a push or a verify-only dispatch. A mistyped gate
+  now fails here.
 
    It also parses every `if:` in every workflow in the repository *and requires a run
    shape to evaluate it*: a gate that only parses is a gate nobody decided, and a typo in
@@ -140,15 +141,20 @@ throws(() => render("${{ mystery() }}"), /unknown function/, "an unknown functio
 /* --- the real conditions, in every run shape ------------------------------ */
 
 const readback = readStep(workflow, "deploy", "Read back what the deployed repository now holds");
-const gate = readStep(workflow, "deploy", "Fail when the deploy token is not configured (main)");
+const gate = readStep(workflow, "deploy", "Fail when no push credential is configured (main)");
 const warning = readStep(workflow, "deploy", "Explain the skipped push on a non-main ref");
 const summary = readStep(workflow, "deploy", "Summarise what this run published");
 const push = readStep(workflow, "deploy", "Commit and push (triggers Streamlit Cloud redeploy)");
 
-// The job maps the token from a secret and the dispatch input to env, so a step sees them
-// as strings: '' when the secret is absent, 'true'/'false' for the boolean input.
-function context({ token = "", verify = "false", ref = "refs/heads/main" } = {}) {
-  return { env: { STREAMLIT_PUSH_TOKEN: token, VERIFY_PUBLISHED: verify }, github: { ref } };
+// The job maps both credentials from secrets and the dispatch input to env, so a step sees
+// them as strings: '' when the secret is absent, 'true'/'false' for the boolean input.
+// There are two credentials because the one this repository has is a deploy key on the
+// deployed repository; a token also works, and either is enough to push.
+function context({ token = "", key = "", verify = "false", ref = "refs/heads/main" } = {}) {
+  return {
+    env: { STREAMLIT_PUSH_TOKEN: token, STREAMLIT_DEPLOY_KEY: key, VERIFY_PUBLISHED: verify },
+    github: { ref },
+  };
 }
 
 const shapes = [
@@ -170,18 +176,37 @@ const shapes = [
     runs: { readback: true, gate: false, warning: false, summary: true, push: false },
   },
   {
-    name: "a push on main without the token",
+    name: "a push on main with the deploy key",
+    context: context({ key: "KEY" }),
+    runs: { readback: true, gate: false, warning: false, summary: true, push: true },
+  },
+  {
+    // The push is a publish in both credential shapes; the key only changes how it
+    // authenticates, never whether a verify-only dispatch may publish.
+    name: "a verify-only dispatch on main with a deploy key configured",
+    context: context({ key: "KEY", verify: "true" }),
+    runs: { readback: true, gate: false, warning: false, summary: true, push: false },
+  },
+  {
+    // No credential at all: the one shape that may not push, and may not let the read-back
+    // stand for a push either.
+    name: "a push on main without any credential",
     context: context({}),
     runs: { readback: false, gate: true, warning: false, summary: true, push: false },
   },
   {
-    name: "a push on another ref without the token",
+    name: "a push on another ref with the deploy key",
+    context: context({ key: "KEY", ref: "refs/heads/feature" }),
+    runs: { readback: true, gate: false, warning: false, summary: true, push: true },
+  },
+  {
+    name: "a push on another ref without any credential",
     context: context({ ref: "refs/heads/feature" }),
     runs: { readback: false, gate: false, warning: true, summary: true, push: false },
   },
   {
-    // The warning explains a push that was skipped for want of a token, not one nobody
-    // asked for: a verify-only dispatch carries no token on any ref, and the summary
+    // The warning explains a push that was skipped for want of a credential, not one
+    // nobody asked for: a verify-only dispatch carries none on any ref, and the summary
     // already says "Verified, not published". It is the non-main half of the gate
     // above, so it has the gate's dispatch clause.
     name: "a verify-only dispatch on another ref",
@@ -192,6 +217,11 @@ const shapes = [
     // `inputs.verify_published` is a boolean input defaulting to false, so an unmapped
     // value is the string "false" here; '' must behave the same way.
     name: "a push on main where the input is unset",
+    context: context({ verify: "", key: "KEY" }),
+    runs: { readback: true, gate: false, warning: false, summary: true, push: true },
+  },
+  {
+    name: "a push on main where the input is unset and no credential is configured",
     context: context({ verify: "" }),
     runs: { readback: false, gate: true, warning: false, summary: true, push: false },
   },
@@ -216,10 +246,22 @@ function mutant(step, from, to) {
   if (!step.condition.includes(from)) throw new Error("mutation matched nothing: " + from);
   return { ...step, condition: step.condition.replace(from, to) };
 }
+// The read-back's own dispatch clause, not the first `||` in it: with two credentials
+// before it, flipping the first operator leaves `verify == 'true'` deciding the result
+// and the mutant would read as correct. The clause that lets a verify-only run read the
+// deployment is the one this mutates.
 equal(
-  runs(mutant(readback, "||", "&&"), context({ verify: "true" })),
+  runs(
+    mutant(readback, "|| env.VERIFY_PUBLISHED == 'true'", "&& env.VERIFY_PUBLISHED == 'true'"),
+    context({ verify: "true" }),
+  ),
   false,
-  "a verify dispatch stops running the read-back when || becomes &&",
+  "a verify dispatch stops running the read-back when its own clause becomes &&",
+);
+equal(
+  runs(mutant(readback, "||", "&&"), context({ token: "token", verify: "true" })),
+  true,
+  "and a run that has a token reads the deployment whatever the operator: the credential is what it reads with",
 );
 equal(
   runs(mutant(gate, "env.VERIFY_PUBLISHED != 'true'", "env.VERIFY_PUBLISHED == 'true'"), context({ verify: "true" })),

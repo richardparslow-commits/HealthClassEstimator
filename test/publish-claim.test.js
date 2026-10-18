@@ -48,7 +48,7 @@ function equal(actual, expected, label) {
 
 const readback = readStep(workflow, "deploy", "Read back what the deployed repository now holds");
 const sync = readStep(workflow, "deploy", "Sync the artifact and its manifest into streamlit repo");
-const gate = readStep(workflow, "deploy", "Fail when the deploy token is not configured (main)");
+const gate = readStep(workflow, "deploy", "Fail when no push credential is configured (main)");
 const warning = readStep(workflow, "deploy", "Explain the skipped push on a non-main ref");
 const push = readStep(workflow, "deploy", "Commit and push (triggers Streamlit Cloud redeploy)");
 const summary = readStep(workflow, "deploy", "Summarise what this run published");
@@ -171,6 +171,10 @@ function run(step, fixture_, extraEnv = {}, context = {}) {
     GIT_COMMITTER_EMAIL: "harness@example.invalid",
     STUB_PYTHON_LOG: fixture_.log,
     DEPLOYED_REPO: deployedRepo,
+    // The job maps both credentials from secrets, so a step always sees a string — '' when
+    // the secret is absent. A case that wants "no credential at all" deletes them.
+    STREAMLIT_PUSH_TOKEN: "",
+    STREAMLIT_DEPLOY_KEY: "",
     ...extraEnv,
   };
   for (const [name, value] of Object.entries(extraEnv)) if (value === undefined) delete env[name];
@@ -211,25 +215,32 @@ function pythonCalls(fixture_) {
 // passes a condition that names a variable the job never sets, puts `&&` where `||` was
 // meant, or negates the wrong half. The evaluator's own semantics are held to GitHub's
 // documentation in `test/workflow-condition.test.js`.
-function wouldRun(step, { token = "", verify = "false", ref = "refs/heads/main" } = {}, state = {}) {
+function wouldRun(step, { token = "", key = "", verify = "false", ref = "refs/heads/main" } = {}, state = {}) {
   return evaluate(
     step.condition,
-    { env: { STREAMLIT_PUSH_TOKEN: token, VERIFY_PUBLISHED: verify }, github: { ref } },
+    { env: { STREAMLIT_PUSH_TOKEN: token, STREAMLIT_DEPLOY_KEY: key, VERIFY_PUBLISHED: verify }, github: { ref } },
     state,
   );
 }
 
+// The credential this repository actually has is the deploy key, so every claim below is
+// asked in that shape as well as with a token: a condition that only recognised the token
+// would leave the release unable to push while its gates read as satisfied.
 ok(wouldRun(readback, { token: "token" }), "the read-back runs on a push with the token");
+ok(wouldRun(readback, { key: "KEY" }), "and on a push with the deploy key");
 ok(wouldRun(readback, { verify: "true" }), "and on a verify-only dispatch, which pushes nothing");
-ok(!wouldRun(readback, {}), "but not on a tokenless push, where origin holds nothing this run built");
+ok(!wouldRun(readback, {}), "but not on a push with no credential, where origin holds nothing this run built");
 
-ok(wouldRun(gate, {}), "a tokenless push on main fails the gate: the run is not live");
+ok(wouldRun(gate, {}), "a push on main with no credential fails the gate: the run is not live");
+ok(!wouldRun(gate, { token: "token" }), "a token push passes it");
+ok(!wouldRun(gate, { key: "KEY" }), "and so does a push with the deploy key — the credential the release runs on");
 ok(!wouldRun(gate, { verify: "true" }), "a verify-only dispatch passes it, because no push was asked for");
 ok(!wouldRun(gate, { ref: "refs/heads/feature" }), "and a non-main ref is warned about instead of failed");
 
-ok(wouldRun(warning, { ref: "refs/heads/feature" }), "a tokenless push on another ref is explained");
+ok(wouldRun(warning, { ref: "refs/heads/feature" }), "a push on another ref with no credential is explained");
 ok(!wouldRun(warning, { token: "token", ref: "refs/heads/feature" }), "a push that had a token is not warned about");
-ok(!wouldRun(warning, {}), "nor is a tokenless main push, which fails rather than warns");
+ok(!wouldRun(warning, { key: "KEY", ref: "refs/heads/feature" }), "nor one that had the deploy key");
+ok(!wouldRun(warning, {}), "nor is a main push with no credential, which fails rather than warns");
 ok(
   !wouldRun(warning, { verify: "true", ref: "refs/heads/feature" }),
   "and neither is a verify-only dispatch: it asked for no push, and the summary says so",
@@ -239,8 +250,10 @@ ok(
 // it does not run. A token in the repository must not turn a verification into a
 // publish: the self-test dispatches this shape and asserts the step was skipped.
 ok(wouldRun(push, { token: "token" }), "a token push publishes");
-ok(!wouldRun(push, {}), "a tokenless run publishes nothing");
+ok(wouldRun(push, { key: "KEY" }), "and a push with the deploy key");
+ok(!wouldRun(push, {}), "a run with no credential publishes nothing");
 ok(!wouldRun(push, { token: "token", verify: "true" }), "and neither does a verify-only dispatch that has a token");
+ok(!wouldRun(push, { key: "KEY", verify: "true" }), "nor one that has the deploy key: the dispatch asked for verification");
 
 ok(wouldRun(summary, {}, { success: false }), "the summary is written even when a step above failed");
 ok("DEPLOYED_REPO" in readback.env, "the read-back's remote is the step's own variable");
@@ -252,6 +265,7 @@ const jobEnv = workflowText.slice(workflowText.indexOf("  deploy:"));
 const event = (name, inputs = {}) => ({ github: { event_name: name, ref: "refs/heads/main" }, inputs });
 
 ok(/STREAMLIT_PUSH_TOKEN:\s*\$\{\{\s*secrets\.STREAMLIT_PUSH_TOKEN\s*\}\}/.test(jobEnv), "the token is mapped from the secret at job level");
+ok(/STREAMLIT_DEPLOY_KEY:\s*\$\{\{\s*secrets\.STREAMLIT_DEPLOY_KEY\s*\}\}/.test(jobEnv), "and so is the deploy key the release pushes with");
 
 // The job's `VERIFY_PUBLISHED` is what every condition below reads, so it is rendered in
 // the three events rather than pattern-matched: the schedule has to decide it on its own,
@@ -449,9 +463,14 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
 
 {
   const fx = fixture();
-  const main = run(gate, fx, { STREAMLIT_PUSH_TOKEN: undefined, VERIFY_PUBLISHED: undefined });
-  equal(main.status, 1, "a push to main without the token fails instead of looking shipped");
-  ok(/::error::STREAMLIT_PUSH_TOKEN is not set/.test(main.stdout), "with an error naming the missing token");
+  const main = run(gate, fx, {
+    STREAMLIT_PUSH_TOKEN: undefined,
+    STREAMLIT_DEPLOY_KEY: undefined,
+    VERIFY_PUBLISHED: undefined,
+  });
+  equal(main.status, 1, "a push to main with no credential fails instead of looking shipped");
+  ok(/::error::No push credential is configured/.test(main.stdout), "with an error that says so");
+  ok(/STREAMLIT_DEPLOY_KEY/.test(main.stdout) && /STREAMLIT_PUSH_TOKEN/.test(main.stdout), "naming both ways to give it one");
   ok(/was NOT updated and this release is not live/.test(main.stdout), "and saying the deployment was not updated");
 
   // The warning's text names the ref, which is a GitHub expression in the shell. Rendered
@@ -459,11 +478,11 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   const other = run(
     warning,
     fx,
-    { STREAMLIT_PUSH_TOKEN: undefined, VERIFY_PUBLISHED: undefined },
+    { STREAMLIT_PUSH_TOKEN: undefined, STREAMLIT_DEPLOY_KEY: undefined, VERIFY_PUBLISHED: undefined },
     { github: { ref: "refs/heads/feature" } },
   );
-  equal(other.status, 0, "a non-main run without the token does not fail the branch: " + other.stderr);
-  ok(/::warning::STREAMLIT_PUSH_TOKEN is not set/.test(other.stdout), "but warns that nothing was pushed");
+  equal(other.status, 0, "a non-main run with no credential does not fail the branch: " + other.stderr);
+  ok(/::warning::No push credential is configured/.test(other.stdout), "but warns that nothing was pushed");
   ok(/this run is on refs\/heads\/feature/.test(other.stdout), "naming the ref it is about: " + other.stdout.trim());
   fs.rmSync(fx.dir, { recursive: true, force: true });
 }
@@ -494,6 +513,29 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     ok(text.includes("Deployed commit: `" + sha + "`"), "naming the commit that was read back");
     ok(/compared byte for byte/.test(text), "and what that claim rests on");
     ok(text.includes("PASS — the pair origin holds is the build this repository produced."), "with the read-back's own verdict quoted");
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
+
+  // The same claim in the shape the release actually runs in: a push authenticated by the
+  // deploy key, with no token anywhere. The summary branches on a credential existing, so
+  // a credential it does not recognise would report a real publish as "Not published".
+  {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.dir, "published-commit.txt"), sha + "\n");
+    fs.writeFileSync(path.join(fx.dir, "published.txt"), log);
+    fs.writeFileSync(path.join(fx.dir, "published-ok.txt"), "the read-back verified origin at 2026-10-18T12:00:00Z\n");
+    const out = path.join(fx.dir, "summary.md");
+    const runSummary = run(summary, fx, {
+      STREAMLIT_PUSH_TOKEN: undefined,
+      STREAMLIT_DEPLOY_KEY: "KEY",
+      SOURCE_SHA: "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+      GITHUB_STEP_SUMMARY: out,
+    });
+    equal(runSummary.status, 0, "the summary step succeeds with only the deploy key configured");
+    const text = fs.readFileSync(out, "utf8");
+    ok(/### Published/.test(text), "a push with the deploy key is reported as published: " + text.slice(0, 160));
+    ok(text.includes("Deployed commit: `" + sha + "`"), "naming the commit that was read back");
+    ok(!/No push credential was configured/.test(text), "and not as a run that had nothing to push with");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 
@@ -563,7 +605,7 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     ok(text.includes("Deployed commit: `" + sha + "`"), "naming the deployed commit it read back, so the reader does not open the log to learn which build was judged (" + where + "): " + text.slice(0, 240));
     ok(/nothing was pushed/.test(text), "explaining why there is no deployed commit (" + where + "): " + text.slice(0, 160));
     ok(!/### Published/.test(text), "and does not claim a publish (" + where + ")");
-    ok(!/No deploy token was configured/.test(text), "nor blames a missing token for a decision the dispatch made (" + where + ")");
+    ok(!/No push credential was configured/.test(text), "nor blames a missing credential for a decision the dispatch made (" + where + ")");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 
@@ -630,7 +672,7 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     });
     const text = fs.readFileSync(out, "utf8");
     ok(/### Not published/.test(text), "it says nothing was published");
-    ok(/No deploy token was configured, so nothing was pushed/.test(text), "and why");
+    ok(/No push credential was configured/.test(text), "and why");
     ok(/Sync from HealthClassEstimator 37d743e/.test(text), "and what the deployed commit should be called: " + text.slice(-120));
     ok(!/### Published/.test(text), "without claiming a publish it did not make");
     fs.rmSync(fx.dir, { recursive: true, force: true });

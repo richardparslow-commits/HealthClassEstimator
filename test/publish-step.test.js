@@ -123,6 +123,15 @@ equal(
 ok(gate.script.includes("cmp -s app_embedded.html dist/app.html"), "the gate compares the pair that ships with the build that was judged");  ok(push.script.includes("set -euo pipefail"), "the push step fails on an unset variable: an unnamed source commit cannot be published");
   ok(/: "\$\{SOURCE_SHA:\?/.test(push.script), "and states that requirement rather than leaving it to the shell (bash 3.2 does not fail on ${VAR:0:7}, bash 5 does)");
 ok(push.script.includes("git diff --cached --quiet"), "and it knows the run where nothing changed");
+// The credential the release actually has is a read/write deploy key on the deployed
+// repository, so the step selects the remote and the key from it, and keeps a token path
+// for a repository that has one. Neither goes in a URL: a failed push prints its
+// arguments, which is how a credential reaches a log.
+ok(/STREAMLIT_DEPLOY_KEY/.test(push.script) && /STREAMLIT_PUSH_TOKEN/.test(push.script), "the push step reads both credentials");
+ok(/git remote set-url origin "git@github\.com:\$\{DEPLOYED_REPO\}\.git"/.test(push.script), "the key path pushes over SSH to the deployed repository");
+ok(/export GIT_SSH_COMMAND="ssh -i \$key -o IdentitiesOnly=yes/.test(push.script), "with the key in a file git is pointed at, never in the remote URL");
+ok(/http\.https:\/\/github\.com\/.extraheader=AUTHORIZATION/.test(push.script), "and the token path carries the token in a header rather than in a URL");
+ok(/git \$\{auth\[@\]\+"\$\{auth\[@\]\}"\} push/.test(push.script), "the push is an empty-safe array expansion before the subcommand — where `git -c` goes — because bash 3.2 fails on an empty array under `set -u` where bash 5 does not, and the key path pushes with no arguments at all");
 
 /* --- the gate -------------------------------------------------------------- */
 
@@ -184,7 +193,13 @@ ok(push.script.includes("git diff --cached --quiet"), "and it knows the run wher
   equal(runStep(sync, { cwd: dir }).status, 0, "the sync step stages the pair");
 
   const sourceSha = "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091";
-  const first = runStep(push, { cwd: dir, env: { SOURCE_SHA: sourceSha } });
+  // The job maps both credentials to env, so the step's own shell always sees a string:
+  // '' when the secret is absent. A harness that left one unset would fail a step that
+  // works in Actions, which is why they are supplied here rather than tolerated by `${X:-}`.
+  const first = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: sourceSha, STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
   equal(first.status, 0, "the push step succeeds: " + first.stderr);
   const after = headOf(bare);
   ok(after !== before, "and moves the deployed branch");
@@ -195,7 +210,10 @@ ok(push.script.includes("git diff --cached --quiet"), "and it knows the run wher
 
   // The six-hourly/nightly shape: the same sources again. A push with no changes must be
   // a no-op, not an empty commit that makes every run look like a release.
-  const second = runStep(push, { cwd: dir, env: { SOURCE_SHA: sourceSha } });
+  const second = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: sourceSha, STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
   equal(second.status, 0, "a second run with nothing to publish succeeds");
   ok(/No changes to deploy/.test(second.stdout), "and says so instead of committing: " + second.stdout.trim());
   equal(headOf(bare), after, "leaving the deployed head where it was");
@@ -204,10 +222,65 @@ ok(push.script.includes("git diff --cached --quiet"), "and it knows the run wher
   // commit, the message would be "Sync from HealthClassEstimator " — a deployed commit
   // with nothing linking it back to the sources. `set -u` makes that fail instead.
   fs.appendFileSync(path.join(dir, "streamlit-app", "README.md"), "\nchanged\n");
-  const unattributable = runStep(push, { cwd: dir, env: { SOURCE_SHA: undefined } });
+  const unattributable = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: undefined, STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
   ok(unattributable.status !== 0, "a change with no source commit fails the step rather than publishing a nameless sync: " + unattributable.stdout);
   ok(/the source commit is missing/.test(unattributable.stderr), "saying what is missing: " + unattributable.stderr.trim());
   equal(headOf(bare), after, "and nothing is pushed");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/* --- the push with the deploy key the release actually has ---------------- */
+
+// The release asked for a personal access token, which was never created, so on main every
+// run failed at its own gate and the deployed copy could only be updated by hand — which is
+// how the app came to serve release 80 for a day while this repository was at 82 (issue
+// #7). The credential it has now is a read/write deploy key on the deployed repository, so
+// the push step selects an SSH remote and the key file. This executes that path against a
+// local bare repository: git's own `url.<path>.insteadOf` rewrites the SSH URL to it, so
+// nothing reaches the network and the bytes that land are the pair built here.
+{
+  const { dir, bare } = freshWorkdir(BUILD);
+  const before = headOf(bare);
+  equal(runStep(sync, { cwd: dir }).status, 0, "the sync step stages the pair for the key push");
+
+  const sourceSha = "9228814fa1b2c3d4e5f60718293a4b5c6d7e8f9";
+  const gitconfig = path.join(dir, "key-gitconfig");
+  fs.writeFileSync(
+    gitconfig,
+    '[url "file://' + bare + '"]\n\tinsteadOf = git@github.com:richardparslow-commits/health_app.py.git\n',
+  );
+  const pushed = runStep(push, {
+    cwd: dir,
+    env: {
+      STREAMLIT_DEPLOY_KEY: "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n",
+      STREAMLIT_PUSH_TOKEN: "",
+      DEPLOYED_REPO: "richardparslow-commits/health_app.py",
+      SOURCE_SHA: sourceSha,
+      RUNNER_TEMP: dir,
+      GIT_CONFIG_GLOBAL: gitconfig,
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
+  });
+  equal(pushed.status, 0, "the push step succeeds with only the deploy key: " + pushed.stderr);
+  ok(/Pushing with the deploy key/.test(pushed.stdout), "and says which credential it used: " + pushed.stdout.trim());
+  ok(headOf(bare) !== before, "the deployed branch moved, which is the deploy trigger");
+  equal(
+    fileAt(bare, "app_embedded.html"),
+    fs.readFileSync(ARTIFACT, "utf8"),
+    "the published artifact is byte for byte the one built here",
+  );
+  equal(
+    git(["log", "-1", "--format=%s", "main"], bare).stdout.trim(),
+    "Sync from HealthClassEstimator 9228814",
+    "under a commit naming the source commit it came from",
+  );
+  ok(
+    !pushed.stdout.includes("not-a-real-key") && !pushed.stderr.includes("not-a-real-key"),
+    "and the key itself never reaches the log",
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
