@@ -27,6 +27,7 @@
     "test:deployed-alert": "node test/deployed-app-alert.test.js",
     "test:alert-step": "node test/alert-step.test.js",
     "test:publish-step": "node test/publish-step.test.js",
+    "test:preflight": "node test/publish-preflight.test.js",
     "test:publish-claim": "node test/publish-claim.test.js",
     "test:condition": "node test/workflow-condition.test.js",
     "test:self-test": "node test/ci-self-test.test.js",

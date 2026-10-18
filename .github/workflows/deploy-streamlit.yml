@@ -36,7 +36,9 @@ name: Deploy Streamlit app
 # staging the deployed repository and verifying the pair happen on every run, so the
 # steps that decide whether a pair may ship are exercised whether or not one is set. On
 # main, a run with neither fails at the credential gate, so a release can never look
-# published when it is not.
+# published when it is not — and both that gate and the proof that the credential actually
+# works run before anything is built, so a repository whose release cannot publish says so
+# in seconds instead of spending the run on a pair nobody receives.
 #
 # Why a deploy key and not the token that was asked for: the token never existed, so on
 # main every release run failed its own gate and the deployed copy could only be updated
@@ -112,6 +114,90 @@ jobs:
           repository: richardparslow-commits/health_app.py
           token: ${{ env.STREAMLIT_PUSH_TOKEN }}
           path: streamlit-app
+
+      # A green run must never imply a deploy that did not happen. Before this
+      # gate existed the workflow warned and exited 0 without pushing, so a
+      # release could look shipped while Streamlit still served the old build.
+      # It sits here, before anything is built, because a release that cannot
+      # publish used to discover that last: on 2026-10-18 every run on main built
+      # the pair, put it through Streamlit's runtime and staged it, and only the
+      # final step said the deployment was not live — a green-looking run that had
+      # done everything except deploy, while the app served the build before it
+      # (issue #7). The run that could not publish now stops in seconds.
+      - name: Fail when no push credential is configured (main)
+        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.STREAMLIT_DEPLOY_KEY == '' && env.VERIFY_PUBLISHED != 'true' && github.ref == 'refs/heads/main' }}
+        run: |
+          echo "::error::No push credential is configured, so richardparslow-commits/health_app.py was NOT updated and this release is not live. Nothing has been built or published. Add a read/write deploy key on that repository as the STREAMLIT_DEPLOY_KEY secret (gh repo deploy-key add … --allow-write, then gh secret set STREAMLIT_DEPLOY_KEY), or a PAT with Contents read/write on it as STREAMLIT_PUSH_TOKEN; then re-run this workflow."
+          exit 1
+
+      # A credential can be present and useless: revoked, rotated, pasted with a
+      # line missing, marked read-only, or added to a different repository. Every
+      # step that only asks whether the secret is empty reads all of those as a
+      # release, which is how a run reaches the push after building and verifying
+      # the pair (run 39154157467 did exactly that). This is the one step that asks
+      # the remote, and it asks before anything is built.
+      #
+      # `--dry-run` is the point: the server authorises the push and then receives
+      # nothing, so a read-only key is refused here — reading the repository would
+      # not catch it, and only a push would — while no ref is created. The
+      # destination is a scratch ref rather than main so the answer is about the
+      # credential alone: whether main accepts a commit is the push step's
+      # question, and origin moving between staging and the push is the read-back's.
+      - name: Prove the push credential works before anything is built
+        env:
+          DEPLOYED_REPO: richardparslow-commits/health_app.py
+        run: |
+          set -euo pipefail
+          if [ "$VERIFY_PUBLISHED" = "true" ]; then
+            echo "Verify-only run: it pushes nothing, so there is no credential to prove."
+            exit 0
+          fi
+          if [ -z "$STREAMLIT_DEPLOY_KEY" ] && [ -z "$STREAMLIT_PUSH_TOKEN" ]; then
+            # The gate above fails this shape on main; on another ref nothing is pushed
+            # by design, and the warning after the push says so.
+            echo "No push credential is configured, so there is nothing to prove."
+            exit 0
+          fi
+          # Chosen exactly as the push step chooses it, so the credential proved here is
+          # the one that will publish.
+          auth=()
+          if [ -n "$STREAMLIT_DEPLOY_KEY" ]; then
+            key="${RUNNER_TEMP:-/tmp}/streamlit_preflight_key"
+            printf '%s\n' "$STREAMLIT_DEPLOY_KEY" > "$key"
+            chmod 600 "$key"
+            export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
+            remote="git@github.com:${DEPLOYED_REPO}.git"
+            echo "Proving the deploy key can push to ${DEPLOYED_REPO}."
+          else
+            auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$STREAMLIT_PUSH_TOKEN" | base64 -w0)")
+            remote="https://github.com/${DEPLOYED_REPO}.git"
+            echo "Proving STREAMLIT_PUSH_TOKEN can push to ${DEPLOYED_REPO}."
+          fi
+          # Fails rather than waits: a credential prompt on a runner is a hang, and the
+          # thing being tested is absent.
+          export GIT_TERMINAL_PROMPT=0
+          set +e
+          output="$(git -C streamlit-app ${auth[@]+"${auth[@]}"} push --dry-run "$remote" HEAD:refs/heads/preflight-credential-check 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "The credential can push to ${DEPLOYED_REPO}: the server authorised a dry-run push and received nothing."
+            exit 0
+          fi
+          echo "$output"
+          reason="was refused by the server"
+          # Order matters: a key ssh cannot parse also fails the handshake, so the refusal
+          # that follows says "Permission denied (publickey)" and would be reported as a
+          # revoked key. The unreadable key is the cause and is asked for first.
+          case "$output" in
+            *"read only"*) reason="is marked read-only on that repository, so it can read the deployed copy and never update it" ;;
+            *"invalid format"*|*"error in libcrypto"*|*"Load key"*) reason="is not a usable private key, so the secret's value looks pasted incompletely" ;;
+            *"Permission denied (publickey)"*) reason="is not accepted for that repository: it was deleted or revoked, or it belongs to another repository" ;;
+            *"Repository not found"*) reason="is accepted but is not authorised for that repository" ;;
+            *"Invalid username or password"*|*"Authentication failed"*|*"403"*) reason="was rejected: the token is expired, revoked, or lacks Contents read/write on that repository" ;;
+          esac
+          echo "::error::The push credential ${reason}. This release would have built and verified the pair and then failed at the push, so it stopped here instead: nothing has been built or published. Fix the credential and re-run — a read/write deploy key on ${DEPLOYED_REPO} as the STREAMLIT_DEPLOY_KEY secret (gh repo deploy-key add <key>.pub -R ${DEPLOYED_REPO} --allow-write, then gh secret set STREAMLIT_DEPLOY_KEY), or a PAT with Contents read/write on it as STREAMLIT_PUSH_TOKEN."
+          exit 1
 
       # A missing version file would otherwise surface as setup-python's own
       # "no file found", which does not say what to add or where. The deployed
@@ -315,15 +401,6 @@ jobs:
           # stand for a completed verification.
           printf 'the read-back verified origin at %s\n' "$(date -u +%FT%TZ)" > published-ok.txt
 
-      # A green run must never imply a deploy that did not happen. Before this
-      # gate existed the workflow warned and exited 0 without pushing, so a
-      # release could look shipped while Streamlit still served the old build.
-      - name: Fail when no push credential is configured (main)
-        if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.STREAMLIT_DEPLOY_KEY == '' && env.VERIFY_PUBLISHED != 'true' && github.ref == 'refs/heads/main' }}
-        run: |
-          echo "::error::No push credential is configured, so richardparslow-commits/health_app.py was NOT updated and this release is not live. Add a read/write deploy key on that repository as the STREAMLIT_DEPLOY_KEY secret (gh repo deploy-key add … --allow-write, then gh secret set STREAMLIT_DEPLOY_KEY), or a PAT with Contents read/write on it as STREAMLIT_PUSH_TOKEN; then re-run this workflow."
-          exit 1
-
       - name: Explain the skipped push on a non-main ref
         # A verify-only dispatch is not a skipped push — it asked for none, and the
         # summary already says "Verified, not published". Without this clause the
@@ -397,6 +474,21 @@ jobs:
               quote_output
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
-            echo "No push credential was configured — neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN — so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
+            # `verified.txt` is written by the step that stages and verifies the pair, so its
+            # absence means this run stopped before any of that happened — at the credential
+            # gate, or at the step that proves the credential works, both of which now run
+            # before the build. Saying "though it was staged and verified" there would
+            # describe work this run never did, which is the class of untrue summary A39
+            # fixed one branch over.
+            if [ -f verified.txt ]; then
+              echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
+              echo "No push credential was configured — neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN — so nothing was pushed. The artifact built by this run is not live, though it was staged and verified against the deployed wrapper.\n\nExpected commit message in the deployed repository: \`Sync from HealthClassEstimator ${SOURCE_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "### Not published"
+                echo "This run stopped before it staged anything, so nothing is live and nothing was published. The failing step above says which it was: no push credential at all (add a read/write deploy key on richardparslow-commits/health_app.py as \`STREAMLIT_DEPLOY_KEY\`, or a PAT with Contents read/write as \`STREAMLIT_PUSH_TOKEN\`), or one the remote refused — a read-only, revoked or misplaced key, or a rejected token — whose message names the cause and the fix."
+                echo
+                quote_output
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi

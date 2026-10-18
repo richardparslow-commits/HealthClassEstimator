@@ -82,6 +82,15 @@ jobs:
       # workflow is the one place where reading instead of running is most expensive.
       - name: Verify the release gates and push against a local remote
         run: npm run test:publish-step
+      # A release that cannot publish used to spend its whole run finding that out: the
+      # credential gate was the last step of the job, so the build, the CSS audit, the
+      # runtime harness and the staging copy all happened before it, and a credential that
+      # existed but was read-only, revoked or for another repository was found only at the
+      # push. Those two checks now run before anything is built, and this executes them —
+      # including the refusals, which are server answers no local remote produces, so the
+      # suite answers them the way the server does and records the argv it was handed.
+      - name: Verify the release proves its credential before it builds
+        run: npm run test:preflight
       # The gates and the push are run above; this runs what the run then *says*. The
       # read-back invocation (which commit it expects, from which remote, and whether a
       # failure stops the step), the token gates, and the run summary are what a person

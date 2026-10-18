@@ -60,7 +60,15 @@ const RELEASE = {
   steps: {
     "Check out HealthClassEstimator": "success",
     "Read back what the deployed repository now holds": "ran",
-    "Fail when the deploy token is not configured (main)": "skipped",
+    // Named as the workflow names it. This read "Fail when the deploy token is not
+    // configured (main)" after the step was renamed to name the credential the release
+    // actually uses — a name the run never reports, which the check below treats as a
+    // failure, so the self-test would have failed on its own bookkeeping.
+    "Fail when no push credential is configured (main)": "skipped",
+    // The step that asks the remote whether the credential works runs even in this shape:
+    // it finds nothing to prove and says so. It is listed because it is new, and a step
+    // that nobody names is a step whose execution nobody notices.
+    "Prove the push credential works before anything is built": "success",
     "Explain the skipped push on a non-main ref": "skipped",
     "Commit and push (triggers Streamlit Cloud redeploy)": "skipped",
     "Summarise what this run published": "success",

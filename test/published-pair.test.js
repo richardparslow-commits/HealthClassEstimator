@@ -224,7 +224,20 @@ ok(deploy.includes("scripts/verify-published-pair.sh"), "the read-back is the fi
 ok(/--expect "\$\(git -C streamlit-app rev-parse HEAD\)"/.test(deploy), "the read-back requires origin to be the commit this run pushed");
 ok(/--commit-out published-commit\.txt/.test(deploy), "and records that commit for the summary");
 ok(/python3 scripts\/verify-streamlit-runtime\.py published/.test(deploy), "the deployed commit is run through the same pair verifier as the staged copy");
-ok(readBackAt < tokenGateAt, "the credential gate stays last, so its message is what a run with no credential ends on");
+// The gate used to sit at the end of the job, so a release that could not publish found
+// out after building the pair, putting it through Streamlit's runtime and staging it —
+// a green-looking run that had done everything except deploy, while the app served the
+// build before it. It now runs before anything is built.
+const buildsAt = deploy.indexOf("Build the artifact and its manifest");
+ok(
+  tokenGateAt > 0 && tokenGateAt < buildsAt,
+  "the credential gate runs before anything is built, so a run that cannot publish says so in seconds",
+);
+const probeAt = deploy.indexOf("Prove the push credential works before anything is built");
+ok(
+  probeAt > tokenGateAt && probeAt < buildsAt,
+  "and the step that proves a configured credential actually works runs beside it, still ahead of the build",
+);
 const readBackStep = deploy.slice(readBackAt, deploy.indexOf("- name:", readBackAt + 10));
 ok(/Deployed commit: .+\$\{PUBLISHED_SHA\}/.test(deploy), "the run summary names the commit that is live");
 ok(

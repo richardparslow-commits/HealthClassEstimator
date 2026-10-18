@@ -660,10 +660,13 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   }
 
   // Tokenless run that pushed nothing: the summary must say so, and name the commit
-  // message the deployed repository should carry.
+  // message the deployed repository should carry. `verified.txt` is what the staging
+  // verification leaves behind, so the fixture writes it: without it the summary is
+  // describing a run that stopped before it staged anything, which is the case below.
   {
     const fx = fixture();
     const out = path.join(fx.dir, "summary.md");
+    fs.writeFileSync(path.join(fx.dir, "verified.txt"), "PASS — the staged pair is the build this repository produced.\n");
     run(summary, fx, {
       STREAMLIT_PUSH_TOKEN: undefined,
       VERIFY_PUBLISHED: undefined,
@@ -675,6 +678,30 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
     ok(/No push credential was configured/.test(text), "and why");
     ok(/Sync from HealthClassEstimator 37d743e/.test(text), "and what the deployed commit should be called: " + text.slice(-120));
     ok(!/### Published/.test(text), "without claiming a publish it did not make");
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
+
+  // The shape the release takes when it cannot publish at all: the credential gate fails
+  // before the build, so no pair was staged and nothing wrote `verified.txt`. The summary
+  // must not describe staging and verification this run never reached — it is the text a
+  // person reads to find out what happened, and "it was staged and verified" is a claim
+  // about work the run did not do.
+  {
+    const fx = fixture();
+    const out = path.join(fx.dir, "summary.md");
+    run(summary, fx, {
+      STREAMLIT_PUSH_TOKEN: undefined,
+      STREAMLIT_DEPLOY_KEY: undefined,
+      VERIFY_PUBLISHED: undefined,
+      SOURCE_SHA: "37d743e1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+      GITHUB_STEP_SUMMARY: out,
+    });
+    const text = fs.readFileSync(out, "utf8");
+    ok(/### Not published/.test(text), "a run that stopped at its credential check says nothing was published");
+    ok(/stopped before it staged anything/.test(text), "and that nothing was staged, because nothing was: " + text.slice(0, 220));
+    ok(!/though it was staged and verified/.test(text), "without claiming the staging and verification it never reached");
+    ok(!/Sync from HealthClassEstimator 37d743e/.test(text), "and without naming a commit message for a publish it never began");
+    ok(!/### Published/.test(text), "and never claiming a publish");
     fs.rmSync(fx.dir, { recursive: true, force: true });
   }
 }
