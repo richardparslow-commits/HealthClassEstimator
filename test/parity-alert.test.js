@@ -60,18 +60,19 @@ ok(body.includes("  - Streamlit artifact: " + APP + "@abcdef1"), "the passing jo
 ok(!body.includes(SITE_SHA), "the short commit is used, as in the check's own verdict");
 equal(deployments(websiteFailed).find((d) => d.id === "website").state, "judged", "a failed job that read a commit still reports it");
 
-// 3. The state a run URL cannot express: the job never read a deployment (a missing
-//    token, a ref that does not exist, a failed build). It must not invent one, and it
-//    must not read as "the copy is behind" — the fix is the read, not a republish.
+// 3. The state a run URL cannot express: the job never judged a deployment (a failed
+//    build, a page that does not state which build it is, a run that never got that
+//    far). It must not invent one, and it must not read as "the copy is behind" — the
+//    fix is the read, not a republish.
 const unread = { ...green, website: { result: "failure", outputs: {} } };
 const unreadBody = buildBody(context(unread));
-ok(unreadBody.includes("  - Live website: no deployment read — the job ended before it fetched one"), "an unread deployment is said to be unread");
-ok(/missing read token, a ref that does not exist, or a failed build/.test(unreadBody), "the likely causes of an unread deployment are given");
+ok(unreadBody.includes("  - Live website: no deployment read — the job ended before it judged one"), "an unread deployment is said to be unread");
+ok(/a failed build, a run that never got that far, or a page that does not state the build it is/.test(unreadBody), "the likely causes of an unread deployment are given");
 ok(!/@/.test(unreadBody.split("- Deployment judged:")[1].split("\n  - Streamlit")[0]), "no commit is invented for the unread job");
 equal(deployments(unread).find((d) => d.id === "website").state, "unread", "the unread state is distinct from a judged one");
 
 // 4. A skipped or cancelled job never had the chance to read one; saying it "failed
-//    before fetching" would send someone looking for a token problem that is not there.
+//    before judging" would send someone looking for a build problem that is not there.
 const skipped = { ...green, streamlit: { result: "skipped", outputs: {} } };
 const skippedBody = buildBody(context(skipped));
 ok(skippedBody.includes("  - Streamlit artifact: the job did not run"), "a skipped job is reported as not run");

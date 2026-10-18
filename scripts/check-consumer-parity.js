@@ -30,6 +30,7 @@
      node scripts/check-consumer-parity.js --declarations <path> # another consumer's adaptations
      node scripts/check-consumer-parity.js --deployed <path> --deployed-commit <sha> [--deployed-repo <owner/name>]
      node scripts/check-consumer-parity.js --consumer-repo <owner/name> --consumer-commit <sha>
+     node scripts/check-consumer-parity.js --deployment-out <file>
      node scripts/check-consumer-parity.js --json
 
    <path> may be the built HTML, the website's route file that holds the embed as
@@ -110,6 +111,7 @@ function parseArgs(argv) {
     else if (a === "--deployed-repo") args.deployedRepo = argv[++i];
     else if (a === "--consumer-repo") args.consumerRepo = argv[++i];
     else if (a === "--consumer-commit") args.consumerCommit = argv[++i];
+    else if (a === "--deployment-out") args.deploymentOut = argv[++i];
     else if (a === "--json") args.json = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error("Unknown argument: " + a);
@@ -427,6 +429,7 @@ function loadDeclarations(target, explicit) {
     file: relative.startsWith("..") ? file : relative,
     adaptations: declared.adaptations ?? [],
     releaseClaims: declared.releaseClaims ?? [],
+    deployment: declared.deployment ?? null,
   };
 }
 
@@ -528,7 +531,16 @@ function verifyDeclarations(loaded, consumerHtml, buildHtml) {
 // because the claim was hand-typed in a page whose generator only restamped two other
 // statements.
 //
-// So the claims are declared (consumers/website.json, `releaseClaims`), matched as
+// A page that states which build it is can be named without a repository read. The
+// site's generator stamps the commit its own build was made from into the page it
+// serves, so the commit is declared the same way (`deployment`) and taken from the
+// bytes a visitor receives: the verdict names the deployment, and the job that runs
+// this check needs no credential for the private repository the page is published
+// from. The claim that *that* repository's committed copy is this build belongs where
+// the copy lives — the site's own CI reads this repository and gates the copy — and
+// the two halves are reported separately so neither can be mistaken for the other.
+//
+// The release claims are declared (consumers/website.json, `releaseClaims`), matched as
 // literal text with `{version}` standing for the number, and required to be exactly
 // what this build says it is. The count is part of the declaration: a claim that
 // quietly disappears is as much a drift as one that says the wrong number, because
@@ -596,6 +608,60 @@ function verifyReleaseClaims(claims, surfaces, version) {
     }
   }
   return { checked, problems };
+}
+
+/* --- the deployment the page says it is ------------------------------------- */
+
+// The commit the page states it was built from, declared like a release claim
+// (consumers/website.json, `deployment`) and read out of the served bytes. This is the
+// answer to "which deployment was judged?" that needs nothing but the page itself: the
+// site's build stamps it, so the copy a visitor receives names itself. A page that
+// states no commit, or states something that is not one, is a failure with the stamp
+// as its fix — the alternative is a run that judges a page it cannot name, which is
+// the report a person cannot act on.
+function commitPattern(pattern) {
+  const parts = String(pattern).split("{commit}");
+  if (parts.length !== 2) throw new Error("A deployment pattern must contain {commit} exactly once: " + JSON.stringify(pattern));
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(escape(parts[0]) + "([0-9a-fA-F]{40})" + escape(parts[1]), "g");
+}
+
+function verifyDeploymentIdentity(declaration, surfaces) {
+  if (!declaration) return null;
+  const where = declaration.in?.[0] ?? "page";
+  const surface = surfaces[where];
+  const base = { id: declaration.id ?? "build-commit", repo: declaration.repo ?? null, from: where, pattern: declaration.pattern };
+  // A surface this run did not read is reported as not read rather than passed: a file
+  // cannot speak for the page a visitor gets, and pretending it did is the failure this
+  // whole check exists to prevent.
+  if (surface == null) return Object.assign(base, { state: "not read", commit: null, problems: [] });
+  const found = [...surface.text.matchAll(commitPattern(declaration.pattern))].map((m) => m[1]);
+  if (found.length !== declaration.count) {
+    // Whatever the tag states is quoted back. `unknown` is what a build that cannot
+    // resolve its commit stamps, and that is a different fix (build the site from a
+    // commit, then publish it) from a page that stopped carrying the tag at all.
+    const tag = found.length === 0 ? /<meta[^>]*name="build-commit"[^>]*>/.exec(surface.text) : null;
+    const problem = tag
+      ? surface.label +
+        ": " +
+        JSON.stringify(base.id) +
+        " states '" +
+        tag[0] +
+        "'" +
+        " — that carries no 40-character commit, so this run cannot name the deployment it judged; a build that cannot resolve its commit stamps \"unknown\", and publishing one leaves every run unable to say what it judged"
+      : surface.label +
+        ": " +
+        JSON.stringify(base.id) +
+        " appears " +
+        found.length +
+        " time(s) saying a commit, the declaration expects " +
+        declaration.count +
+        " — the page no longer states the commit its build was made from, so this run cannot name the deployment it judged. The site's build stamps that tag (" +
+        JSON.stringify(declaration.pattern) +
+        "); a page that has stopped carrying it is regenerated, not hand-edited";
+    return Object.assign(base, { state: "count", commit: null, problems: [problem] });
+  }
+  return Object.assign(base, { state: "named", commit: found[0], problems: [] });
 }
 
 /* --- the deployment the page claims to be --------------------------------- */
@@ -737,10 +803,11 @@ function report(results, meta) {
   // cannot be regenerated from this build, or it carries something it says it does not.
   const problems = meta.declarationProblems ?? [];
   const deploymentProblems = meta.deployment?.problems ?? [];
+  const statedProblems = meta.stated?.problems ?? [];
   const releaseProblems = meta.release?.problems ?? [];
-  const ok = critical.length === 0 && !byteMismatch && problems.length === 0 && deploymentProblems.length === 0 && releaseProblems.length === 0;
+  const ok = critical.length === 0 && !byteMismatch && problems.length === 0 && deploymentProblems.length === 0 && statedProblems.length === 0 && releaseProblems.length === 0;
   if (meta.json) {
-    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, readFrom: meta.readFrom ?? null, expectIdentical: meta.expectIdentical, documentIdentical: meta.documentIdentical, declarations: meta.declarationFile ? { file: meta.declarationFile, ids: meta.declarationIds, exact: meta.declarationExact, composed: meta.declarationComposed, problems, notes: meta.declarationNotes } : null, release: meta.release ? { build: meta.release.version, checked: meta.release.checked, problems: releaseProblems } : null, deployment: meta.deployment ? { repo: meta.deployment.repo, commit: meta.deployment.commit, file: meta.deployment.file, identical: meta.deployment.identical, exact: meta.deployment.exact, composed: meta.deployment.composed, problems: deploymentProblems } : null, results, ok }, null, 2));
+    console.log(JSON.stringify({ consumer: meta.consumer, build: meta.build, how: meta.how, readFrom: meta.readFrom ?? null, expectIdentical: meta.expectIdentical, documentIdentical: meta.documentIdentical, declarations: meta.declarationFile ? { file: meta.declarationFile, ids: meta.declarationIds, exact: meta.declarationExact, composed: meta.declarationComposed, problems, notes: meta.declarationNotes } : null, release: meta.release ? { build: meta.release.version, checked: meta.release.checked, problems: releaseProblems } : null, deployment: meta.deployment ? { repo: meta.deployment.repo, commit: meta.deployment.commit, file: meta.deployment.file, identical: meta.deployment.identical, exact: meta.deployment.exact, composed: meta.deployment.composed, problems: deploymentProblems } : null, stated: meta.stated ? { id: meta.stated.id, repo: meta.stated.repo, commit: meta.stated.commit, from: meta.stated.from, state: meta.stated.state, problems: statedProblems } : null, results, ok }, null, 2));
     return ok;
   }
   console.log("Consumer : " + meta.consumer);
@@ -766,8 +833,13 @@ function report(results, meta) {
         (skipped ? ", " + skipped + " on a surface this run did not read" : "")
     );
   }
+  if (meta.stated?.commit) {
+    console.log("Deployment: " + label(meta.stated.repo, meta.stated.commit) + "  (named by the served page itself)");
+    console.log("            the page states the commit its build was made from, so this verdict is about that");
+    console.log("            deployment — no copy of the repository it was published from had to be read to name it");
+  }
   if (meta.deployment) {
-    console.log("Deployment: " + label(meta.deployment.repo, meta.deployment.commit) + "  (" + path.relative(ROOT, meta.deployment.file) + ")");
+    console.log((meta.stated?.commit ? "Committed : " : "Deployment: ") + label(meta.deployment.repo, meta.deployment.commit) + "  (" + path.relative(ROOT, meta.deployment.file) + ")");
     console.log("            " + (meta.deployment.identical ? "the live page is the page that commit produces" : "the live page is NOT the page that commit produces"));
   }
   console.log("");
@@ -781,7 +853,13 @@ function report(results, meta) {
   }
   for (const note of meta.declarationNotes ?? []) console.log("\n  note: " + note);
   console.log("");
-  if (deploymentProblems.length) {
+  if (statedProblems.length) {
+    console.log("FAIL — the page does not name the deployment it is:");
+    for (const problem of statedProblems) console.log("       " + problem);
+    console.log("       The page is generated, so the commit is stamped by the build that produced it. The fix is");
+    console.log("       that build (and the deploy that publishes it), not a comparison that stops asking which");
+    console.log("       deployment it judged.");
+  } else if (deploymentProblems.length) {
     console.log("FAIL — the live page is not the deployment this run names:");
     for (const problem of deploymentProblems) console.log("       " + problem);
     console.log("       A live page that differs from the commit has not been redeployed; a commit that is");
@@ -825,8 +903,11 @@ function report(results, meta) {
       console.log("       The page runs this build: its document begins with " + meta.declarationComposed + " characters");
       console.log("       of it plus the declared adaptations, and continues with the page's own adapters.");
     }
+    if (meta.stated?.commit) {
+      console.log("       The deployment judged is " + label(meta.stated.repo, meta.stated.commit) + ", the build the page itself names.");
+    }
     if (meta.deployment?.identical) {
-      console.log("       The deployment judged is " + label(meta.deployment.repo, meta.deployment.commit) + ", whose committed page is this document.");
+      console.log("       The committed page read here is " + label(meta.deployment.repo, meta.deployment.commit) + ", and the live page is the document it holds.");
     }
     if (meta.release && !releaseProblems.length) {
       const agreed = meta.release.checked.filter((c) => c.state === "agrees").length;
@@ -873,8 +954,7 @@ async function main() {
     throw new Error("--consumer-commit names the deployment the consumer was read from; pass --consumer-repo <owner/name> with it");
   if (args.consumerRepo && !args.consumerCommit)
     throw new Error("--consumer-repo needs --consumer-commit <branch, tag or SHA>, so the verdict can name the commit it judged");
-  const committed = args.deployed ? readDeployment(args.deployed, args.deployedCommit) : null;
-  const deployment = committed
+  const committed = args.deployed ? readDeployment(args.deployed, args.deployedCommit) : null;  const deployment = committed
     ? verifyDeployment(committed, consumer.html, build, loaded, args.deployedRepo ?? null, args.deployedCommit)
     : null;
 
@@ -887,6 +967,15 @@ async function main() {
   if (consumer.source != null && !surfaces.source) surfaces.source = { text: consumer.source, label: "this source" };
   if (consumer.page != null && !surfaces.page) surfaces.page = { text: consumer.page, label: "the served page" };
   const release = loaded?.releaseClaims?.length ? { version, ...verifyReleaseClaims(loaded.releaseClaims, surfaces, version) } : null;
+
+  // The deployment the page names itself, and the handover to whatever job ran this
+  // check: two lines, the repository the declaration names and then the commit the page
+  // stated, both empty when the page stated none. It is written before anything is
+  // compared, because whether a run that goes red judged a named deployment or never
+  // read one is exactly the difference the notification has to make.
+  const stated = verifyDeploymentIdentity(loaded?.deployment ?? null, surfaces);
+  if (args.deploymentOut)
+    fs.writeFileSync(path.resolve(process.cwd(), args.deploymentOut), (stated?.repo ?? "") + "\n" + (stated?.commit ?? "") + "\n");
 
   const consumerBodies = componentBodies(consumer.html);
   const buildBodies = componentBodies(build);
@@ -909,6 +998,7 @@ async function main() {
     declarationExact: verification?.exact ?? false,
     declarationComposed: verification?.composed ?? 0,
     deployment,
+    stated,
     release,
   });
 }
@@ -916,7 +1006,7 @@ async function main() {
 // Exported for the fixtures: requiring this file must not run a comparison against the
 // real page, and the declaration loader is a branch the fixtures cannot reach through
 // the command line (it applies only to the origin the declaration names).
-module.exports = { loadDeclarations, composeDeclared, verifyDeclarations, statementLines, firstDifference, readDeployment, verifyDeployment, buildVersion, verifyReleaseClaims, claimPattern };
+module.exports = { loadDeclarations, composeDeclared, verifyDeclarations, statementLines, firstDifference, readDeployment, verifyDeployment, buildVersion, verifyReleaseClaims, verifyDeploymentIdentity, claimPattern, commitPattern };
 
 if (require.main === module) {
   main()

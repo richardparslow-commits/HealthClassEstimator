@@ -9,12 +9,19 @@ name: Check the live consumers against the build
 # going red cannot hide the other's result:
 #
 #   website   — the live tool page, which delivers the build through an iframe
-#               srcDoc plus its own adapters, read from the served page itself, and
-#               the page committed in the website repository at one commit. Both are
-#               compared: the committed page must be this build plus its declared
-#               adaptations, and the served page must be that committed page. The
-#               commit is printed, so a verdict names the deployment it judged instead
-#               of saying only that the page matched.
+#               srcDoc plus its own adapters, read from the served page itself. The
+#               page must be this build plus its four declared adaptations
+#               (consumers/website.json), and it must state the commit its own build
+#               was made from — the site's build stamps that — so the verdict names
+#               the deployment it judged instead of saying only that the page
+#               matched. Reading the name out of the page is also what keeps this job
+#               able to run at all: it used to need a token to read the private
+#               repository that publishes the page, no such token exists here, and
+#               the job spent its every run reporting "no deployment read" instead of
+#               judging anything. The claim that repository's *committed* copy is this
+#               build belongs where that copy lives: the site's own CI reads this
+#               public repository beside it and gates that copy before it is pushed.
+#
 #               That page answers through Cloudflare, and `no-cache, must-revalidate,
 #               max-age=0` on its document is a revalidation instruction, not a
 #               promise that no shared cache still holds the previous deployment.
@@ -24,7 +31,8 @@ name: Check the live consumers against the build
 #               rather than the copy the edge was still serving. A response that
 #               says it came from a cache anyway is retried with a new nonce and
 #               then refused — never compared, because comparing it is the answer
-#               this job exists to stop being wrong.  #   streamlit — the artifact Streamlit Community Cloud renders, read from a
+#               this job exists to stop being wrong.
+#   streamlit — the artifact Streamlit Community Cloud renders, read from a
   #               checkout of richardparslow-commits/health_app.py pinned to one
   #               commit. That file is the build output copied verbatim, so the
   #               verdict required here is byte-identical, and its manifest must
@@ -79,14 +87,6 @@ on:
         description: Repository whose deployed wrapper is verified against the build
         required: false
         default: richardparslow-commits/health_app.py
-      website_repo:
-        description: Repository that holds the website's page, read at one commit so the verdict names it
-        required: false
-        default: richardparslow-commits/life-policy-light
-      website_ref:
-        description: Branch, tag or full commit SHA of the website to judge the live page against
-        required: false
-        default: main
 
 permissions:
   contents: read
@@ -95,10 +95,11 @@ jobs:
   website:
     name: Live website
     runs-on: ubuntu-latest
-    # What this job judged, for the alert job. A job output survives a failed job,
-    # so a run that goes red after reading the commit still reports which deployment
-    # it was about — and a run that failed before the fetch carries empty outputs,
-    # which the alert reads as "nothing was judged" rather than as a missing commit.
+    # What this job judged, for the alert job: the deployment the page names itself.
+    # A job output survives a failed job, so a run that goes red after reading the page
+    # still reports which deployment it was about — and a run that failed before it read
+    # anything carries empty outputs, which the alert reads as "nothing was judged"
+    # rather than as a missing commit.
     outputs:
       repo: ${{ steps.deployed.outputs.repo }}
       commit: ${{ steps.deployed.outputs.commit }}
@@ -117,48 +118,18 @@ jobs:
       - name: Check the parity check against its fixtures
         run: node test/parity.test.js
 
-      # The page's committed source, at one commit, so the verdict can name the
-      # deployment it judged. Without it a green run says "the live page matches the
-      # build" and leaves open which deployment was read — the question a release
-      # running late and a cache answering for the last one both hide inside.
+      # The deployment is named by the page under test. The site's build stamps the
+      # commit it was made from into the page it serves, so that commit is read out of
+      # the bytes a visitor gets, declared in consumers/website.json beside the page's
+      # release claims. Naming the deployment used to mean fetching the page from the
+      # private repository it is published from, which needs a credential this
+      # repository does not have — so this job reported "no deployment read" on every
+      # run instead of judging anything, and a check that cannot run is worse than the
+      # claim it made. What is deliberately not dropped is the claim that the
+      # *committed* copy is this build: that copy lives in the site's repository, whose
+      # own CI reads this public repository beside it and gates the copy before it is
+      # published, so the two repositories each answer for their own half.
       #
-      # The repository is private, so the fetch needs a token. It goes in a header
-      # rather than in the remote URL: a failed fetch prints its arguments, and a
-      # credential in a URL is a credential in a log. Failing to read the commit is a
-      # failure, not a quieter check: this job exists to report which deployment it
-      # judged, and it cannot say that about a page it never read.
-      - name: Read the deployed website at one commit
-        id: deployed
-        env:
-          REPO: ${{ inputs.website_repo || 'richardparslow-commits/life-policy-light' }}
-          REF: ${{ inputs.website_ref || 'main' }}
-          PAGE: src/routes/tools.health-class-predictor.tsx
-          TOKEN: ${{ secrets.WEBSITE_READ_TOKEN || secrets.STREAMLIT_PUSH_TOKEN }}
-        run: |
-          set -o pipefail
-          git init --quiet website
-          git -C website remote add origin "https://github.com/$REPO.git"
-          auth=()
-          if [ -n "$TOKEN" ]; then
-            auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)")
-          fi
-          if ! git -C website "${auth[@]}" fetch --quiet --depth 1 origin "$REF"; then
-            echo "::error::Could not read $REF from $REPO. That repository is private, so this needs a token with Contents: read — add it as the WEBSITE_READ_TOKEN secret, or broaden STREAMLIT_PUSH_TOKEN to cover it. This job names the deployment it judged and does not pass without reading it."
-            exit 1
-          fi
-          git -C website checkout --quiet --detach FETCH_HEAD
-          if [ ! -f "website/$PAGE" ]; then
-            echo "::error::$REPO at $(git -C website rev-parse HEAD) has no $PAGE — the page this check compares has moved or been renamed; update PAGE in this workflow."
-            exit 1
-          fi
-          cp "website/$PAGE" deployed-page.tsx
-          commit=$(git -C website rev-parse HEAD)
-          echo "DEPLOYED_WEBSITE_COMMIT=$commit" >> "$GITHUB_ENV"
-          echo "DEPLOYED_WEBSITE_REPO=$REPO" >> "$GITHUB_ENV"
-          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          echo "Read $REPO at $commit" | tee parity.txt
-
       # pipefail keeps a failing check from being hidden by tee. The checker puts a
       # fresh nonce in the request URL and refuses to compare an answer that came
       # from a cache, so this step cannot report on a page the deploy has replaced.
@@ -166,19 +137,30 @@ jobs:
       # and requires the served document to begin with the result, so a page running an
       # older build fails here instead of passing with a presentational warning, and a
       # release that moves an anchor the page's generator depends on fails at release
-      # time rather than when someone next regenerates the page. And it requires the
-      # served page to be the committed page it just read, so the verdict names the
-      # deployment: a commit that is not this build means the repository is behind, a
-      # live page that is not that commit means it has not been redeployed.
-      - name: Compare the live page with the build and the named deployment
+      # time rather than when someone next regenerates the page. And a page that does
+      # not state which build it is cannot be reported on at all, so that is a failure
+      # with the page's own build as its fix.
+      #
+      # The deployment is written to this job's outputs whatever the comparison found:
+      # whether a red run judged a named deployment or read nothing is the difference
+      # between republishing a copy and fixing a read, and a run URL cannot say it.
+      - name: Compare the live page with the build, and name the deployment it is
+        id: deployed
         env:
           CONSUMER: ${{ inputs.consumer || 'https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor' }}
         run: |
           set -o pipefail
+          status=0
           node scripts/check-consumer-parity.js --consumer "$CONSUMER" \
-            --deployed deployed-page.tsx \
-            --deployed-commit "$DEPLOYED_WEBSITE_COMMIT" \
-            --deployed-repo "$DEPLOYED_WEBSITE_REPO" 2>&1 | tee -a parity.txt
+            --deployment-out deployment.txt 2>&1 | tee -a parity.txt || status=$?
+          # First line: the repository the declaration names. Second: the commit the
+          # page stated, empty when it stated none — which the alert reports as a run
+          # that read no deployment, not as a missing commit.
+          repo=$(sed -n 1p deployment.txt 2>/dev/null || true)
+          commit=$(sed -n 2p deployment.txt 2>/dev/null || true)
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Publish the website comparison to the run summary
         if: ${{ always() }}

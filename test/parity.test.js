@@ -223,7 +223,7 @@ equal(parsed.results.filter(x=>x.critical).length,3,"--json marks the three unde
 //    the page has to be held to the composition exactly — otherwise a page serving an
 //    older build passes whenever the release changed nothing underwriting-level.
 const declaration=require("../consumers/website.json");
-const {composeDeclared,loadDeclarations,verifyReleaseClaims,buildVersion,claimPattern}=require("../scripts/check-consumer-parity.js");
+const {composeDeclared,loadDeclarations,verifyReleaseClaims,buildVersion,claimPattern,verifyDeploymentIdentity,commitPattern}=require("../scripts/check-consumer-parity.js");
 // The release these fixtures state, read from the build rather than typed: a fixture
 // pinned to a number fails on the next bump with a stale-claim error that reads like a
 // regression in the check (release 82, 2026-10-17). `PREVIOUS` is an older release, for
@@ -261,7 +261,13 @@ const pageAdapters="<style>\n  .page-adapter{display:none}\n</style>\n<script>\n
 // The page states its release outside the embedded document: the footer, the FAQ
 // answer (also serialised into FAQPage structured data, so twice) and the schema.org
 // softwareVersion. A page that is this build has to carry them, saying this release.
-const pageChrome="<p>Release "+RELEASE+" · Updated October 16, 2026 (UTC) · Maintained by Richard Parslow</p>\n"+
+// The commit the page states it was built from. The site's build stamps this into the
+// page it serves, and it is the only thing that names the deployment: reading it out of
+// the page is what lets the daily run judge the page without a credential for the
+// private repository that publishes it.
+const PAGE_COMMIT="6d1c1f56e0f31e3afcd4964da26d192baee4cdbd";
+const pageChrome='<meta name="build-commit" content="'+PAGE_COMMIT+'"/>\n'+
+  "<p>Release "+RELEASE+" · Updated October 16, 2026 (UTC) · Maintained by Richard Parslow</p>\n"+
   "<p>This page runs HealthClassEstimator release "+RELEASE+", generated from the reviewed build.</p>\n"+
   '<script type="application/ld+json">{"@type":"SoftwareApplication","softwareVersion":"'+RELEASE+'"}</script>\n'+
   '<script type="application/ld+json">{"@type":"FAQPage","mainEntity":[{"acceptedAnswer":{"text":"This page runs HealthClassEstimator release '+RELEASE+', generated from the reviewed build."}}]}</script>\n';
@@ -353,9 +359,11 @@ const DEPLOY_REPO="richardparslow-commits/life-policy-light";
 const deployedArgs=(page)=>["--deployed",page,"--deployed-commit",DEPLOY_COMMIT,"--deployed-repo",DEPLOY_REPO,...declared];
 let r3=check(write("deployed-live.html",declaredPage),buildPath,deployedArgs(write("deployed-committed.html",declaredPage)));
 equal(r3.status,0,"a page that is the named deployment passes");
-ok(/Deployment: richardparslow-commits\/life-policy-light@37d743e/.test(r3.out),"the verdict names the deployment by commit");
+ok(/Deployment: richardparslow-commits\/life-policy-light@6d1c1f5/.test(r3.out),"the verdict names the deployment the page states it is");
+ok(/Committed : richardparslow-commits\/life-policy-light@37d743e/.test(r3.out),"and the committed copy it was read against, as a separate line");
 ok(/the live page is the page that commit produces/.test(r3.out),"the verdict says the served page is that commit's page");
-ok(/The deployment judged is richardparslow-commits\/life-policy-light@37d743e/.test(r3.out),"the pass names the deployment it judged, not just the build");
+ok(/The deployment judged is richardparslow-commits\/life-policy-light@6d1c1f5/.test(r3.out),"the pass names the deployment it judged, not just the build");
+ok(/The committed page read here is richardparslow-commits\/life-policy-light@37d743e/.test(r3.out),"and says which committed copy it was checked against");
 const deployedJson=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",write("deployed-json.html",declaredPage),"--build",buildPath,...deployedArgs(path.join(dir,"deployed-committed.html")),"--json"],{encoding:"utf8"}));
 equal(deployedJson.deployment.commit,DEPLOY_COMMIT,"--json carries the full commit that was judged");
 equal(deployedJson.deployment.identical,true,"--json records that the served page is that commit's page");
@@ -394,20 +402,77 @@ r3=check(write("deployed-missing-page.html",declaredPage),buildPath,deployedArgs
 equal(r3.status,1,"a named commit whose page was not fetched fails");
 ok(new RegExp("The page at @37d743e was not found at ").test(r3.err),"the failure names the commit and the file it looked for");
 ok(/drop --deployed to compare only the live page/.test(r3.err),"and says how to run the live-only comparison instead");
-equal(check(write("deployed-none.html",declaredPage),buildPath,declared).status,0,"omitting both keeps the old comparison working");
-ok(!/Deployment:/.test(check(write("deployed-none2.html",declaredPage),buildPath,declared).out),"and the verdict does not claim a deployment it never read");
+equal(check(write("deployed-none.html",declaredPage),buildPath,declared).status,0,"omitting both keeps the live-only comparison working");
+const noCommitted=check(write("deployed-none2.html",declaredPage),buildPath,declared).out;
+ok(!/Committed :/.test(noCommitted),"and the verdict claims no committed copy this run never read");
+ok(/Deployment: richardparslow-commits\/life-policy-light@6d1c1f5/.test(noCommitted),"while still naming the deployment the page states it is");
 
-// 11e. The wiring, read from the workflow: the live comparison has to be given the
-//      deployment, or the check quietly goes back to not naming what it judged. The
-//      website repository is private, so the read needs a token and the workflow has to
-//      say so rather than failing with a bare authentication error.
+// 11e. The deployment is named by the page itself, and the declaration says where to
+//      read it — so the identity is a claim like the release number is, and a page that
+//      stopped stating it fails rather than being judged under no name at all.
+const loaded=loadDeclarations("https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor",null);
+equal(loaded?.deployment?.id,"build-commit","the declaration names the claim that identifies the deployment");
+equal(loaded?.deployment?.count,1,"and how many times the page states it");
+equal(loaded?.deployment?.repo,DEPLOY_REPO,"and the repository that commit belongs to");
+const identityArgs=()=>[path.join(dir,"deployment-out.txt"),...declared];
+r3=check(write("named-live.html",declaredPage),buildPath,["--deployment-out",identityArgs()[0],...declared]);
+equal(r3.status,0,"a page that states the build it is passes");
+ok(new RegExp("Deployment: "+DEPLOY_REPO+"@6d1c1f5 ").test(r3.out),"the verdict names the deployment from the page's own statement");
+ok(/named by the served page itself/.test(r3.out),"and says where that name came from");
+ok(new RegExp("The deployment judged is "+DEPLOY_REPO+"@6d1c1f5").test(r3.out),"the pass names it too");
+const namedJson=JSON.parse(check(write("named-live-json.html",declaredPage),buildPath,[...declared,"--json"]).out);
+equal(namedJson.stated.commit,PAGE_COMMIT,"--json carries the full commit the page states");
+equal(namedJson.stated.state,"named","--json records that it was named rather than guessed");
+equal(namedJson.stated.problems.length,0,"--json carries no identity problems");
+// The handover to the job: repository then commit, written before anything is compared,
+// so a run that goes red still reports which deployment it judged.
+const handover=fs.readFileSync(identityArgs()[0],"utf8").split("\n");
+equal(handover[0],DEPLOY_REPO,"the handover names the repository the declaration gives");
+equal(handover[1],PAGE_COMMIT,"and the commit the page stated");
+// A page that states no commit cannot be named, and that is a failure with the stamp as
+// its fix — judging a page no name reaches is the report nobody can act on.
+r3=check(write("unnamed-live.html",declaredPage.replace(/<meta name="build-commit"[^>]*>\n/,"")),buildPath,["--deployment-out",path.join(dir,"unnamed-out.txt"),...declared]);
+equal(r3.status,1,"a page that states no build fails");
+ok(/FAIL — the page does not name the deployment it is:/.test(r3.out),"the failure is about the missing name");
+ok(/the served page: "build-commit" appears 0 time\(s\) saying a commit, the declaration expects 1/.test(r3.out),"the count and the expectation are quoted");
+ok(/a page that has stopped carrying it is regenerated, not hand-edited/.test(r3.out),"and the fix says regeneration, not editing");
+equal(fs.readFileSync(path.join(dir,"unnamed-out.txt"),"utf8").split("\n")[1],"","an unnamed run hands over no commit, so the alert reports a run that read nothing");
+r3=check(write("unknown-live.html",declaredPage.replace(PAGE_COMMIT,"unknown")),buildPath,declared);
+equal(r3.status,1,"a build that could not resolve its commit fails");
+ok(/states '<meta name="build-commit" content="unknown"\/>'/.test(r3.out),"the value the page does state is quoted back");
+ok(/a build that cannot resolve its commit stamps "unknown"/.test(r3.out),"and what that means is said");
+r3=check(write("twice-live.html",declaredPage.replace("</main>",'<meta name="build-commit" content="'+PAGE_COMMIT+'"/></main>')),buildPath,declared);
+equal(r3.status,1,"a page that states two commits fails");
+ok(/appears 2 time\(s\) saying a commit, the declaration expects 1/.test(r3.out),"the duplicate is counted");
+// Where the surface was not read at all, the run says so rather than passing: a file
+// cannot speak for the page a visitor gets.
+const identity=verifyDeploymentIdentity(declaration.deployment,{});
+equal(identity.state,"not read","a surface this run did not read is reported as not read");
+equal(identity.problems.length,0,"and raises nothing by itself");
+equal(identity.commit,null,"and names no commit");
+let identityThrew=null;try{commitPattern("no placeholder here")}catch(e){identityThrew=e.message}
+ok(/must contain \{commit\} exactly once/.test(identityThrew||""),"a pattern that names no commit is a declaration error, not a silent pass");
+
+// 11f. The wiring, read from the workflow: the live comparison has to hand over the
+//      deployment, or the alert goes back to naming nothing. The private repository is
+//      deliberately not read here — the read needed a credential that does not exist in
+//      this repository, and the job reported "no deployment read" every run instead of
+//      judging the page.
 const parityWorkflow=fs.readFileSync(path.join(root,".github/workflows/consumer-parity.yml"),"utf8");
-ok(/Read the deployed website at one commit/.test(parityWorkflow),"the website job reads the deployment at a commit");
-ok(/--deployed deployed-page\.tsx/.test(parityWorkflow),"the live comparison is given that page");
-ok(/--deployed-commit "\$DEPLOYED_WEBSITE_COMMIT"/.test(parityWorkflow),"and the commit, so the verdict can name it");
-ok(/website_ref/.test(parityWorkflow),"an older deploy can be judged by naming its ref");
-ok(/WEBSITE_READ_TOKEN/.test(parityWorkflow),"the private repository's read has a token to use");
-ok(/This job names the deployment it judged and does not pass without reading it/.test(parityWorkflow),"and refusing to read the commit is a failure, not a quieter check");
+ok(/--deployment-out deployment\.txt/.test(parityWorkflow),"the live comparison writes out the deployment it judged");
+ok(/repo=\$\(sed -n 1p deployment\.txt/.test(parityWorkflow),"the job reports the repository the declaration names");
+ok(/commit=\$\(sed -n 2p deployment\.txt/.test(parityWorkflow),"and the commit the page stated, as job outputs");
+ok(/echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/.test(parityWorkflow),"written where the alert reads them");
+ok(!/WEBSITE_READ_TOKEN/.test(parityWorkflow),"the private repository is not read, so no credential is required");
+ok(!/deployed-page\.tsx|DEPLOYED_WEBSITE_COMMIT/.test(parityWorkflow),"and no copy of its page is compared");
+ok(!/website_ref|website_repo/.test(parityWorkflow),"no dispatch input asks for a ref this job no longer reads");
+ok(/status=\$\?[\s\S]*exit \$status/.test(parityWorkflow),"a failing comparison still hands over the deployment it judged");
+// The comments are prose across lines, so they are read as prose: without this the
+// assertions would pass or fail on where a line happened to wrap.
+const workflowProse=parityWorkflow.replace(/^\s*#\s?/gm,"").replace(/\s+/g," ");
+ok(/The site's build stamps the commit it was made from into the page it serves/.test(workflowProse),"the workflow says where the name comes from");
+ok(/own CI reads this public repository beside it and gates the copy before it is published/.test(workflowProse),"and where the committed-copy claim went");
+ok(/a check that cannot run is worse than the/.test(workflowProse),"and records why the private read was dropped rather than fixed");
 
 // 12. The page can serve the right bytes and still claim the wrong release. That is
 //     what schema.org softwareVersion did — 78 while the page ran 80 — and an earlier

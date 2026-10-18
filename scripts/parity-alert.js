@@ -11,8 +11,8 @@
    states the check can tell apart look identical in the notification:
      - the deployment is the named commit and has not been published yet,
      - the deployment is an older commit (the copy is behind this build), and
-     - the job failed before it read any commit (a missing token, a ref that does
-       not exist, a cancelled run).
+     - the job read nothing to judge (a failed build, a page that does not state
+       which build it is, a cancelled run).
    Each has a different fix — wait, republish, or fix the read — so the issue names
    the deployment for every job it reports, and says plainly when there is none.
 
@@ -65,7 +65,7 @@ function deploymentOf(id, entry) {
   return {
     label,
     state: "unread",
-    text: "no deployment read — the job ended before it fetched one (a missing read token, a ref that does not exist, or a failed build)",
+    text: "no deployment read — the job ended before it judged one (a failed build, a run that never got that far, or a page that does not state the build it is)",
   };
 }
 
@@ -101,13 +101,13 @@ function buildBody({ results, owner, runUrl, headSha, event }) {
     "- Deployment judged:",
     ...deploymentLines(judged),
     "",
-    "Open the run's Summary tab for the per-consumer diff. The check compares the live website and the published Streamlit artifact against a fresh build of main — the artifact byte for byte, with its manifest, and the website against both the page it serves and the page committed in its repository — and exercises the deployed wrapper's own verification. It fails when a consumer disagrees on underwriting logic (rules, state or engine), when the artifact is not the reviewed build, or when the served page is not the deployment named above.",
+    "Open the run's Summary tab for the per-consumer diff. The check compares the live website and the published Streamlit artifact against a fresh build of main — the artifact byte for byte, with its manifest, and the website against this build plus the adaptations it declares in consumers/website.json, named as a deployment by the page itself — and exercises the deployed wrapper's own verification. It fails when a consumer disagrees on underwriting logic (rules, state or engine), when the artifact is not the reviewed build, or when the page does not say which build it is.",
     "",
     "If the live website job names a cache rather than a component, nothing was compared: the run asked for a URL no cache can hold an entry for and was still answered from one, so re-run once that entry has expired instead of republishing.",
     "",
     "If it names one of the page's declared adaptations instead, or says the page is not this build with them, the page and this repository disagree about what the page is: a page serving an older build has to be regenerated from this one, and a release that moved an anchor the page's generator depends on has to move the generator and `consumers/website.json` in the same change.",
     "",
-    "Read the deployment line against the commit you expect to be live. The same commit means the deploy is green here but has not been published (or has not finished publishing); an older commit means the deployed copy is behind this build and has to be republished; and a job that reports no deployment read failed before it judged anything, so fix that read — usually the token — and re-run before treating the comparison as a verdict.",
+    "Read the deployment line against what you expect to be live. The website job names the deployment from the page itself — the commit the page says its own build was made from (`richardparslow-commits/life-policy-light@<sha>`, stated in the page's `build-commit` meta) — so a commit older than that repository's main means the site has not been rebuilt and published since main moved, and a Streamlit line that is not this build's latest commit means that pair has not been republished. A job that reports no deployment read judged nothing: either it failed before it read the page, or the page does not state which build it is, which its own build has to stamp.",
     "",
     "If a copy is simply behind the build, republish it (the website from its repository; the Streamlit app from deploy-streamlit.yml). Never edit a copy to match.",
     "",
