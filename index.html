@@ -131,6 +131,11 @@
 <nav class="steps-nav" id="steps-nav" aria-label="Interview steps"></nav>
 
 <main class="app-main">
+  <!-- A draft saved in another tab is newer than the answers on this screen, and the two
+       cannot be merged. This region is always present and empty, so a reader announces it
+       when it fills (`:empty` keeps it out of the layout until then), and it sits above
+       both the interview and the result, because the answers behind either can move. -->
+  <div id="draft-notice" class="draft-notice" role="status" aria-live="polite"></div>
   <div id="step-content"></div>
 
   <!-- role/aria-labelledby gives the result view a name; focus is moved to its
@@ -174,7 +179,7 @@
      in order when async=false, preserving the rules -> state -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "85";
+    var HCE_VERSION = "86";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");

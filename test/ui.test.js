@@ -152,6 +152,58 @@ const server=http.createServer((req,res)=>{
     assert.equal(afterLast.panel,false,"the panel goes with it");
     assert.equal(afterLast.notice,false,"and so does the notice that a draft was kept");
     assert.equal(afterLast.focus,"H2","with focus on the step heading, not the document");
+    // A deletion in another tab reaches this one. `storage` is the only notification a page
+    // gets of localStorage written elsewhere; without it a panel here kept offering a draft
+    // that no longer existed, and the copy it downloaded was no longer the browser's.
+    await page.evaluate(()=>{for(const k of ["hce_state_v2","hce_state_v1","hce_state_v2_unreadable"])localStorage.removeItem(k);localStorage.setItem("hce_state_v2","{not json");});
+    await page.reload();await page.locator("#productId").waitFor({state:"attached"});
+    const other=await context.newPage();
+    await other.goto(local);await other.locator("#productId").waitFor({state:"attached"});
+    await other.locator("#ack-check").check();await other.locator("#ack-accept").click();
+    // The second tab quarantines the same unreadable draft again, so both now hold two, and
+    // the first tab has refreshed to match without being reloaded.
+    await page.waitForFunction(()=>document.querySelectorAll("details.kept-draft textarea").length===2);
+    assert.equal(await other.evaluate(()=>document.querySelectorAll("details.kept-draft textarea").length),2,"Both tabs hold both kept drafts");
+    await other.locator("details.kept-draft summary").click();
+    await other.getByRole("button",{name:"Delete this kept draft"}).first().click();
+    await other.getByRole("button",{name:"Delete permanently"}).click();
+    await page.waitForFunction(()=>document.querySelectorAll("details.kept-draft textarea").length===1);
+    assert.equal(await page.evaluate(()=>document.querySelectorAll("details.kept-draft textarea").length),1,"Deleting one draft in the other tab leaves one here");
+    await other.getByRole("button",{name:"Delete this kept draft"}).first().click();
+    await other.getByRole("button",{name:"Delete permanently"}).click();
+    await page.waitForFunction(()=>!document.querySelector("details.kept-draft"));
+    assert.equal(await page.locator(".migration-notice").count(),0,"The notice goes when the last kept draft is deleted elsewhere");
+    // A draft saved in another tab is newer than the answers on this screen. Two tabs cannot
+    // be merged and every keystroke here saves, so the tab that is behind says which draft is
+    // which and lets the applicant choose — rather than adopting it underneath them or leaving
+    // the two tabs silently disagreeing until the next save replaces one of them.
+    await page.evaluate(()=>{for(const k of ["hce_state_v2","hce_state_v1","hce_state_v2_unreadable"])localStorage.removeItem(k);});
+    await page.reload();await page.locator("#productId").waitFor({state:"attached"});
+    await other.reload();await other.locator("#productId").waitFor({state:"attached"});
+    await sel("productId","banner_opterm");
+    await other.waitForFunction(()=>document.querySelector("#draft-notice").textContent.includes("Another tab saved different answers"));
+    assert.equal(await page.locator("#draft-notice").textContent(),"","The tab that saved is not warned about its own write");
+    assert.equal(await other.locator("#productId").inputValue(),"","The tab that is behind keeps its own answers until asked");
+    await other.getByRole("button",{name:"Use the answers saved in the other tab"}).click();
+    assert.equal(await other.locator("#productId").inputValue(),"banner_opterm","Adopting the saved draft replaces this tab's answers");
+    assert.equal(await other.locator("#draft-notice").textContent(),"","and the warning goes with the choice");
+    assert.equal(await other.evaluate(()=>document.activeElement.tagName+" "+document.activeElement.textContent),"H2 Product & profile","and focus lands on the step heading, because the button that asked is gone");
+    await other.locator("#btn-save").click();
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator("#draft-notice").textContent(),"","Saving answers identical to this tab's is not a newer draft");
+    await other.locator("[data-field='dob']").fill("1980-02-02");
+    await page.waitForFunction(()=>document.querySelector("#draft-notice").textContent.includes("Another tab saved different answers"));
+    assert.equal(await page.locator("#dob").inputValue(),"","An answer saved elsewhere does not arrive in this tab unannounced");
+    await page.getByRole("button",{name:"Keep this tab's answers"}).click();
+    assert.equal(await page.locator("#draft-notice").textContent(),"","Keeping this tab's answers dismisses the warning");
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2")).dob),"1980-02-02","and leaves the other tab's saved answers alone until this one saves");
+    await fill("dob","1970-03-03");
+    await other.waitForFunction(()=>document.querySelector("#draft-notice").textContent.includes("Another tab saved different answers"));
+    assert.equal(await other.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2")).dob),"1970-03-03","An answer typed here replaces the saved draft, as the warning said it would");
+    await page.evaluate(()=>localStorage.removeItem("hce_state_v2"));
+    await other.waitForFunction(()=>document.querySelector("#draft-notice").innerHTML==="");
+    assert.equal(await other.locator("#draft-notice").getAttribute("role"),"status","A draft deleted elsewhere takes the warning about it away, and the region stays for the next one");
+    await other.close();
     // Validate the actual deployment build has all four scripts in order.
     await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
     // An embedder can make this document's viewport far taller than the window it is shown
@@ -175,6 +227,6 @@ const server=http.createServer((req,res)=>{
     assert.equal(advanced.scrollTop,0,"a step change returns the panel to the top, where the new question is");
     assert.equal(advanced.heading,"Residency & travel","and the next step is the one on screen");
     await framed.close();
-    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests, embedded build and the oversized-frame panel.");
+    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests, cross-tab kept drafts and newer answers, embedded build and the oversized-frame panel.");
   } catch(e) {console.error("Page text:",(await page.locator("body").innerText()).slice(-1800)); await page.screenshot({path:path.join(root,"..","ui-failure.png"),fullPage:true});throw e;} finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

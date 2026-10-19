@@ -4,6 +4,9 @@ const App = (() => {
   const STORAGE_KEY="hce_state_v2", LEGACY_KEY="hce_state_v1", QUARANTINE_KEY="hce_state_v2_unreadable";
   const $=sel=>document.querySelector(sel);
   let state=InterviewState.empty(), step=0, results=false, migrationNotice=false, unreadableNotice=false, focusStepHeading=false;
+  // True while another tab holds answers this one has not adopted: every keystroke here
+  // saves, so the next answer typed would replace them. The two tabs cannot be merged.
+  let staleAnswers=false;
   // A draft this build cannot read is copied here before anything overwrites it, so an
   // unreadable save costs a session of answers instead of all of them.
   let unpreserved=null, preserveWarned=false, keptDraftExpanded=false;
@@ -114,7 +117,37 @@ const App = (() => {
   function save() {
     if(unpreserved&&quarantine(unpreserved.raw,unpreserved.key))unpreserved=null;
     if(unpreserved){if(!preserveWarned){preserveWarned=true;toast("A saved draft could not be copied aside, so it was not overwritten. Copy what you need from this browser's storage before saving again.");}return;}
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch{toast("This browser could not save the draft.");}
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));if(staleAnswers){staleAnswers=false;drawDraftNotice();}}catch{toast("This browser could not save the draft.");}
+  }
+  // Two open tabs hold two interviews, and nothing here can merge them. So a tab that is
+  // behind says so and offers the saved draft, instead of reloading answers underneath the
+  // person typing them or leaving two tabs that silently disagree. The region is in the
+  // markup from the start and is emptied rather than hidden, so a reader announces it when
+  // it fills; `:empty` keeps it out of the layout until there is something to say.
+  function sameAnswers(a,b) {
+    // Normalised, because the stored copy and this tab's copy can differ in keys that are
+    // not answers (`migrated`, a schema field) and warning about those would be noise.
+    try{return JSON.stringify(InterviewState.migrate(a))===JSON.stringify(InterviewState.migrate(b));}catch{return false;}
+  }
+  function drawDraftNotice() {
+    const host=$("#draft-notice");if(!host)return;
+    if(!staleAnswers){host.replaceChildren();return;}
+    const actions=node("div","draft-notice-actions");
+    actions.append(
+      button("Use the answers saved in the other tab",adoptSaved,"btn btn-primary"),
+      button("Keep this tab's answers",()=>{staleAnswers=false;drawDraftNotice();})
+    );
+    host.replaceChildren(
+      node("p",null,"Another tab saved different answers to this draft. Nothing here can merge the two, so this tab still shows its own answers, and the next answer typed here will replace the other tab's."),
+      actions
+    );
+  }
+  function adoptSaved() {
+    const saved=loadDraft();
+    staleAnswers=false;
+    if(!saved){drawDraftNotice();toast("The answers saved in the other tab are no longer there. This tab's answers are unchanged.");return;}
+    state=saved;migrationNotice=!!state.migrated;focusStepHeading=!results;
+    drawDraftNotice();render();
   }
   function toast(text) {const t=$("#toast");t.textContent=text;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),3500);}
   function field(parent,label,key,options=null,opts={}) {
@@ -385,7 +418,7 @@ const App = (() => {
     $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"Estimate →":"Next →";
     if(keepFocus){const again=document.getElementById(keepFocus);if(again)again.focus({preventScroll:true});}
   }
-  function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}render();}
+  function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;staleAnswers=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}drawDraftNotice();render();}
   function ack() {
     const gate=$("#ack-gate"),check=$("#ack-check"),accept=$("#ack-accept");let acknowledged=false;try{acknowledged=sessionStorage.getItem("hce_ack_v2")==="yes";}catch{}
     const surfaces=[$(".app-header"),$("#steps-nav"),$(".app-main"),$(".app-footer")];
@@ -413,6 +446,31 @@ const App = (() => {
   function init() {
     const remembered=loadDraft();
     if(remembered){state=remembered;migrationNotice=!!state.migrated;}
+    // `storage` fires only in the other documents, so it is the only news a page gets of a
+    // draft written elsewhere. Two keys are followed, for two different reasons. The
+    // quarantine key: a panel on screen would otherwise keep offering a draft that was
+    // deleted in another tab, and only a tab already showing the notice re-renders, so an
+    // unrelated page is not rebuilt by somebody else's cleanup. The saved-draft key: a
+    // draft saved in another tab is newer than the answers here, and this tab says so
+    // rather than adopting or discarding it silently. A removal is not newer answers, so
+    // it only takes down a warning about a draft that is no longer there, and an unreadable
+    // value cannot be merged with anything, so it is not judged here.
+    window.addEventListener("storage",event=>{
+      if(event.key===STORAGE_KEY){
+        if(event.newValue==null){
+          if(staleAnswers){staleAnswers=false;drawDraftNotice();}
+          return;
+        }
+        let saved;try{saved=JSON.parse(event.newValue);}catch{return;}
+        if(!saved||typeof saved!=="object"||Array.isArray(saved))return;
+        if(sameAnswers(saved,state))return;
+        staleAnswers=true;drawDraftNotice();return;
+      }
+      if(event.key!==QUARANTINE_KEY&&event.key!==null)return;
+      if(!unreadableNotice)return;
+      if(!keptDrafts().length)unreadableNotice=false;
+      render();
+    });
     // The frame is not the window: an embedder can make this document's viewport far
     // taller than the window it is shown in (Streamlit's `st.iframe(..., height=2400)`
     // does), and a footer positioned against the viewport then lands at the bottom of a

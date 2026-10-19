@@ -548,6 +548,13 @@ html.oversized-frame .toast { position: sticky; bottom: 12px; }
 /* Edition-specific event interview */
 .history-entry { border: 1px solid #c8d6df; border-radius: 8px; padding: 16px; margin: 18px 0; min-width: 0; }
 .history-entry legend { color: var(--navy); font-weight: 700; padding: 0 6px; }
+/* Another tab saved answers this one has not adopted. Always in the document and empty
+   when there is nothing to say, so a reader announces the change and no empty band is
+   left above the question. */
+.draft-notice { background: var(--warn-bg); border-left: 4px solid var(--warn); padding: 12px; margin-bottom: 18px; }
+.draft-notice:empty { display: none; }
+.draft-notice p { margin: 0; }
+.draft-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .source-panel,.migration-notice { background: #eef7f3; border-left: 4px solid var(--teal); padding: 12px; margin-bottom: 18px; }
 .kept-draft { margin: 0 0 18px; }
 .kept-draft summary { cursor: pointer; font-weight: 600; }
