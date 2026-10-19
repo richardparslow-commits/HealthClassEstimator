@@ -25,6 +25,16 @@
    the way forward is on screen, it takes it: the acknowledgment is ticked, continue is
    pressed, and the interview has to arrive with its steps rendered and focus in it.
 
+   The release number is half a fact. It is a string the served document writes about
+   itself, and a copy built from another commit, patched by hand, or served from the wrong
+   artifact reports whatever it was stamped with. So the check also reads the deployed
+   repository's own `app_embedded.manifest.json` — the record it verifies before serving
+   anything — and compares the sha256 and byte length it holds with the bytes the live
+   frame actually carries (its srcdoc, or the document it loads). A frame whose bytes are
+   not the published artifact fails even when its release number is right, and the failure
+   names both digests and both lengths. A manifest that cannot be read fails too: the
+   comparison not happening is not the comparison succeeding.
+
    The last part is the difference between a document and a tool. On 2026-10-17 this
    build with its interview script emptied — every marker, the version stamp, the gate
    and the footer intact, an embedder's 746px frame, and no handler on anything — passed
@@ -49,6 +59,7 @@
      node scripts/verify-streamlit-deployed.mjs --url <url>         # any deployment
      node scripts/verify-streamlit-deployed.mjs --expect-version <n>  # release to require
      node scripts/verify-streamlit-deployed.mjs --timeout-ms <ms>   # how long to wait
+     node scripts/verify-streamlit-deployed.mjs --manifest <url>    # the deployed repo's manifest
      node scripts/verify-streamlit-deployed.mjs --json              # machine-readable
      node scripts/verify-streamlit-deployed.mjs --json-out <file>   # the same, written beside the human verdict
 
@@ -56,11 +67,13 @@
    file rather than from its printed text, so a red scheduled run can say what a
    visitor got without parsing a person's prose.
 
-   Exit status: 0 when a browser gets this release and can use it; 1 when it does not
-   (sleep screen that will not wake, no frame, another release, missing or unreachable
-   anchors, a gate that does not yield, an interview that renders nothing, an error
-   inside the frame); 2 on a usage error.
+   Exit status: 0 when a browser gets this release's bytes and can use them; 1 when it
+   does not (sleep screen that will not wake, no frame, another release, bytes that are not
+   the deployed repository's artifact, a manifest that cannot be read, missing or
+   unreachable anchors, a gate that does not yield, an interview that renders nothing, an
+   error inside the frame); 2 on a usage error.
 */
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -69,6 +82,73 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DECLARATION = "consumers/streamlit.json";
+
+// The record the deployed repository ships beside the artifact, and the file it describes.
+// A release number is a claim the served document makes about itself; the manifest is the
+// other repository's statement about which bytes it publishes. Comparing the two is what
+// separates "the frame says 84" from "the frame is the 84 that was published".
+const MANIFEST_FILE = "app_embedded.manifest.json";
+const MANIFEST_ARTIFACT = "app_embedded.html";
+const MANIFEST_REF = "main";
+
+/** Where the deployed repository keeps the manifest for the artifact it serves. */
+function manifestUrlFor(repo, ref = MANIFEST_REF) {
+  return "https://raw.githubusercontent.com/" + repo + "/" + ref + "/" + MANIFEST_FILE;
+}
+
+/** The sha256 and UTF-8 length of a document, which is what the manifest records.
+ *
+ *  Byte length, not `String.length`: the artifact carries non-ASCII prose, where the two
+ *  differ, and the manifest's `bytes` is the artifact's size on disk.
+ */
+function digestOf(text) {
+  const bytes = Buffer.from(String(text), "utf8");
+  return { sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length };
+}
+
+const shortHash = (hash) => String(hash).slice(0, 12) + "…";
+
+/** Read the deployed repository's manifest, so the served bytes have something to be
+ *  compared with. Failure here is reported as a problem, never as agreement: a check that
+ *  could not look is not a check that found nothing wrong.
+ */
+async function readManifest({ url, fetchImpl = fetch, timeoutMs = 30000 }) {
+  if (!url) return { ok: false, url: null, manifest: null, problem: "no manifest URL was given" };
+  try {
+    const response = await fetchImpl(url, {
+      headers: { "cache-control": "no-cache" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        url,
+        manifest: null,
+        problem: "it answered " + response.status + (response.statusText ? " " + response.statusText : ""),
+      };
+    }
+    const manifest = JSON.parse(await response.text());
+    const problems = [];
+    if (!/^[0-9a-f]{64}$/.test(String(manifest.sha256 ?? "")))
+      problems.push("sha256 is " + JSON.stringify(manifest.sha256) + ", not a hex digest");
+    if (!Number.isInteger(manifest.bytes) || manifest.bytes <= 0)
+      problems.push("bytes is " + JSON.stringify(manifest.bytes) + ", not a size");
+    if (typeof manifest.hce_version !== "string")
+      problems.push("hce_version is " + JSON.stringify(manifest.hce_version) + ", not a release");
+    if (typeof manifest.artifact !== "string")
+      problems.push("artifact is " + JSON.stringify(manifest.artifact) + ", not a file name");
+    return problems.length
+      ? { ok: false, url, manifest, problem: "it is not a manifest: " + problems.join("; ") }
+      : { ok: true, url, manifest, problem: null };
+  } catch (error) {
+    return {
+      ok: false,
+      url,
+      manifest: null,
+      problem: "it could not be read (" + (error && error.message ? error.message : String(error)) + ")",
+    };
+  }
+}
 
 // What the estimator's own document carries, and what a stub would not: its engine,
 // its acknowledgment gate and its product select. Bare identifiers, because the
@@ -104,9 +184,9 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--url") { args.url = valueFor(argv, i, "--url"); i++; }
     else if (a === "--expect-version") { args.expectedVersion = valueFor(argv, i, "--expect-version"); i++; }
-    else if (a === "--timeout-ms") { args.timeoutMs = Number(valueFor(argv, i, "--timeout-ms")); i++; }
-    else if (a === "--json") args.json = true;
+    else if (a === "--timeout-ms") { args.timeoutMs = Number(valueFor(argv, i, "--timeout-ms")); i++; }    else if (a === "--json") args.json = true;
     else if (a === "--json-out") { args.jsonOut = valueFor(argv, i, "--json-out"); i++; }
+    else if (a === "--manifest") { args.manifest = valueFor(argv, i, "--manifest"); i++; }
     else if (a === "--help" || a === "-h") args.help = true;
     else {
       console.error("ERROR: unknown argument " + a);
@@ -142,6 +222,50 @@ function buildVersion() {
   return match[1];
 }
 
+/* --- what bytes is the frame serving? -------------------------------------- */
+
+// Two shapes, because this app is embedded two ways. Streamlit's wrapper serves the
+// artifact through `iframe[srcdoc]`, and the srcdoc attribute is the exact string that
+// was handed to the frame — the artifact's bytes, untouched by the running script. A
+// frame loaded from a URL (the fixtures, and an embedder that hosts the file) is read
+// from that URL instead. Either way the answer is a sha256 and a byte count, which is
+// what the deployed manifest records.
+async function frameSource(frame) {
+  const url = frame.url();
+  if (/^https?:/i.test(url)) {
+    try {
+      const response = await fetch(url, {
+        headers: { "cache-control": "no-cache" },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok)
+        return { source: null, sourceProblem: "the document it loads answered " + response.status };
+      const text = await response.text();
+      return { source: { ...digestOf(text), via: "the document at " + url }, sourceProblem: null };
+    } catch (error) {
+      return {
+        source: null,
+        sourceProblem: "the document it loads could not be read (" + (error && error.message ? error.message : String(error)) + ")",
+      };
+    }
+  }
+  const parent = frame.parentFrame();
+  if (!parent)
+    return { source: null, sourceProblem: "it has no parent frame, so the srcdoc that served it cannot be read" };
+  let text = null;
+  try {
+    text = await parent.evaluate(() => {
+      const element = document.querySelector("iframe[srcdoc]");
+      return element ? element.getAttribute("srcdoc") : null;
+    });
+  } catch {
+    text = null;
+  }
+  if (typeof text !== "string" || !text)
+    return { source: null, sourceProblem: "its wrapper carries no srcdoc, so the bytes it served cannot be read" };
+  return { source: { ...digestOf(text), via: "its wrapper's srcdoc" }, sourceProblem: null };
+}
+
 /* --- what a browser sees --------------------------------------------------- */
 
 const SLEEP = /gone to sleep|waking up|Wake this app/i;
@@ -174,6 +298,10 @@ async function observe(page, timeoutMs, consoleErrors = []) {
       const found = { url: frame.url(), bytes: html.length, version: typeof version === "string" ? version : null, acknowledgment: true };
       if (found.version) {
         running = frame;
+        // The bytes this frame is serving, read from the document that placed it rather
+        // than from its DOM: the running app rewrites its own DOM (the gate is hidden,
+        // the steps are rendered), so `content()` is the app's edits, not the artifact.
+        Object.assign(found, await frameSource(frame));
         return found;
       }
       markersOnly = markersOnly ?? found;
@@ -415,7 +543,7 @@ function unreachable(label, rect, layout) {
   return label + " is at " + rect.windowTop + "px" + (below ? " — " + below + "px below the fold" : "") + embedder;
 }
 
-export function verdict({ expectedVersion, observed }) {
+export function verdict({ expectedVersion, observed, deployedManifest = null }) {
   const problems = [];
   if (!observed.frame) {
     problems.push(
@@ -449,6 +577,62 @@ export function verdict({ expectedVersion, observed }) {
       );
     for (const error of observed.frameErrors) problems.push("inside the estimator frame: " + error.text);
   }
+  // The deployed repository's statement about the bytes it publishes. A release number is
+  // what the served document says about itself; this is what the other repository records,
+  // and only the two together say that a visitor is getting the published artifact.
+  if (observed.frame) {
+    if (!deployedManifest)
+      problems.push(
+        "the deployed repository's manifest was not read, so the frame's bytes were not compared with the artifact that repository publishes",
+      );
+    else if (!deployedManifest.ok)
+      problems.push(
+        "the deployed repository's manifest could not be read — " +
+          deployedManifest.problem +
+          " — so the bytes this frame serves were not compared with the artifact that repository publishes",
+      );
+    else {
+      const record = deployedManifest.manifest;
+      const source = observed.frame.source;
+      if (!source)
+        problems.push(
+          "the frame's bytes could not be read — " +
+            (observed.frame.sourceProblem ?? "no source was recorded") +
+            " — so they were not compared with " +
+            MANIFEST_ARTIFACT +
+            " as the deployed repository records it",
+        );
+      else if (source.sha256 !== record.sha256 || source.bytes !== record.bytes)
+        problems.push(
+          "the frame serves " +
+            source.bytes +
+            " bytes with sha256 " +
+            shortHash(source.sha256) +
+            "; the deployed repository's manifest records " +
+            record.artifact +
+            " at " +
+            record.bytes +
+            " bytes with sha256 " +
+            shortHash(record.sha256) +
+            " — the service is not serving the artifact that repository publishes",
+        );
+      if (record.hce_version !== expectedVersion)
+        problems.push(
+          "the deployed repository's manifest records release " +
+            JSON.stringify(record.hce_version) +
+            ", this repository is release " +
+            JSON.stringify(expectedVersion) +
+            " — the pair that repository publishes is not this release",
+        );
+      if (record.artifact !== MANIFEST_ARTIFACT)
+        problems.push(
+          "the deployed repository's manifest names " +
+            JSON.stringify(record.artifact) +
+            " as its artifact; the deployed wrapper serves " +
+            MANIFEST_ARTIFACT,
+        );
+    }
+  }
   if (observed.frame && observed.layout) {
     const layout = observed.layout;
     if (!layout.accept) problems.push("the estimator frame has no acknowledgment continue button (#ack-accept), so a visitor has no way to accept the gate");
@@ -472,6 +656,38 @@ export function verdict({ expectedVersion, observed }) {
         JSON.stringify(observed.frame.version) +
         ", acknowledgment gate and product select present",
     );
+  if (deployedManifest && deployedManifest.ok) {
+    const record = deployedManifest.manifest;
+    lines.push(
+      "Manifest : " +
+        record.artifact +
+        " " +
+        record.bytes +
+        " bytes, sha256 " +
+        shortHash(record.sha256) +
+        ", release " +
+        JSON.stringify(record.hce_version) +
+        " — " +
+        deployedManifest.url,
+    );
+    const source = observed.frame && observed.frame.source;
+    if (source)
+      lines.push(
+        "Bytes  : the frame's " +
+          source.bytes +
+          " bytes " +
+          (source.sha256 === record.sha256 ? "are that artifact" : "are not that artifact") +
+          " (sha256 " +
+          shortHash(source.sha256) +
+          ", read from " +
+          source.via +
+          ")",
+      );
+  } else if (deployedManifest) {
+    lines.push(
+      "Manifest : not read — " + deployedManifest.problem + (deployedManifest.url ? " (" + deployedManifest.url + ")" : ""),
+    );
+  }
   if (observed.interview)
     lines.push(
       "Interview : " +
@@ -509,13 +725,15 @@ function report(result, json, jsonOut) {
     return result.ok ? 0 : 1;
   }
   if (result.ok) {
-    console.log("PASS — a browser gets this release from the deployed app.");
+    console.log("PASS — a browser gets this release's bytes from the deployed app.");
     for (const line of result.lines) console.log("       " + line);
     return 0;
   }
   for (const line of result.lines) console.log("       " + line);
   console.log("");
   console.log("FAIL — a browser does not get this release from the deployed app.");
+  console.log("       A right release number on the wrong bytes is still the wrong bytes: the");
+  console.log("       manifest the deployed repository publishes is what the frame has to serve.");
   for (const problem of result.problems) console.log("       " + problem);
   console.log("       This is the hop the local checks cannot see: the wrapper, the pair and the");
   console.log("       repository can all be right while the service a visitor loads is not. Wake it");
@@ -533,6 +751,10 @@ async function main(argv) {
   const { declared } = readDeclaration();
   const url = args.url ?? declared.deployedUrl;
   const expectedVersion = String(args.expectedVersion ?? buildVersion());
+  // The repository the app is served from, declared beside its URL, keeps its own record
+  // of the artifact it publishes. `--manifest` (or STREAMLIT_MANIFEST_URL) points the
+  // comparison at a staging copy or a local server without editing the declaration.
+  const manifestUrl = args.manifest ?? process.env.STREAMLIT_MANIFEST_URL ?? manifestUrlFor(declared.repo);
   const { chromium } = require("playwright");
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -552,7 +774,8 @@ async function main(argv) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: Math.min(args.timeoutMs, 60000) });
     const observed = await observe(page, args.timeoutMs, consoleErrors);
-    const result = verdict({ expectedVersion, observed });
+    const deployedManifest = await readManifest({ url: manifestUrl });
+    const result = verdict({ expectedVersion, observed, deployedManifest });
     // Everything else the host page said is reported, never fatal: it belongs to
     // Streamlit's shell (analytics, user details), not to the tool this check is about.
     const hostOnly = observed.consoleErrors.filter((one) => !observed.frameErrors.includes(one));
@@ -575,4 +798,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     });
 }
 
-export { observe, SLEEP, MARKERS, carriesEstimator };
+export { observe, SLEEP, MARKERS, carriesEstimator, readManifest, manifestUrlFor, digestOf };

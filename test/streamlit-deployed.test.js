@@ -11,10 +11,17 @@
    gate, and throwing inside the frame. The host page's own errors are the last case,
    because Streamlit's shell 404s its analytics and user-details APIs while working.
 
+   The manifest cases are here for the same reason a release number was not enough: the
+   frame can say release 84 over bytes that are not the published artifact, so
+   `/manifest/<page>` serves the deployed repository's record of what that page carries,
+   and `?kind=` serves the ways it can disagree — another build's digest, another
+   release, another file name, a length that is off by one, a 404 and a non-JSON body.
+
    Needs Chromium, which the browser job in audit-checks.yml installs for the
    interview suite as well: HCE_BROWSER_PATH can point at an existing one.
 */
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -108,7 +115,7 @@ const PAGES = {
   component: (version) =>
     "<!doctype html><html><body><p>Streamlit component shell</p>" + frameElement(estimatorDocument(version)) + "</body></html>",
   // A frame carrying the markers but not the build: a stubbed or truncated document.
-  stub: () => frame('<select id="productId"></select><input id="ack-check"><script>const Engine = {};</script>'),
+  stub: () => frame(STUB_DOC),
   // The real artifact in the deployed geometry: Streamlit's 2,400px frame in a 900px
   // window, carrying this repository's build rather than a stub. The stub above says the
   // check notices a document that positions its controls against the frame; this says
@@ -161,7 +168,77 @@ const appScript = builtScripts[builtScripts.length - 1];
 const DEAD_BUILD = appScript
   ? builtSource.slice(0, appScript.index) + "<script></script>" + builtSource.slice(appScript.index + appScript[0].length)
   : builtSource;
+
+// The document each page actually serves into its frame. The manifest has to describe
+// that, not the host page around it, or every case would fail on bytes for the wrong
+// reason. A page served by URL (`/build/...`) is described by the file it loads.
+const STUB_DOC = '<select id="productId"></select><input id="ack-check"><script>const Engine = {};</script>';
+const ARTIFACTS = {
+  awake: () => estimatorDocument(VERSION),
+  nested: () => estimatorDocument(VERSION),
+  asleep: () => estimatorDocument(VERSION),
+  empty: () => estimatorDocument(VERSION),
+  hostErrors: () => estimatorDocument(VERSION),
+  throwing: () => estimatorDocument(VERSION, "throw new Error('engine exploded');"),
+  tooTall: () => estimatorDocument(VERSION, "", { gateTop: 1700, footerTop: 2200 }),
+  stuck: () => estimatorDocument(VERSION, "", { behaviour: "stuck" }),
+  deaf: () => estimatorDocument(VERSION, "", { behaviour: "deaf" }),
+  stub: () => STUB_DOC,
+  overTallBuild: () => builtSource,
+  dead: () => DEAD_BUILD,
+};
+
+const digest = (text) => {
+  const bytes = Buffer.from(String(text), "utf8");
+  return { sha256: crypto.createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length };
+};
+
+const manifestFor = (name, kind) => {
+  const artifact = (ARTIFACTS[name] ?? ARTIFACTS.awake)();
+  const real = digest(artifact);
+  const manifest = {
+    artifact: "app_embedded.html",
+    sha256: real.sha256,
+    bytes: real.bytes,
+    hce_version: VERSION,
+    builder: "scripts/build-embedded.js",
+    source_commit: "test",
+    built_utc: "2026-10-19T00:00:00.000Z",
+  };
+  if (kind === "other") {
+    const other = digest(estimatorDocument(NEXT_VERSION));
+    manifest.sha256 = other.sha256;
+    manifest.bytes = other.bytes;
+  }
+  if (kind === "version") manifest.hce_version = NEXT_VERSION;
+  if (kind === "artifact") manifest.artifact = "streamlit_embedded.html";
+  if (kind === "lengthened") manifest.bytes = real.bytes + 1;
+  return manifest;
+};
+
+// The port the fixtures listen on, assigned once it is listening: `run` needs it to name
+// the manifest each page carries, and it is defined before the server starts.
+let base = "";
+
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith("/manifest/")) {
+    const [pathPart, query] = req.url.split("?");
+    const name = pathPart.slice("/manifest/".length) || "awake";
+    const kind = new URLSearchParams(query ?? "").get("kind");
+    if (kind === "missing") {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("no manifest at this path");
+      return;
+    }
+    if (kind === "notjson") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html>this is not a manifest</html>");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(manifestFor(name, kind), null, 2));
+    return;
+  }
   if (req.url.startsWith("/build/app.html") || req.url.startsWith("/build/dead.html")) {
     if (!fs.existsSync(BUILT_APP)) {
       res.writeHead(500, { "Content-Type": "text/plain" });
@@ -183,8 +260,16 @@ const server = http.createServer((req, res) => {
 // spawnSync would block its event loop until the child finished — the child would
 // then time out navigating to a server that cannot answer.
 function run(args) {
+  // Every run is given the manifest its page actually carries, unless the case names one
+  // itself — the byte comparison is part of the check now, not an optional extra.
+  const urlAt = args.indexOf("--url");
+  const pageUrl = urlAt >= 0 ? String(args[urlAt + 1]) : "";
+  const name = pageUrl.split("?")[0].split("/").filter(Boolean).pop() || "awake";
+  const withManifest = args.includes("--manifest")
+    ? args
+    : [...args, "--manifest", base + "/manifest/" + name];
   return new Promise((done) => {
-    const child = spawn(process.execPath, [script, ...args], { cwd: root });
+    const child = spawn(process.execPath, [script, ...withManifest], { cwd: root });
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk) => (out += chunk));
@@ -200,7 +285,7 @@ function run(args) {
   ok(fs.existsSync(BUILT_APP), "the deployed-geometry case needs a build — run npm run build first");
   ok(/Accessible product-specific interview/.test(appScript[1]), "the dead case empties the build's last script block, which is the app's interview");
   await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-  const base = "http://127.0.0.1:" + server.address().port;
+  base = "http://127.0.0.1:" + server.address().port;
 
   /* --- awake, serving this release ---------------------------------------- */
 
@@ -214,10 +299,60 @@ function run(args) {
 
   const awake = await run(["--url", base + "/awake", "--expect-version", VERSION]);
   equal(awake.status, 0, "an awake app serving this release passes: " + awake.err);
-  ok(/^PASS — a browser gets this release from the deployed app\.$/m.test(awake.out), "the verdict says what was proved");
+  ok(/^PASS — a browser gets this release's bytes from the deployed app\.$/m.test(awake.out), "the verdict says what was proved");
   ok(/State {2}: awake on arrival/.test(awake.out), "and that it arrived awake");
   ok(new RegExp('release "' + VERSION + '"').test(awake.out), "naming the release it found");
   ok(/Interview : 3 steps after accepting the gate, focus on productId/.test(awake.out), "and the interview the gate led to: " + awake.out);
+
+  /* --- the release number is not the bytes --------------------------------- */
+
+  // A pass states both facts now: what the deployed repository publishes, and that the
+  // frame's own bytes are that artifact. Before this, a copy built from another commit
+  // and stamped 84 passed on the string alone.
+  ok(
+    new RegExp('Manifest : app_embedded\\.html \\d+ bytes, sha256 [0-9a-f]{12}…, release "' + VERSION + '"').test(awake.out),
+    "a pass names the published artifact's digest and size: " + awake.out,
+  );
+  ok(/Bytes {2}: the frame's \d+ bytes are that artifact/.test(awake.out), "and says the frame's bytes are that artifact: " + awake.out);
+
+  const otherBytes = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=other"]);
+  equal(otherBytes.status, 1, "a frame whose bytes are another build's fails even with the right release: " + otherBytes.out);
+  ok(
+    /the frame serves \d+ bytes with sha256 [0-9a-f]{12}…; the deployed repository's manifest records app_embedded\.html at \d+ bytes with sha256 [0-9a-f]{12}…/.test(
+      otherBytes.out,
+    ),
+    "the failure names both digests and both sizes: " + otherBytes.out,
+  );
+  ok(/not serving the artifact that repository publishes/.test(otherBytes.out), "and says what that means: " + otherBytes.out);
+  ok(!/^PASS/m.test(otherBytes.out), "with no pass anywhere in the output");
+
+  const lyingVersion = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=version"]);
+  equal(lyingVersion.status, 1, "a manifest recording another release fails");
+  ok(
+    new RegExp(
+      "the deployed repository's manifest records release \"" + NEXT_VERSION + "\", this repository is release \"" + VERSION + "\"",
+    ).test(
+      lyingVersion.out,
+    ),
+  );
+
+  const wrongArtifact = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=artifact"]);
+  equal(wrongArtifact.status, 1, "a manifest naming another file fails");
+  ok(/names "streamlit_embedded\.html" as its artifact/.test(wrongArtifact.out), wrongArtifact.out);
+
+  // Same digest, one byte more: the comparison is over both fields the manifest records,
+  // so a size that disagrees is a disagreement with the record even where the hash matches.
+  const lengthened = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=lengthened"]);
+  equal(lengthened.status, 1, "a manifest whose size is off by a byte fails, even with the digest it records");
+  ok(/the frame serves \d+ bytes with sha256/.test(lengthened.out), lengthened.out);
+
+  const missingManifest = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=missing"]);
+  equal(missingManifest.status, 1, "a manifest that cannot be read fails rather than reporting agreement");
+  ok(/manifest could not be read — it answered 404/.test(missingManifest.out), missingManifest.out);
+
+  const garbageManifest = await run(["--url", base + "/awake", "--manifest", base + "/manifest/awake?kind=notjson"]);
+  equal(garbageManifest.status, 1, "a body that is not JSON fails");
+  ok(/manifest could not be read/.test(garbageManifest.out), garbageManifest.out);
 
   const json = await run(["--url", base + "/awake", "--expect-version", VERSION, "--json"]);
   equal(json.status, 0, "and it can report itself as JSON");
@@ -296,7 +431,7 @@ function run(args) {
   // the fold"; after it: "Next at 753px".
   const built = await run(["--url", base + "/overTallBuild", "--expect-version", VERSION, "--timeout-ms", "20000"]);
   equal(built.status, 0, "the real build puts the way forward inside a 900px window: " + built.out + built.err);
-  ok(/^PASS — a browser gets this release from the deployed app\.$/m.test(built.out), "and the verdict says so");
+  ok(/^PASS — a browser gets this release's bytes from the deployed app\.$/m.test(built.out), "and the verdict says so");
   ok(!/below the fold/.test(built.out), "reporting no unreachable control: " + built.out);
   ok(/Layout : continue button at \d+px, Next at \d+px, frame 2400px tall in a 900px window/.test(built.out), "while naming the geometry it judged");
   ok(/Interview : [1-9]\d* steps after accepting the gate, focus on productId/.test(built.out), "and reports the interview it took in the real build: " + built.out);
@@ -350,6 +485,7 @@ function run(args) {
   const help = await run(["--help"]);
   equal(help.status, 0, "--help exits 0");
   ok(/--expect-version/.test(help.out), "--help documents the interface");
+  ok(/--manifest/.test(help.out), "including the manifest it compares against");
 
   /* --- the wiring ----------------------------------------------------------- */
 

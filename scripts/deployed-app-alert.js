@@ -142,7 +142,7 @@ const header = (ctx) => [
 ];
 
 const CHECK_DESCRIPTION =
-  "The check loads the declared URL in headless Chromium the way a visitor does: it clicks the sleep screen's wake button when the app is asleep, waits for the estimator's frame, and requires this repository's release inside it with the acknowledgment gate and the product select — and it measures the two controls that move a visitor forward, the gate's continue button and the interview's Next, in the window the app is served in, because a frame an embedder made taller than that window used to put them at the bottom of a document nobody sees the whole of. Its run summary carries the full output.";
+  "The check loads the declared URL in headless Chromium the way a visitor does: it clicks the sleep screen's wake button when the app is asleep, waits for the estimator's frame, and requires this repository's release inside it with the acknowledgment gate and the product select — and it measures the two controls that move a visitor forward, the gate's continue button and the interview's Next, in the window the app is served in, because a frame an embedder made taller than that window used to put them at the bottom of a document nobody sees the whole of. It also compares the bytes that frame serves with the sha256 and size the deployed repository's `app_embedded.manifest.json` records, so a copy that states the right release over another build's bytes fails; a manifest that cannot be read fails as not compared rather than as agreement. Its run summary carries the full output.";
 
 function buildBody(ctx) {
   const lines = [];
@@ -167,7 +167,7 @@ function buildBody(ctx) {
       "",
       ...header(ctx),
       "- App state: " + (ctx.state || "not reported"),
-      "- Verdict: a browser gets this release from the deployed app",
+      "- Verdict: a browser gets this release's bytes from the deployed app",
       "",
       "This is not evidence that the app is behind or broken: the check's own verdict was a pass, and something after it — its report, or the step that writes the run summary — ended the job instead. Read the log for that step. Nothing has to be republished, and this issue closes on the first run that passes, which is the next one if the failure was transient.",
       "",

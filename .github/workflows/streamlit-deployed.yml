@@ -12,7 +12,10 @@ name: Verify the deployed app
 # when the sleep screen is showing, waits for the estimator's frame, checks that the
 # frame runs this repository's release with its controls in the visitor's window — and
 # then uses it: ticks the acknowledgment, presses continue, and requires the interview
-# to arrive. A red run means a visitor would not get the tool, and the summary says
+# to arrive. The release number alone is what the served document says about itself, so
+# the run also compares the frame's own bytes with the sha256 and size recorded in the
+# deployed repository's app_embedded.manifest.json, and a manifest it cannot read is a
+# failure to judge rather than agreement. A red run means a visitor would not get the tool, and the summary says
 # whether it arrived awake or asleep and how long waking took. Without the last part a
 # copy whose script never ran passed this job on 2026-10-17.
 #

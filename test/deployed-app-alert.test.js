@@ -178,7 +178,7 @@ ok(unjudged.includes("- App: " + declaration.deployedUrl), "it still names the a
 //     "nothing was judged" would both be untrue.
 const passedButRed = buildBody(context({ outcome: "pass", problems: [] }));
 ok(/judged the deployed app and passed, but the job itself failed/.test(passedButRed), "a passed check in a red job says so");
-ok(/Verdict: a browser gets this release from the deployed app/.test(passedButRed), "and carries the verdict it reached");
+ok(/Verdict: a browser gets this release's bytes from the deployed app/.test(passedButRed), "and carries the verdict it reached");
 ok(/not evidence that the app is behind or broken/.test(passedButRed), "and refuses to blame the app");
 ok(/Nothing has to be republished/.test(passedButRed), "and says not to publish on it");
 ok(!/Finding\(s\)/.test(passedButRed), "and lists no finding");
