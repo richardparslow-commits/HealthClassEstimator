@@ -14,10 +14,15 @@
  * documents (`npm install --no-save playwright; npx playwright install chromium`).
  *
  * Usage:
- *   node test/qa-soak.js [--cycles 400] [--workers 6] [--seed 1234] [--out /tmp/hce-qa]
+ *   npm run soak                                  # 400 cycles, 6 workers
+ *   npm run soak -- --cycles 20 --workers 2       # a quick run
+ *   npm run soak -- --seed 1234                   # repeat a run's exact input
+ *   node test/qa-soak.js [--cycles] [--workers] [--seed] [--out] [--entry]
  *
- * Exit status: 0 when every cycle completed, 1 when the run itself could not
- * finish. A cycle finding a defect still exits 0 — the report is the deliverable.
+ * The seed is printed with the summary and written to report.json, because a
+ * finding that cannot be re-run can only be described. Exit status: 0 when every
+ * cycle completed, 1 when the run itself could not finish. A cycle finding a
+ * defect still exits 0 — the report is the deliverable.
  */
 "use strict";
 
@@ -516,7 +521,14 @@ async function cycle(page, state, n) {
   fs.writeFileSync(path.join(OUT, "report.json"), JSON.stringify(report, null, 2));
   console.log(
     JSON.stringify(
-      { completed: report.completed, cycles: report.cycles, anomalies: report.anomalies, bySection, ms: report.elapsedMs },
+      {
+        completed: report.completed,
+        cycles: report.cycles,
+        seed: report.seed,
+        anomalies: report.anomalies,
+        bySection,
+        ms: report.elapsedMs,
+      },
       null,
       2,
     ),

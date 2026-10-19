@@ -50,6 +50,16 @@ npm run test:ui
 
 `HCE_BROWSER_PATH` can select an existing Chromium binary. The browser test starts and closes a temporary localhost server, exercises the actual interview controls, checks saved-state migration and mobile layout, and verifies the embedded output. Runtime deployment requires none of these testing dependencies, which is why the job installs Playwright with `--no-save` rather than adding it to this project.
 
+The randomized soak is a command too, so the 400-cycle run can be repeated rather than remembered:
+
+```sh
+npm run soak                                        # 400 cycles, 6 workers
+npm run soak -- --seed 1234                         # the same input as a run that failed
+npm run soak -- --cycles 20 --workers 2 --out /tmp/hce-qa-check
+```
+
+Each cycle walks every section the application has — the acknowledgment gate, all eleven interview steps, the result, the reset, the kept-draft panel, a legacy migration, a storage that refuses to save and rapid navigation — and injects hostile text, numbers and dates into every control it finds. It records objective findings only: an uncaught exception, a console error, a section that stops rendering, `NaN`/`undefined`/`Infinity` in output, an injected script element, a draft that was not saved or not cleared, a gate that leaked, a download that never fired, and horizontal overflow at 390px. The summary is printed as JSON and written to `<out>/report.json` (`/tmp/hce-qa` by default) alongside `progress.json` while the run is live, and it names the seed that produced it: a finding can be reproduced with `--seed` rather than described. The exit status reports the run, not the findings — 0 when every cycle completed, 1 when one could not — so a green exit is not a clean bill and the report is the deliverable. The script is `soak` rather than `test:soak` because it is not a gate: `check:workflow-coverage` requires every `test*` script to run on a push to `main`, and a multi-minute randomized run does not belong in that gate.
+
 Nothing here trusts a suite to run: `npm run check:workflow-coverage` fails when any `test*` script is not invoked by a workflow that a push to `main` would run, and when a file in `test/` is run by no script at all, printing which workflow covers each suite. It is not a hypothetical guard. `audit-checks.yml` was scoped to pull requests and to every branch except `main` — correct while changes to `main` arrived as pull requests, and wrong from 2026-10-10, when the last one was merged: the suite that verifies the release machinery then ran nowhere on `main`, and `test/ui.test.js` was invoked by no workflow at all, because the workflow that should have run it excluded the only branch that ships. Both are wired now, and `npm run test:coverage` (51 assertions) holds the guard to the shapes that must not pass — the branch filter that caused this, a scheduled-only invocation, a command named only in a comment, a longer script name counted for a shorter one (`npm run test:builder` standing in for `test:build`), an orphaned fixture, a repository with nothing to check, and an exception written without a reason.
 
 ## Consumers of the build
