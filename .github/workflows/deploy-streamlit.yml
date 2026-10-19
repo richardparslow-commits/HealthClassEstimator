@@ -84,6 +84,11 @@ jobs:
       STREAMLIT_DEPLOY_KEY: ${{ secrets.STREAMLIT_DEPLOY_KEY }}
       # A scheduled run is the read-back on its own; a dispatch says so explicitly.
       VERIFY_PUBLISHED: ${{ github.event_name == 'schedule' || inputs.verify_published }}
+      # The staged checkout is the tree that gets committed, and the Python checks import
+      # the wrapper from it. Bytecode written there was published: every sync from
+      # 2026-10-19 carried `__pycache__/health_app.cpython-312.pyc`. Nothing in this run
+      # needs a .pyc on disk, and the push step refuses to publish one anyway.
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Check out HealthClassEstimator
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -234,6 +239,11 @@ jobs:
           # implementation of the build: the loose copies it used to receive are
           # removed, so nothing there could be inlined instead of the artifact.
           rm -rf streamlit-app/index.html streamlit-app/css streamlit-app/js
+          # Bytecode is not part of the deployment. Releases through 2026-10-19 committed
+          # it because the pair verifier imported the wrapper in place; removing it here
+          # makes this sync's commit delete the copies already in the repository too.
+          find streamlit-app -type d -name __pycache__ -prune -exec rm -rf {} +
+          find streamlit-app -type f -name '*.pyc' -delete
 
       - name: Refuse to publish a repository that rebuilds the estimator
         run: |
@@ -314,6 +324,18 @@ jobs:
             echo "Pushing with STREAMLIT_PUSH_TOKEN."
           fi
           git add -A
+          # The sync removed the bytecode, and `-B`/PYTHONDONTWRITEBYTECODE keep the checks
+          # from writing more. This is what makes that a guarantee rather than a habit: a
+          # future step that imports the wrapper, or a checkout that arrives with a stash
+          # of .pyc files, fails the release instead of publishing them. Deletions are
+          # excluded — removing the tracked copies is the repair, not the fault.
+          bytecode=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)__pycache__/|\.pyc$' || true)
+          if [ -n "$bytecode" ]; then
+            echo "::error::Python bytecode is staged for the deployed repository:"
+            printf '%s\n' "$bytecode" | sed 's/^/  /'
+            echo "It is not part of the deployment. Remove it (the sync step does) and re-run; nothing has been pushed."
+            exit 1
+          fi
           if git diff --cached --quiet; then
             echo "No changes to deploy - streamlit repo already current."
           else

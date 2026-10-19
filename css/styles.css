@@ -434,6 +434,21 @@ html.oversized-frame .toast { position: sticky; bottom: 12px; }
 .footer-links a.footer-cta:hover { filter: brightness(1.15); color: #fff; }
 .footer-links a.footer-cta:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
 
+/* A landscape phone is about 420px tall, and this footer is not: at 390px wide the
+   disclosure paragraph and the record links wrap into 317px of a 420px window, measured
+   in Chromium, leaving the interview no band to be read in at all. Even the kept-draft
+   panel at the top of the page sat under it, so its summary could not be pressed and the
+   draft could not be reached without rotating the phone. Below 560px of window height only
+   the actions stay — they are how the interview is moved through — and the footer shrinks
+   to one row. Nothing is lost: the same disclosure is in the acknowledgment gate that must
+   be accepted before the interview opens, and on the result; the record links are still
+   there in a taller window. The website's 746px frame and Streamlit's 2,400px one are
+   unaffected, because a media query asks the frame's height, not the window's. */
+@media (max-height: 560px) {
+  .guardrail-line, .footer-links { display: none; }
+  .footer-inner { padding-top: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+}
+
 /* ---- Buttons --------------------------------------------------------- */
 .btn {
   border: none;

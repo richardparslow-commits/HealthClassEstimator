@@ -100,7 +100,7 @@ And the `if:` above each of those steps is now decided rather than matched as te
 
 Neither comparison can fall back to `raw.githubusercontent.com`, and that is enforced rather than remembered: `npm run check:workflows` fails on a read of any repository file over that host anywhere in a workflow — a `run:` line, an `env:` value — while a comment that explains the bug it came from is not a read. `npm run test:workflows` is the fixture suite behind it, and it proves the guard fires on the line the old jobs used, names the file and line, and passes on the workflows in this repository.
 
-There is no second implementation of the build anywhere, and that is deliberate. `health_app.py` used to inline loose `index.html`, `css` and `js` assets whenever the artifact was absent, and it claimed byte-for-byte parity while joining its script blocks differently in three places; a stylesheet containing a CSS escape (`content: "\2192"`) made it fail outright through a `re.sub` replacement string; and its loader-strip guard could be defeated by editing the comment it was anchored on. Each was fixed in the copy rather than the cause. The wrapper now holds no build logic at all, and the assets it used to inline are deleted from the deployed repository.
+There is no second implementation of the build anywhere, and that is deliberate. `health_app.py` used to inline loose `index.html`, `css` and `js` assets whenever the artifact was absent, and it claimed byte-for-byte parity while joining its script blocks differently in three places; a stylesheet containing a CSS escape (`content: "\2192"`) made it fail outright through a `re.sub` replacement string; and its loader-strip guard could be defeated by editing the comment it was anchored on. Each was fixed in the copy rather than the cause. The wrapper now holds no build logic at all, and the assets it used to inline are deleted from the deployed repository. It also holds no Python bytecode: `verify-streamlit-runtime.py` imports the wrapper in the checkout it verifies, so every sync through 2026-10-19 committed `__pycache__/health_app.cpython-312.pyc`. The verifier now imports with `-B`, the release job runs with `PYTHONDONTWRITEBYTECODE=1`, the sync removes `__pycache__` and `*.pyc` before staging — which deletes the tracked copies — and the push step refuses to stage either, naming the file and pushing nothing.
 
 Policy: a change to underwriting behavior is made here, with a test, and only then regenerated into a consumer. A consumer's copy is never edited to match, and a rule never originates there. Porting a rule *into* this repository after finding it only in a copy is the one exception, and it belongs in the same change that regenerates the copy.
 
@@ -262,6 +262,15 @@ The standalone acknowledgment and footer broker links open the current contact
 page directly. They send no estimator answers. Website-specific iframe sizing,
 parent navigation adapters, Contact/Concierge APIs and mail delivery live in the
 separate website project, rather than this dependency-free estimator.
+
+Below 560px of window height — a landscape phone — the footer keeps only Back,
+Save draft and Next. Its disclosure and record links wrapped into 317px of a
+420px window at 390px wide, which left the interview no room and put even the
+kept-draft panel at the top of the page under it. The same disclosure is in the
+acknowledgment gate that must be accepted before the interview opens and on the
+result, and the links are still there in a taller window; an embedded frame asks
+its own height, so the website's 746px frame and Streamlit's 2,400px one keep the
+full footer.
 
 This is a Release 78 follow-up, and the website copy carried the same engine,
 rules, state and UI modules at the time. Streamlit uses a rebuilt single-file artifact; uploading

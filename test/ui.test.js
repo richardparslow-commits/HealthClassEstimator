@@ -137,8 +137,29 @@ const server=http.createServer((req,res)=>{
     await page.locator("details.kept-draft summary").click();
     const deleteKept=page.getByRole("button",{name:"Delete this kept draft"});
     assert.equal(await deleteKept.count(),2,"Each kept draft can be deleted on its own");
+    // A landscape phone is 420px tall, and the footer used to be 317px of that: the
+    // disclosure and the record links wrapped into most of the window, and even this panel
+    // at the top of the page sat under it — the summary could not be pressed at all. Below
+    // 560px of window height only the actions stay, so the panel starts above the footer.
+    await page.setViewportSize({width:390,height:420});
+    const landscape=await page.evaluate(()=>{
+      const footer=document.querySelector(".app-footer").getBoundingClientRect(),summary=document.querySelector("details.kept-draft summary").getBoundingClientRect();
+      const hit=document.elementFromPoint(summary.left+summary.width/2,summary.top+summary.height/2);
+      return {footerTop:Math.round(footer.top),footerHeight:Math.round(footer.height),summaryBottom:Math.round(summary.bottom),summaryHit:!!hit&&!!hit.closest("details.kept-draft"),guardrail:getComputedStyle(document.querySelector(".guardrail-line")).display,nextVisible:document.getElementById("btn-next").getBoundingClientRect().bottom<=innerHeight};
+    });
+    assert.ok(landscape.footerHeight<=80,"A landscape phone's footer is one action row, not most of the window: "+JSON.stringify(landscape));
+    assert.equal(landscape.guardrail,"none","its disclosure is hidden rather than covered");
+    assert.equal(landscape.nextVisible,true,"while the way through the interview stays on screen");
+    assert.ok(landscape.summaryBottom<=landscape.footerTop,"and the kept-draft panel starts above the footer: "+JSON.stringify(landscape));
+    assert.equal(landscape.summaryHit,true,"so its summary is the thing a finger meets, not the footer");
     await deleteKept.first().click();
+    const confirm=await page.evaluate(()=>{
+      const button=document.querySelector(".kept-draft-actions .btn-primary").getBoundingClientRect(),footer=document.querySelector(".app-footer").getBoundingClientRect();
+      return {onScreen:button.top>=0&&button.bottom<=innerHeight,bottom:Math.round(button.bottom),footerTop:Math.round(footer.top)};
+    });
+    assert.ok(confirm.onScreen&&confirm.bottom<=confirm.footerTop,"the confirmation is on screen above the footer: "+JSON.stringify(confirm));
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"Asking to delete removes nothing yet");
+    await page.setViewportSize({width:1280,height:900});
     await page.getByRole("button",{name:"Keep it"}).click();
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"and keeping it leaves both drafts kept");
     await deleteKept.first().click();await page.getByRole("button",{name:"Delete permanently"}).click();
@@ -227,6 +248,6 @@ const server=http.createServer((req,res)=>{
     assert.equal(advanced.scrollTop,0,"a step change returns the panel to the top, where the new question is");
     assert.equal(advanced.heading,"Residency & travel","and the next step is the one on screen");
     await framed.close();
-    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests, cross-tab kept drafts and newer answers, embedded build and the oversized-frame panel.");
+    console.log("Passed browser flows: complete interview, product persistence, probation gate, AF prescription exception, mobile layout, migration, privacy requests, cross-tab kept drafts and newer answers, the landscape-phone footer, embedded build and the oversized-frame panel.");
   } catch(e) {console.error("Page text:",(await page.locator("body").innerText()).slice(-1800)); await page.screenshot({path:path.join(root,"..","ui-failure.png"),fullPage:true});throw e;} finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

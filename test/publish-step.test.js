@@ -51,7 +51,7 @@ function mustGit(args, cwd) {
 // A fresh workdir per case: the bare repository is `origin`, the clone in `streamlit-app`
 // is what the steps edit, and the built pair sits beside it exactly where the workflow
 // keeps it. Building is done once by the caller, because it is the same artifact.
-function freshWorkdir(build, { healthApp } = {}) {
+function freshWorkdir(build, { healthApp, pycache } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-step-"));
   const bare = path.join(dir, "deployed.git");
   const seed = path.join(dir, "seed");
@@ -65,6 +65,12 @@ function freshWorkdir(build, { healthApp } = {}) {
   );
   fs.writeFileSync(path.join(seed, "requirements.txt"), "streamlit>=1.66\n");
   fs.writeFileSync(path.join(seed, "README.md"), "# deployed\n");
+  // The deployed repository as it really was from 2026-10-19: the pair verifier imported
+  // the wrapper in the checkout it verified, so the sync committed its bytecode.
+  if (pycache) {
+    fs.mkdirSync(path.join(seed, "__pycache__"));
+    fs.writeFileSync(path.join(seed, "__pycache__", "health_app.cpython-312.pyc"), "MZ^C\r\n");
+  }
   // The loose copies an older release used to receive: the sync step must remove them.
   fs.mkdirSync(path.join(seed, "css"));
   fs.mkdirSync(path.join(seed, "js"));
@@ -183,6 +189,86 @@ ok(/git \$\{auth\[@\]\+"\$\{auth\[@\]\}"\} push/.test(push.script), "the push is
   ok(/still implements the embedded build/.test(refused.stdout), "and the message says why: " + refused.stdout.slice(0, 140));
   equal(headOf(bare), before, "nothing is pushed by a refused run");
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/* --- bytecode is not part of the deployment ------------------------------- */
+
+{
+  const { dir, bare } = freshWorkdir(BUILD, { pycache: true });
+  const committed = git(["ls-tree", "-r", "--name-only", "main"], bare).stdout;
+  ok(/__pycache__\/health_app\.cpython-312\.pyc/.test(committed), "the deployed repository starts with committed bytecode, as it did on 2026-10-19");
+  equal(runStep(sync, { cwd: dir }).status, 0, "the sync step succeeds");
+  ok(!fs.existsSync(path.join(dir, "streamlit-app", "__pycache__")), "and removes the bytecode before anything is committed");
+  const pushed = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: "5c0de5a1b2c3d4e5f60718293a4b5c6d7e8f9012", STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
+  equal(pushed.status, 0, "the push step succeeds: " + pushed.stderr);
+  const published = git(["ls-tree", "-r", "--name-only", "main"], bare).stdout;
+  ok(!/__pycache__|\/.*\.pyc$/.test(published), "and the published tree carries no bytecode: " + published);
+  equal(git(["log", "-1", "--format=%s", "main"], bare).stdout.trim(), "Sync from HealthClassEstimator 5c0de5a", "under the usual sync commit, which records the deletion");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// The sync removes bytecode that is there when it runs. This is the other half: a step
+// after the sync writes it (an import from the checkout, a restored cache), and the push
+// must refuse rather than publish what the sync never saw.
+{
+  const { dir, bare } = freshWorkdir(BUILD);
+  equal(runStep(sync, { cwd: dir }).status, 0, "the sync stages the pair");
+  fs.mkdirSync(path.join(dir, "streamlit-app", "tools", "__pycache__"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "streamlit-app", "tools", "__pycache__", "helper.cpython-312.pyc"), "MZ^C\r\n");
+  const before = headOf(bare);
+  const refused = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: "6c0de5a1b2c3d4e5f60718293a4b5c6d7e8f9012", STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
+  equal(refused.status, 1, "bytecode written after the sync fails the push: " + refused.stdout.slice(0, 200));
+  ok(/Python bytecode is staged/.test(refused.stdout), "naming what it found: " + refused.stdout.slice(0, 200));
+  ok(/tools\/__pycache__\/helper\.cpython-312\.pyc/.test(refused.stdout), "and the file that was staged");
+  ok(/nothing has been pushed/.test(refused.stdout), "and saying nothing was published");
+  equal(headOf(bare), before, "the deployed head is unchanged");
+  fs.rmSync(path.join(dir, "streamlit-app", "tools"), { recursive: true, force: true });
+  const cleaned = runStep(push, {
+    cwd: dir,
+    env: { SOURCE_SHA: "6c0de5a1b2c3d4e5f60718293a4b5c6d7e8f9012", STREAMLIT_PUSH_TOKEN: "token", STREAMLIT_DEPLOY_KEY: "" },
+  });
+  equal(cleaned.status, 0, "and the same step publishes once the bytecode is gone: " + cleaned.stderr);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// The root cause, executed rather than read: the verifier's successful case imports the
+// directory it was given, and a verification that writes into the checkout is a
+// verification that changes what ships.
+{
+  // Bytecode is looked for in a cache prefix as well as beside the source, because the
+  // interpreter that runs this suite locally redirects it to `~/Library/Caches` (Apple's
+  // build sets sys.pycache_prefix), while the release runner writes `__pycache__` into the
+  // checkout. The probe itself runs with -B so its own imports write nothing; the child
+  // process the verifier starts inherits only the environment, not that flag, so `-B` in
+  // the verifier is exactly what this observes.
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "pycache-prefix-"));
+  const probe = [
+    "import importlib.util, pathlib, tempfile",
+    "spec = importlib.util.spec_from_file_location('runtime', " + JSON.stringify(path.join(root, "scripts", "verify-streamlit-runtime.py")) + ")",
+    "runtime = importlib.util.module_from_spec(spec)",
+    "spec.loader.exec_module(runtime)",
+    "directory = pathlib.Path(tempfile.mkdtemp())",
+    "(directory / 'health_app.py').write_text(\"import streamlit as st\\nst.iframe('x')\\n\", encoding='utf-8')",
+    "(directory / 'app_embedded.html').write_text('x', encoding='utf-8')",
+    "run = runtime.run_health_app(directory)",
+    "print('SERVED' if 'SERVED-EXACT' in run.stdout else 'NOT-SERVED')",
+    "written = list(directory.rglob('*.pyc')) + list(pathlib.Path(" + JSON.stringify(cache) + ").rglob('*.pyc'))",
+    "print('BYTECODE ' + ' '.join(str(p) for p in written) if written else 'CLEAN')",
+  ].join("\n");
+  const inspected = spawnSync("python3", ["-B", "-c", probe], {
+    encoding: "utf8",
+    env: { ...process.env, PYTHONPYCACHEPREFIX: cache },
+  });
+  equal(inspected.status, 0, "the runtime verifier runs against a fixture: " + inspected.stderr);
+  ok(/^SERVED$/m.test(inspected.stdout), "its in-place case still proves what the wrapper serves: " + inspected.stdout);
+  ok(/^CLEAN$/m.test(inspected.stdout), "and leaves no bytecode in the checkout it verified or beside it: " + inspected.stdout);
+  fs.rmSync(cache, { recursive: true, force: true });
 }
 
 /* --- the push and the quiet second run ------------------------------------ */

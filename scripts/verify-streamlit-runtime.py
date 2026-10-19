@@ -65,8 +65,12 @@ print("SERVED-EXACT" if same else "SERVED-DIFFERENT")
 
 
 def run_health_app(directory):
+    # `-B`: the successful case imports the directory it is given, which is the staged
+    # checkout a release then commits. Without this the import writes
+    # `__pycache__/health_app.cpython-*.pyc` into that checkout, and the sync committed it
+    # to the deployed repository on every release. Verifying a tree must not change it.
     return subprocess.run(
-        [sys.executable, "-c", IMPORT_SNIPPET, str(directory)],
+        [sys.executable, "-B", "-c", IMPORT_SNIPPET, str(directory)],
         capture_output=True,
         text=True,
     )
