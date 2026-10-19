@@ -478,7 +478,8 @@ equal(render(group[1], event("workflow_dispatch", { verify_published: false })),
   const other = run(
     warning,
     fx,
-    { STREAMLIT_PUSH_TOKEN: undefined, STREAMLIT_DEPLOY_KEY: undefined, VERIFY_PUBLISHED: undefined },
+    // GitHub sets GITHUB_REF on the runner; the step reads it from the shell, not from a rendered expression.
+    { STREAMLIT_PUSH_TOKEN: undefined, STREAMLIT_DEPLOY_KEY: undefined, VERIFY_PUBLISHED: undefined, GITHUB_REF: "refs/heads/feature" },
     { github: { ref: "refs/heads/feature" } },
   );
   equal(other.status, 0, "a non-main run with no credential does not fail the branch: " + other.stderr);

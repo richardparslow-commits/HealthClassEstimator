@@ -105,10 +105,10 @@ jobs:
       commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -181,10 +181,10 @@ jobs:
       commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -277,7 +277,7 @@ jobs:
       commit: ${{ steps.deployed.outputs.commit }}
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Same rule as the artifact job: one commit, fetched with git. Reading the
       # wrapper and its pair over HTTP can splice two commits together, which
@@ -331,10 +331,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -378,10 +378,10 @@ jobs:
       issues: write
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 

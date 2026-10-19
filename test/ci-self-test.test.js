@@ -54,7 +54,7 @@ const RELEASE_STEPS = [
 ];
 const AUDIT_STEPS = [
   ["Set up job", "success"],
-  ["Run actions/checkout@v4", "success"],
+  ["Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "success"],
   ["Source-derived underwriting checks", "success"],
   ["Build standalone distribution", "success"],
   ["Verify the workflow conditions decide the run shapes they claim", "success"],

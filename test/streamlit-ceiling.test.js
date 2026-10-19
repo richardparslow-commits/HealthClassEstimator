@@ -180,7 +180,7 @@ ok(/--body-file ceiling-pr\.md/.test(workflow), "and carries the generated body"
 ok(/gh pr comment "\$existing"/.test(workflow), "a later run adds to the open review instead of opening a second");
 ok(/gh pr edit "\$existing" --repo "\$DEPLOYED_REPO" --body-file ceiling-pr\.md/.test(workflow), "and rewrites the review's description when the branch moves");
 ok(/STREAMLIT_PUSH_TOKEN is not set, so no pull request could be opened/.test(workflow), "a warranted lift that could not be proposed says exactly that");
-ok(/--deployed-sha "\$\{\{ needs\.canary\.outputs\.deployed_sha \}\}"/.test(workflow), "the review records the deployed commit the canary tested");
+ok(/--deployed-sha "\$DEPLOYED_SHA"/.test(workflow) && /DEPLOYED_SHA: \$\{\{ needs\.canary\.outputs\.deployed_sha \}\}/.test(workflow), "the review records the deployed commit the canary tested, passed through the environment");
 // The body is written by the run that reads the deployed pin, and that run is the
 // only one that can name itself: a body generated without the URL would be a
 // review nobody can trace back to the evidence for it.

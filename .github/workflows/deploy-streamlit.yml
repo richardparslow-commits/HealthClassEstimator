@@ -86,7 +86,7 @@ jobs:
       VERIFY_PUBLISHED: ${{ github.event_name == 'schedule' || inputs.verify_published }}
     steps:
       - name: Check out HealthClassEstimator
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Staging needs no credentials — the deployed repository is publicly
       # readable, which Streamlit Community Cloud requires anyway. Gating this on
@@ -109,7 +109,7 @@ jobs:
 
       - name: Check out streamlit repo (health_app.py)
         if: ${{ env.STREAMLIT_PUSH_TOKEN != '' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: richardparslow-commits/health_app.py
           token: ${{ env.STREAMLIT_PUSH_TOKEN }}
@@ -177,14 +177,14 @@ jobs:
           echo "Deployed interpreter: $(cat streamlit-app/.python-version)"
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
       # Streamlit's own runtime is exercised below, so it needs a real Python —
       # the one the deployed repository declares, not one named here.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version-file: streamlit-app/.python-version
 
@@ -373,7 +373,7 @@ jobs:
         # warning blames the ref for a decision the dispatcher made.
         if: ${{ env.STREAMLIT_PUSH_TOKEN == '' && env.STREAMLIT_DEPLOY_KEY == '' && env.VERIFY_PUBLISHED != 'true' && github.ref != 'refs/heads/main' }}
         run: |
-          echo "::warning::No push credential is configured (neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN). The engine suite ran and the single-file HTML was built, but nothing was pushed. Only runs on main are required to deploy; this run is on ${{ github.ref }}."
+          echo "::warning::No push credential is configured (neither STREAMLIT_DEPLOY_KEY nor STREAMLIT_PUSH_TOKEN). The engine suite ran and the single-file HTML was built, but nothing was pushed. Only runs on main are required to deploy; this run is on $GITHUB_REF."
 
       - name: Summarise what this run published
         if: ${{ always() }}
