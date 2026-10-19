@@ -46,7 +46,13 @@ const InterviewState = (() => {
       if (typeof raw[key] === "string" || typeof raw[key] === "number") next[key] = raw[key];
     }
     if (raw.heightFt !== "" && raw.heightFt != null && Number.isFinite(Number(raw.heightFt)) && Number.isFinite(Number(raw.heightIn))) next.heightIn = Number(raw.heightFt) * 12 + Number(raw.heightIn);
-    next.conditions = Array.isArray(raw.conditions) ? raw.conditions.filter(c => c && c.id).map(c => ({ id: c.id, name: c.name || c.id.replace(/_/g," "), legacyDetails: JSON.stringify(c) })) : [];
+    // A legacy entry whose id is not text cannot name a diagnosis the picker offers, so it is kept
+    // as "Another diagnosis" with its old id as the name, for the applicant to reconfirm. Dropping
+    // it, or letting it throw, would discard the whole legacy draft.
+    next.conditions = Array.isArray(raw.conditions) ? raw.conditions.filter(c => c && c.id != null && c.id !== "").map(c => {
+      const text = typeof c.id === "string";
+      return { id: text ? c.id : "other", name: text ? (c.name || c.id.replace(/_/g," ")) : String(c.id), legacyDetails: JSON.stringify(c) };
+    }) : [];
     if (next.conditions.length) next.medicalHistory = "yes";
     if (raw.medicationsText && !/^none$/i.test(raw.medicationsText.trim())) {
       next.medications = String(raw.medicationsText).split(/[,;\n]+/).filter(t => t.trim()).map(name => ({ name: name.trim() }));

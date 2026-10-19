@@ -100,6 +100,16 @@ const server=http.createServer((req,res)=>{
     // Old defaults are imported only as facts needing reconfirmation.
     await page.evaluate(()=>{localStorage.removeItem("hce_state_v2");localStorage.setItem("hce_state_v1",JSON.stringify({carrier:"foresters",age:35,heightFt:5,heightIn:10,conditions:[{id:"diabetes",severity:"mild",control:"good"}],criminalActive:false}));});
     await page.reload();await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.locator("#productId").inputValue(),"");assert.match(await page.locator(".migration-notice").innerText(),/reconfirm/);await nav("Criminal history");assert.equal(await page.locator("#probationCurrent").inputValue(),"");
+    // A legacy condition whose id is not text must not wipe the draft: it is kept as an
+    // "Another diagnosis" entry to reconfirm, and the diagnosis beside it survives a save.
+    await page.evaluate(()=>{localStorage.removeItem("hce_state_v2");localStorage.setItem("hce_state_v1",JSON.stringify({heightFt:5,heightIn:10,weightLb:165,conditions:[{id:12},{id:"diabetes"}]}));});
+    await page.reload();await page.locator("#productId").waitFor({state:"attached"});
+    await nav("Medical history");assert.equal(await page.locator(".history-entry").count(),2,"Both legacy diagnoses are kept after migration");
+    assert.equal(await page.locator("#conditions-0-id").inputValue(),"other","The non-text id is kept as another diagnosis to reconfirm");
+    assert.equal(await page.locator("#conditions-0-name").inputValue(),"12","and its legacy id is shown as the name to reconfirm");
+    assert.equal(await page.locator("#conditions-1-id").inputValue(),"diabetes","The valid legacy diagnosis is unchanged");
+    await fill("conditions-0-name","Heart murmur");
+    assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2")).conditions.map(c=>c.id)),["other","diabetes"],"Saving keeps both diagnoses in storage");
     // Validate the actual deployment build has all four scripts in order.
     await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
     // An embedder can make this document's viewport far taller than the window it is shown
