@@ -139,7 +139,7 @@ Two conservative evidence policies are tool safeguards, not claimed carrier thre
 
 ## Privacy and maintenance
 
-Answers autosave only to this browser's local storage. No answers are sent to carriers or other services. Anyone with access to the same browser profile may see the draft. Delete saved answers from the result page or clear this site's browser data. The acknowledgment explains the actual storage behavior; its acceptance record can be printed.
+Answers autosave only to this browser's local storage. No answers are sent to carriers or other services. Anyone with access to the same browser profile may see the draft. Delete saved answers from the result page or clear this site's browser data. A draft this build cannot read is kept beside them, shown and downloadable in the interview, and deleted there one at a time once it has been taken away; the delete asks first, because it is the applicant's only copy until they answer. The acknowledgment explains the actual storage behavior; its acceptance record can be printed.
 
 `js/state.js` defines the versioned interview and migration. `js/engine.js` accepts `Engine.run(productId, interview, { asOf: 'YYYY-MM-DD' })`; omitting `asOf` uses today's UTC date. Date windows use calendar anniversaries; future/invalid event dates require clarification. Rules are deeply frozen and age adjustments cannot mutate a chart used by another applicant.
 

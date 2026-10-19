@@ -6,7 +6,7 @@ const App = (() => {
   let state=InterviewState.empty(), step=0, results=false, migrationNotice=false, unreadableNotice=false, focusStepHeading=false;
   // A draft this build cannot read is copied here before anything overwrites it, so an
   // unreadable save costs a session of answers instead of all of them.
-  let unpreserved=null, preserveWarned=false;
+  let unpreserved=null, preserveWarned=false, keptDraftExpanded=false;
   const yesNo=[["yes","Yes"],["no","No"],["unknown","Unsure"]];
   const states="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ").map(s=>[s,s]);
   const conditions=[
@@ -51,15 +51,48 @@ const App = (() => {
     link.download="health-class-draft-kept-"+new Date().toISOString().slice(0,10)+".txt";
     document.body.appendChild(link);link.click();link.remove();
   }
+  // Deleting a kept draft is the one action here that cannot be undone, so the list is
+  // rewritten without that record and the key is removed once nothing is left: an empty
+  // array would still tell a reader something is kept. The copy the applicant downloaded
+  // is theirs; this only forgets the one in this browser.
+  function deleteKept(index) {
+    const kept=keptDrafts();if(index<0||index>=kept.length)return;
+    const remaining=kept.filter((_,i)=>i!==index);
+    try{
+      if(remaining.length)localStorage.setItem(QUARANTINE_KEY,JSON.stringify(remaining));
+      else localStorage.removeItem(QUARANTINE_KEY);
+    }catch{toast("This browser would not let the kept draft be deleted.");return;}
+    if(!remaining.length)unreadableNotice=false;
+    toast("Kept draft deleted from this browser.");
+    render();
+    // The button that asked is gone with the render, so focus lands on what is left: the
+    // panel when another draft is still kept, otherwise the heading it was shown above.
+    const summary=$("#step-content details.kept-draft summary");
+    if(summary){summary.focus();return;}
+    const heading=$("#step-content h2");
+    if(heading){heading.setAttribute("tabindex","-1");heading.focus();}
+  }
   function keptDraftPanel(parent) {
     const kept=keptDrafts();if(!kept.length)return;
-    const details=node("details","kept-draft");
+    const details=node("details","kept-draft");details.open=keptDraftExpanded;
+    // A deletion re-renders this panel, so how far it was opened is carried across rather
+    // than snapping shut on the draft that is still there.
+    details.addEventListener("toggle",()=>{keptDraftExpanded=details.open;});
     details.appendChild(node("summary",null,"View or download the saved draft this build could not read"));
     kept.forEach((record,index)=>{
       details.appendChild(node("p","hint","Kept "+record.savedAt+" from "+record.key+"."));
       const id="kept-draft-"+index,label=node("label",null,"Draft text "+(index+1));label.htmlFor=id;
       const area=node("textarea","kept-draft-text");area.id=id;area.readOnly=true;area.rows=6;area.value=record.raw;
       details.append(label,area);
+      // A single press must not cost the applicant their only copy, so the delete asks in
+      // place. Until it is answered the text is still on screen, beside the download.
+      const actions=node("div","kept-draft-actions"),ask=button("Delete this kept draft",()=>{
+        const yes=button("Delete permanently",()=>deleteKept(index),"btn btn-primary");
+        const no=button("Keep it",()=>{actions.replaceChildren(ask);ask.focus();});
+        actions.replaceChildren(node("p","hint","This removes the kept copy from this browser and cannot be undone. Download it first if you may need it."),yes,no);
+        yes.focus();
+      });
+      actions.appendChild(ask);details.appendChild(actions);
     });
     details.appendChild(button("Download the kept draft",downloadKept));
     parent.appendChild(details);

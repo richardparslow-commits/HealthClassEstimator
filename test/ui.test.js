@@ -132,6 +132,26 @@ const server=http.createServer((req,res)=>{
     await page.reload();await page.locator("#productId").waitFor({state:"attached"});
     assert.match(await page.locator(".migration-notice").innerText(),/could not be read/);
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"Both unreadable drafts are kept");
+    // Once it has been downloaded, a kept draft can be deleted from this browser — one at a
+    // time, and only after saying so: it is the applicant's only copy until they act.
+    await page.locator("details.kept-draft summary").click();
+    const deleteKept=page.getByRole("button",{name:"Delete this kept draft"});
+    assert.equal(await deleteKept.count(),2,"Each kept draft can be deleted on its own");
+    await deleteKept.first().click();
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"Asking to delete removes nothing yet");
+    await page.getByRole("button",{name:"Keep it"}).click();
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"and keeping it leaves both drafts kept");
+    await deleteKept.first().click();await page.getByRole("button",{name:"Delete permanently"}).click();
+    const afterFirst=await page.evaluate(()=>({kept:JSON.parse(localStorage.getItem("hce_state_v2_unreadable")),notice:!!document.querySelector(".migration-notice"),open:document.querySelector("details.kept-draft")?.open}));
+    assert.equal(afterFirst.kept.length,1,"Confirming deletes that draft and only that one");
+    assert.equal(afterFirst.kept[0].raw,"[1,2]","leaving the other kept draft word for word");
+    assert.equal(afterFirst.open,true,"and the panel stays open on the draft that is left");
+    await deleteKept.first().click();await page.getByRole("button",{name:"Delete permanently"}).click();
+    const afterLast=await page.evaluate(()=>({kept:localStorage.getItem("hce_state_v2_unreadable"),panel:!!document.querySelector("details.kept-draft"),notice:!!document.querySelector(".migration-notice"),focus:document.activeElement&&document.activeElement.tagName}));
+    assert.equal(afterLast.kept,null,"Deleting the last kept draft removes the storage key rather than an empty list");
+    assert.equal(afterLast.panel,false,"the panel goes with it");
+    assert.equal(afterLast.notice,false,"and so does the notice that a draft was kept");
+    assert.equal(afterLast.focus,"H2","with focus on the step heading, not the document");
     // Validate the actual deployment build has all four scripts in order.
     await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
     // An embedder can make this document's viewport far taller than the window it is shown
