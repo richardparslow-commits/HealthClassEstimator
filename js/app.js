@@ -36,6 +36,34 @@ const App = (() => {
     if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))return {unreadable:true,raw,key};
     try{return {state:InterviewState.migrate(parsed)};}catch{return {unreadable:true,raw,key};}
   }
+  // The kept draft is the applicant's own answers. They can read it and take it away here,
+  // rather than being told it survived in a place they cannot reach.
+  function keptDrafts() {
+    try{const held=JSON.parse(localStorage.getItem(QUARANTINE_KEY));return Array.isArray(held)?held.filter(r=>r&&typeof r.raw==="string"):[];}catch{return [];}
+  }
+  function downloadKept() {
+    const kept=keptDrafts();if(!kept.length)return;
+    const text=kept.length===1?kept[0].raw:JSON.stringify(kept.map(r=>({savedAt:r.savedAt,key:r.key,draft:r.raw})),null,2);
+    // A data: URL, not a Blob URL: the embedded copy runs under a strict Content-Security-Policy,
+    // and taking the draft away must not depend on what that policy lets the page fetch.
+    const link=node("a","visually-hidden");
+    link.href="data:text/plain;charset=utf-8,"+encodeURIComponent(text);
+    link.download="health-class-draft-kept-"+new Date().toISOString().slice(0,10)+".txt";
+    document.body.appendChild(link);link.click();link.remove();
+  }
+  function keptDraftPanel(parent) {
+    const kept=keptDrafts();if(!kept.length)return;
+    const details=node("details","kept-draft");
+    details.appendChild(node("summary",null,"View or download the saved draft this build could not read"));
+    kept.forEach((record,index)=>{
+      details.appendChild(node("p","hint","Kept "+record.savedAt+" from "+record.key+"."));
+      const id="kept-draft-"+index,label=node("label",null,"Draft text "+(index+1));label.htmlFor=id;
+      const area=node("textarea","kept-draft-text");area.id=id;area.readOnly=true;area.rows=6;area.value=record.raw;
+      details.append(label,area);
+    });
+    details.appendChild(button("Download the kept draft",downloadKept));
+    parent.appendChild(details);
+  }
   function keepUnreadable(found) {
     // If the copy cannot be made and the draft is the one save() would overwrite, saving
     // waits: overwriting here is the one thing that cannot be undone from this page.
@@ -317,7 +345,7 @@ const App = (() => {
     const nav=$("#steps-nav");nav.replaceChildren();steps.forEach(([label],i)=>{const b=button((i+1)+". "+label,()=>{step=i;results=false;render();},"step-pill"+(i===step&&!results?" active":""));if(i===step&&!results)b.setAttribute("aria-current","step");nav.appendChild(b);});
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
-    if(unreadableNotice)paragraph(target,"A saved draft on this device could not be read. It has been kept in this browser's storage, and this interview has started fresh.","migration-notice");
+    if(unreadableNotice){paragraph(target,"A saved draft on this device could not be read. It has been kept in this browser's storage, and this interview has started fresh.","migration-notice");keptDraftPanel(target);}
     if(migrationNotice)paragraph(target,"Your previous draft was imported. Select a product and reconfirm the new histories; earlier unchecked boxes and mild/control defaults are not treated as answers.","migration-notice");
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
     if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}

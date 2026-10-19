@@ -115,6 +115,13 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>{for(const k of ["hce_state_v2","hce_state_v1","hce_state_v2_unreadable"])localStorage.removeItem(k);localStorage.setItem("hce_state_v2","{not json");});
     await page.reload();await page.locator("#productId").waitFor({state:"attached"});
     assert.match(await page.locator(".migration-notice").innerText(),/could not be read/,"An unreadable draft is reported, not silently replaced");
+    assert.equal(await page.locator("details.kept-draft").count(),1,"The kept draft can be opened");
+    assert.equal(await page.locator(".kept-draft textarea").first().isVisible(),false,"and stays closed until asked for");
+    await page.locator("details.kept-draft summary").click();
+    assert.equal(await page.locator(".kept-draft textarea").first().inputValue(),"{not json","showing the text that could not be read");
+    const [download]=await Promise.all([page.waitForEvent("download"),page.getByRole("button",{name:"Download the kept draft"}).click()]);
+    assert.match(download.suggestedFilename(),/^health-class-draft-kept-\d{4}-\d{2}-\d{2}\.txt$/,"with a dated file name");
+    assert.equal(fs.readFileSync(await download.path(),"utf8"),"{not json","and downloads the same text");
     await sel("productId","banner_opterm");
     const kept=await page.evaluate(()=>{const q=JSON.parse(localStorage.getItem("hce_state_v2_unreadable"));return {raw:q[0].raw,key:q[0].key,current:JSON.parse(localStorage.getItem("hce_state_v2")).productId};});
     assert.equal(kept.raw,"{not json","The unreadable text is kept word for word");
