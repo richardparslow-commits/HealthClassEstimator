@@ -1,9 +1,12 @@
 /* Accessible product-specific interview; all results come from Engine.run. */
 "use strict";
 const App = (() => {
-  const STORAGE_KEY="hce_state_v2", LEGACY_KEY="hce_state_v1";
+  const STORAGE_KEY="hce_state_v2", LEGACY_KEY="hce_state_v1", QUARANTINE_KEY="hce_state_v2_unreadable";
   const $=sel=>document.querySelector(sel);
-  let state=InterviewState.empty(), step=0, results=false, migrationNotice=false, focusStepHeading=false;
+  let state=InterviewState.empty(), step=0, results=false, migrationNotice=false, unreadableNotice=false, focusStepHeading=false;
+  // A draft this build cannot read is copied here before anything overwrites it, so an
+  // unreadable save costs a session of answers instead of all of them.
+  let unpreserved=null, preserveWarned=false;
   const yesNo=[["yes","Yes"],["no","No"],["unknown","Unsure"]];
   const states="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ").map(s=>[s,s]);
   const conditions=[
@@ -18,7 +21,40 @@ const App = (() => {
     ["depression","Depression"],["anxiety","Anxiety"],["suicide_attempt","Suicide attempt"],["other","Another diagnosis"]
   ];
   function node(tag,cls,text) {const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;}
-  function save() {try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch{toast("This browser could not save the draft.");}}
+  function quarantine(raw,key) {
+    let records=[];
+    try{const held=JSON.parse(localStorage.getItem(QUARANTINE_KEY));if(Array.isArray(held))records=held.filter(r=>r&&typeof r.raw==="string");}catch{}
+    records.push({key,raw,savedAt:new Date().toISOString()});
+    try{localStorage.setItem(QUARANTINE_KEY,JSON.stringify(records));return true;}catch{return false;}
+  }
+  // A value that is not a plain object is as unreadable as text that will not parse.
+  // Storage that refuses to be read has nothing to preserve, so it is not a lost draft.
+  function loadStored(key) {
+    let raw;try{raw=localStorage.getItem(key);}catch{return {};}
+    if(!raw)return {};
+    let parsed;try{parsed=JSON.parse(raw);}catch{return {unreadable:true,raw,key};}
+    if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))return {unreadable:true,raw,key};
+    try{return {state:InterviewState.migrate(parsed)};}catch{return {unreadable:true,raw,key};}
+  }
+  function keepUnreadable(found) {
+    // If the copy cannot be made and the draft is the one save() would overwrite, saving
+    // waits: overwriting here is the one thing that cannot be undone from this page.
+    if(!quarantine(found.raw,found.key)&&found.key===STORAGE_KEY)unpreserved={raw:found.raw,key:found.key};
+    unreadableNotice=true;
+  }
+  function loadDraft() {
+    const current=loadStored(STORAGE_KEY);
+    if(current.unreadable){keepUnreadable(current);const legacy=loadStored(LEGACY_KEY);if(legacy.unreadable)keepUnreadable(legacy);return legacy.state||null;}
+    if(current.state)return current.state;
+    const legacy=loadStored(LEGACY_KEY);
+    if(legacy.unreadable){keepUnreadable(legacy);return null;}
+    return legacy.state||null;
+  }
+  function save() {
+    if(unpreserved&&quarantine(unpreserved.raw,unpreserved.key))unpreserved=null;
+    if(unpreserved){if(!preserveWarned){preserveWarned=true;toast("A saved draft could not be copied aside, so it was not overwritten. Copy what you need from this browser's storage before saving again.");}return;}
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch{toast("This browser could not save the draft.");}
+  }
   function toast(text) {const t=$("#toast");t.textContent=text;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),3500);}
   function field(parent,label,key,options=null,opts={}) {
     const obj=opts.obj||state, id=opts.id||key;
@@ -281,6 +317,7 @@ const App = (() => {
     const nav=$("#steps-nav");nav.replaceChildren();steps.forEach(([label],i)=>{const b=button((i+1)+". "+label,()=>{step=i;results=false;render();},"step-pill"+(i===step&&!results?" active":""));if(i===step&&!results)b.setAttribute("aria-current","step");nav.appendChild(b);});
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
+    if(unreadableNotice)paragraph(target,"A saved draft on this device could not be read. It has been kept in this browser's storage, and this interview has started fresh.","migration-notice");
     if(migrationNotice)paragraph(target,"Your previous draft was imported. Select a product and reconfirm the new histories; earlier unchecked boxes and mild/control defaults are not treated as answers.","migration-notice");
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
     if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}
@@ -313,7 +350,8 @@ const App = (() => {
     const card=$(".ack-card").cloneNode(true);card.querySelectorAll("button,input,.ack-actions,.ack-contact-row,.ack-hint").forEach(n=>n.remove());popup.document.body.appendChild(card);popup.focus();popup.print();
   }
   function init() {
-    try {const current=localStorage.getItem(STORAGE_KEY),old=localStorage.getItem(LEGACY_KEY);if(current||old){state=InterviewState.migrate(JSON.parse(current||old));migrationNotice=!!state.migrated;}}catch{migrationNotice=true;}
+    const remembered=loadDraft();
+    if(remembered){state=remembered;migrationNotice=!!state.migrated;}
     // The frame is not the window: an embedder can make this document's viewport far
     // taller than the window it is shown in (Streamlit's `st.iframe(..., height=2400)`
     // does), and a footer positioned against the viewport then lands at the bottom of a

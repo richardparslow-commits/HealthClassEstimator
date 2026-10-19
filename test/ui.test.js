@@ -110,6 +110,21 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.locator("#conditions-1-id").inputValue(),"diabetes","The valid legacy diagnosis is unchanged");
     await fill("conditions-0-name","Heart murmur");
     assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2")).conditions.map(c=>c.id)),["other","diabetes"],"Saving keeps both diagnoses in storage");
+    // A draft this build cannot read is copied aside before anything overwrites it, so
+    // starting over costs a session of answers instead of every answer saved.
+    await page.evaluate(()=>{for(const k of ["hce_state_v2","hce_state_v1","hce_state_v2_unreadable"])localStorage.removeItem(k);localStorage.setItem("hce_state_v2","{not json");});
+    await page.reload();await page.locator("#productId").waitFor({state:"attached"});
+    assert.match(await page.locator(".migration-notice").innerText(),/could not be read/,"An unreadable draft is reported, not silently replaced");
+    await sel("productId","banner_opterm");
+    const kept=await page.evaluate(()=>{const q=JSON.parse(localStorage.getItem("hce_state_v2_unreadable"));return {raw:q[0].raw,key:q[0].key,current:JSON.parse(localStorage.getItem("hce_state_v2")).productId};});
+    assert.equal(kept.raw,"{not json","The unreadable text is kept word for word");
+    assert.equal(kept.key,"hce_state_v2","and names the key it came from");
+    assert.equal(kept.current,"banner_opterm","while the new draft saves beside it");
+    // A saved value that parses but is not an object is unreadable too, and is kept as well.
+    await page.evaluate(()=>{localStorage.removeItem("hce_state_v2");localStorage.setItem("hce_state_v2","[1,2]");});
+    await page.reload();await page.locator("#productId").waitFor({state:"attached"});
+    assert.match(await page.locator(".migration-notice").innerText(),/could not be read/);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2_unreadable")).length),2,"Both unreadable drafts are kept");
     // Validate the actual deployment build has all four scripts in order.
     await page.goto(local+"/dist/app.html");await page.locator("#productId").waitFor({state:"attached"});assert.equal(await page.evaluate(()=>window.HCE_VERSION),expectedVersion);assert.deepEqual(errors,[]);
     // An embedder can make this document's viewport far taller than the window it is shown
