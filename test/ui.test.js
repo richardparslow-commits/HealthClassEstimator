@@ -53,7 +53,10 @@ const server=http.createServer((req,res)=>{
     await page.setViewportSize({width:1280,height:900});
     await page.locator("#ack-check").check();await page.locator("#ack-accept").click();
     assert.equal(await page.locator(".app-main").evaluate(n=>n.inert),false);
-    await sel("productId","banner_opterm");await fill("dob","1991-10-08");await sel("sex","male");await sel("state","TX");await fill("faceAmount",500000);await sel("termYears","20");
+    await sel("productId","banner_opterm");
+    // Choosing a product re-renders the step; keyboard focus must stay on the question, not the document.
+    assert.equal(await page.evaluate(()=>document.activeElement&&document.activeElement.id),"productId","Focus stays on the product question after the step re-renders");
+    await fill("dob","1991-10-08");await sel("sex","male");await sel("state","TX");await fill("faceAmount",500000);await sel("termYears","20");
     await sel("policyPurpose","income");await fill("income",120000);await fill("existingCoverage",0);await sel("replacement","no");await sel("financing","no");await sel("employment","employed");await fill("occupation","Office worker");
     for(const k of ["hazardousOccupation","aviation","hazardousSports","militaryDeployment"])await sel(k,"no");await next();
     await sel("usResident","yes");await sel("citizenship","citizen");await fill("usSince","1991-10-08");await sel("intentStay","yes");await sel("foreignResidence","no");await sel("healthInsurance","yes");await sel("travelHistory","no");await next();
@@ -88,6 +91,11 @@ const server=http.createServer((req,res)=>{
     await page.setViewportSize({width:390,height:844});await nav("Medical history");assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false,"Mobile interview has no page overflow");
     assert.equal(await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector(".app-main")).paddingBottom)>=document.querySelector(".app-footer").getBoundingClientRect().height),true,"Wrapped footer leaves room for the last fields");
     await nav("Product & profile");assert.equal(await page.locator("#dob").inputValue(),"1966-10-08");
+    // A medicine's condition link follows the diagnosis it names: removing that diagnosis clears
+    // the link, so the screen and the stored answer agree and the engine asks for it again.
+    await nav("Medical history");await page.getByRole("button",{name:"Remove this entry"}).first().click();
+    await nav("Prescriptions");assert.equal(await page.locator("#medications-0-conditionId").inputValue(),"","Removing the condition unlinks its medicine on screen");
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("hce_state_v2")).medications[0].conditionId),"","and in the stored answer");
     assert.deepEqual(errors,[],"No browser errors");assert.deepEqual(external,[],"Answers never trigger external requests");
     // Old defaults are imported only as facts needing reconfirmation.
     await page.evaluate(()=>{localStorage.removeItem("hce_state_v2");localStorage.setItem("hce_state_v1",JSON.stringify({carrier:"foresters",age:35,heightFt:5,heightIn:10,conditions:[{id:"diabetes",severity:"mild",control:"good"}],criminalActive:false}));});

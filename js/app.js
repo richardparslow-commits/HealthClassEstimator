@@ -43,12 +43,19 @@ const App = (() => {
   function labelledRegion(label,table) {const region=node("div","table-scroll");region.setAttribute("role","region");region.setAttribute("tabindex","0");region.setAttribute("aria-label",label);region.appendChild(table);return region;}
   function paragraph(parent,text,cls="card-sub") {parent.appendChild(node("p",cls,text));}
   function button(label,fn,cls="btn btn-ghost") {const b=node("button",cls,label);b.type="button";b.addEventListener("click",fn);return b;}
+  // A medicine's related-condition link is only meaningful while that diagnosis is listed.
+  // Once no condition carries the id, the link is cleared so the select and the stored answer
+  // agree, and the engine asks for the link to be made again.
+  function unlinkMedications(conditionId) {
+    if(!conditionId||state.conditions.some(c=>c.id===conditionId))return;
+    state.medications.forEach(m=>{if(m.conditionId===conditionId)m.conditionId="";});
+  }
   function listEditor(parent,key,label,renderRow) {
     state[key].forEach((entry,i)=>{
       const card=node("fieldset","history-entry"),legend=node("legend",null,label+" "+(i+1));card.appendChild(legend);
       const f=(title,k,options=null,opts={})=>field(card,title,k,options,{obj:entry,id:key+"-"+i+"-"+k,...opts});
       renderRow(card,entry,f,i);
-      card.appendChild(button("Remove this entry",()=>{state[key].splice(i,1);save();render();}));parent.appendChild(card);
+      card.appendChild(button("Remove this entry",()=>{const [removed]=state[key].splice(i,1);if(key==="conditions")unlinkMedications(removed?.id);save();render();}));parent.appendChild(card);
     });
     parent.appendChild(button("Add "+label.toLowerCase(),()=>{state[key].push({});save();render();}));
   }
@@ -152,7 +159,8 @@ const App = (() => {
   function medical(c) {
     paragraph(c,"Include every past or current diagnosis, even if mild, controlled or resolved. Use Another diagnosis for anything outside this list.");
     screen(c,"Have you ever been diagnosed, treated or advised to seek treatment for a medical or mental-health condition?","medicalHistory","conditions",()=>listEditor(c,"conditions","Condition",(card,r,f)=>{
-      f("Condition","id",conditions,{render:true,onChange:value=>{r.name=conditions.find(x=>x[0]===value)?.[1]||"";}});
+      const previousId=r.id;
+      f("Condition","id",conditions,{render:true,onChange:value=>{r.name=conditions.find(x=>x[0]===value)?.[1]||"";if(previousId!==value)unlinkMedications(previousId);}});
       if(r.id === "other"||r.legacyDetails)f("Diagnosis name / description","name");
       if(r.legacyDetails)paragraph(card,"This diagnosis was imported. Reconfirm the details below; old mild/control defaults are not accepted.");
       f("Date first diagnosed","diagnosisDate",null,{type:"date"});f("Current status","status",[["current","Current"],["resolved","Resolved"],["unknown","Unsure"]],{render:true});
@@ -266,6 +274,10 @@ const App = (() => {
     resultHeading.focus();
   }
   function render() {
+    // A question that changes the step rebuilds the step, and the control that had focus with it.
+    // Its id survives the rebuild, so the keyboard user is put back on that field rather than on
+    // the document (the step heading is focused on purpose when returning from results, so skip then).
+    const host=$("#step-content"),active=document.activeElement,keepFocus=!focusStepHeading&&active&&active.id&&host.contains(active)?active.id:"";
     const nav=$("#steps-nav");nav.replaceChildren();steps.forEach(([label],i)=>{const b=button((i+1)+". "+label,()=>{step=i;results=false;render();},"step-pill"+(i===step&&!results?" active":""));if(i===step&&!results)b.setAttribute("aria-current","step");nav.appendChild(b);});
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
@@ -273,6 +285,7 @@ const App = (() => {
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
     if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}
     $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"Estimate →":"Next →";
+    if(keepFocus){const again=document.getElementById(keepFocus);if(again)again.focus({preventScroll:true});}
   }
   function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}render();}
   function ack() {
