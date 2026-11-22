@@ -331,11 +331,73 @@ const App = (() => {
     c.appendChild(details);refreshDetails();
     paragraph(c,"Only an insurer can determine an actual insurance health class, eligibility or benefit design.");
   }
-  const steps=[
-    ["Applicant profile",profile],["Residency & travel",residence],["Tobacco & nicotine",nicotine],["Height & weight",build],
-    ["Vitals & labs",vitals],["Driving",driving],["Criminal history",criminal],["Medical history",medical],
-    ["Prescriptions",medications],["Family history",family],["Review",review]
-  ];
+  // The current, unified 11-section interview is declarative so each prompt
+  // and its answer key appear in exactly one section. Older screen functions
+  // above are intentionally not part of the applicant-facing flow.
+  const validWhen=(when,record)=>{
+    if(!when)return true;
+    if(when.any)return when.any.some(test=>validWhen(test,record));
+    if(when.all)return when.all.every(test=>validWhen(test,record));
+    return Array.isArray(when.in)&&when.in.includes(record?.[when.key]);
+  };
+  function intakeControl(target,q,obj=null,idx=null){
+    const subject=obj||state;
+    if(q.type==="repeat"){
+      const rows=state[q.id];
+      if(!validWhen(q.when,state)&&!(Array.isArray(rows)&&rows.length))return;
+      listEditor(target,q.id,q.label,(card,entry,f)=>{
+        for(const item of q.fields){
+          if(!validWhen(item.when,entry))continue;
+          const options=item.type==="yn"?yesNo:
+            item.type==="confirm"?[["yes","Yes, confirmed"],["no","Not yet"],["unknown","Unsure"]]:
+            item.type==="choice"?item.options:
+            item.type==="conditions"?IntakeQuestions.conditions:
+            item.type==="conditionLinks"?state.conditions.map(c=>[c.id,c.name||c.id]).concat([["other","Other / not listed"]]):
+            item.type==="states"?states:null;
+          const type=["text","textarea","number","date","month","email","tel"].includes(item.type)?item.type:"text";
+          const opts={type,render:!!options,min:item.min,max:item.max,step:item.step};
+          if(q.id==="conditions"&&item.id==="id"){
+            const previous=entry.id;
+            opts.onChange=value=>{
+              entry.name=IntakeQuestions.conditions.find(c=>c[0]===value)?.[1]||"";
+              if(previous!==value)unlinkMedications(previous);
+            };
+          }
+          f(item.label,item.id,options,opts);
+        }
+      });
+      return;
+    }
+    if(!validWhen(q.when,subject))return;
+    const options=q.type==="yn"?yesNo:
+      q.type==="confirm"?[["yes","Yes, confirmed"],["no","Not yet"],["unknown","Unsure"]]:
+      q.type==="choice"?q.options:q.type==="states"?states:
+      q.type==="conditions"?IntakeQuestions.conditions:null;
+    const type=["text","textarea","number","date","month","email","tel"].includes(q.type)?q.type:"text";
+    field(target,q.label,q.id,options,{type,render:!!options,min:q.min,max:q.max,step:q.step});
+    if(q.id==="mentalRiskNow"&&state.mentalRiskNow==="yes"){
+      paragraph(target,"If you may act on these thoughts, call 911 or go to an emergency department now. In the U.S., call or text 988 for immediate crisis support. This form does not notify emergency services.","migration-notice");
+    }
+  }
+  function intakeSection(c,section,index){
+    for(const group of section.groups){
+      const heading=node("h3",null,group.title);c.appendChild(heading);
+      for(const q of group.questions)intakeControl(c,q);
+      if(group.note)paragraph(c,group.note,"hint");
+    }
+    if(index===IntakeQuestions.sections.length-1){
+      const details=node("div");details.id="review-details";details.setAttribute("aria-live","polite");
+      const out=Engine.profile(state);
+      if(out.missing.length){
+        details.appendChild(node("h3",null,"Details still needed for the profile"));
+        const list=node("ul");
+        out.missing.forEach(msg=>list.appendChild(node("li",null,msg)));
+        details.appendChild(list);
+      }
+      c.appendChild(details);
+    }
+  }
+  const steps=IntakeQuestions.sections.map((section,i)=>[section.title,card=>intakeSection(card,section,i)]);
   function showResults() {
     const target=$("#results-content");target.replaceChildren();target.classList.remove("hidden");$("#step-content").classList.add("hidden");
     const out=Engine.profile(state),hero=node("section","result-hero");
@@ -384,7 +446,7 @@ const App = (() => {
     if(migrationNotice)paragraph(target,"Your previous draft was imported. Reconfirm the histories; former carrier and product choices are ignored, and earlier unchecked boxes and defaults are not treated as answers.","migration-notice");
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
     if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}
-    $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"Estimate →":"Next →";
+    $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"View profile summary →":"Next →";
     if(keepFocus){const again=document.getElementById(keepFocus);if(again)again.focus({preventScroll:true});}
   }
   function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;staleAnswers=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}drawDraftNotice();render();}

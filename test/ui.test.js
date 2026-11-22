@@ -68,9 +68,9 @@ const server=http.createServer((request,response)=>{
     assert.equal(await page.evaluate(()=>document.activeElement?.id),"dob","Consent focuses the first applicant field");
 
     await page.locator("#dob").fill("1991-10-08");
-    await nav("Height & weight");
+    await nav("Proposed Insured Information, Citizenship & Foreign Travel");
     await page.locator("#heightIn").fill("70");await page.locator("#weightLb").fill("165");
-    await nav("Review");
+    await nav("Personal History — Aviation & Hazardous Avocations");
     assert.match(await page.locator("#review-details").innerText(),/Details still needed/);
     await page.locator("#btn-next").click();
     assert.match(await page.locator("#result-heading").innerText(),/Additional information needed/);
@@ -88,10 +88,10 @@ const server=http.createServer((request,response)=>{
     assert.equal(await page.locator("#productId").count(),0);
     assert.equal(await page.evaluate(()=>Object.hasOwn(JSON.parse(localStorage.getItem("hce_state_v2")),"productId")),true,
       "The old draft is not rewritten until a user makes another change");
-    await nav("Review");await page.locator("#btn-next").click();
-    assert.match(await page.locator("#result-heading").innerText(),/Reported health profile collected/);
+    await nav("Personal History — Aviation & Hazardous Avocations");await page.locator("#btn-next").click();
+    assert.match(await page.locator("#result-heading").innerText(),/Additional information needed/);
     assert.doesNotMatch(await page.locator("#results-content").innerText(),/Banner Life|OPTerm|Preferred Plus|Graded benefit screen/);
-    await page.locator("#btn-back").click();await nav("Applicant profile");
+    await page.locator("#btn-back").click();await nav("Proposed Insured Information, Citizenship & Foreign Travel");
     await page.locator("#dob").fill("1990-10-08");
     assert.equal(await page.evaluate(()=>Object.hasOwn(JSON.parse(localStorage.getItem("hce_state_v2")),"productId")),false,
       "Next save actively discards the legacy carrier selection");

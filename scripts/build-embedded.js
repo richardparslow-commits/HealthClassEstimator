@@ -24,7 +24,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 let index = read("index.html");
 const css = read("css/styles.css");
-const sources = ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].map(read);
+const sources = ["js/rules.js", "js/intake-questions.js", "js/state.js", "js/engine.js", "js/app.js"].map(read);
 
 // Capture the release version before the loader that defines it is stripped,
 // so the embedded build still exposes window.HCE_VERSION (the acknowledgment

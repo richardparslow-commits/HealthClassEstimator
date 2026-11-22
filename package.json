@@ -4,7 +4,7 @@
   "private": true,
   "description": "Life-insurance pre-underwriting and case-triage estimator \u2014 dependency-free static web app",
   "scripts": {
-    "test": "node test/engine.test.js && node test/profile.test.js",
+    "test": "node test/engine.test.js && node test/profile.test.js && node test/intake-schema.test.js",
     "test:parity": "node test/parity.test.js",
     "test:alert": "node test/parity-alert.test.js",
     "check:consumer": "node scripts/check-consumer-parity.js",
@@ -15,7 +15,7 @@
     "build": "node scripts/build-embedded.js",
     "release:artifact": "node scripts/build-embedded.js app_embedded.html && node scripts/write-artifact-manifest.js app_embedded.html",
     "test:manifest": "node test/manifest.test.js",
-    "test:ui": "node test/ui.test.js",
+    "test:ui": "node test/ui.test.js && node test/intake.test.js",
     "soak": "node test/qa-soak.js",
     "test:build": "node test/build.test.js",
     "test:css": "node test/css.test.js",

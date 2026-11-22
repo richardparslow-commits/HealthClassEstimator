@@ -69,17 +69,17 @@ const VIEWPORTS = [
 ];
 
 const STEPS = [
-  "Applicant profile",
-  "Residency & travel",
-  "Tobacco & nicotine",
-  "Height & weight",
-  "Vitals & labs",
-  "Driving",
-  "Criminal history",
-  "Medical history",
-  "Prescriptions",
-  "Family history",
-  "Review",
+  "Proposed Insured Information, Citizenship & Foreign Travel",
+  "Occupation, Income, Military Service & Financial History",
+  "Existing Insurance, Replacement & Recent Applications",
+  "Tobacco & Nicotine Use",
+  "Health & Medical History",
+  "Mental Health History",
+  "Family Medical History",
+  "Personal History — Alcohol & Substance Use",
+  "Personal History — Driving Record (MVR)",
+  "Personal History — Criminal & Legal History",
+  "Personal History — Aviation & Hazardous Avocations",
 ];
 
 const server = http.createServer((req, res) => {
@@ -250,7 +250,7 @@ async function cycle(page, state, n) {
       const filled = await fillSection(page, seed + i * 97);
       if (!filled.filled) record(n, STEPS[i], "empty-section", "no controls were rendered for this section");
       await checkAlive(page, n, STEPS[i], STEPS[i]);
-      if (STEPS[i] === "Review") {
+      if (i === STEPS.length - 1) {
         await page.locator("#btn-next").click();
       } else {
         await page.locator("#btn-next").click();

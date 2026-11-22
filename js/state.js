@@ -3,7 +3,7 @@
 const InterviewState = (() => {
   const schemaVersion = 2;
   function empty() {
-    return {
+    const next = {
       schemaVersion, dob: "", sex: "", state: "", faceAmount: "", termYears: "", uhlTermPlan: "",
       policyPurpose: "", income: "", sbliIncome: "", sbliMortgageOnly: "", sbliMortgageAmount: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
       employment: "", occupation: "", hazardousOccupation: "", aviation: "", hazardousSports: "",
@@ -27,6 +27,33 @@ const InterviewState = (() => {
       outstandingRestitution: "", familyHistory: "", familyComplete: "", family: [],
       priorInsuranceAdverse: "", priorInsuranceDate: "", disabled: "", historyConfirmed: ""
     };
+    // Each standalone prompt is stored once. Repeating histories are arrays; their
+    // internal answers live on each row, not as duplicate top-level questions.
+    if (typeof IntakeQuestions !== "undefined") {
+      next.intakeRevision = "2026-11";
+      for (const section of IntakeQuestions.sections) for (const group of section.groups) for (const q of group.questions) {
+        if (q.type === "repeat") next[q.id] = [];
+        else if (!Object.hasOwn(next, q.id)) next[q.id] = "";
+      }
+    }
+    return next;
+  }
+  function separateMentalHistory(next) {
+    // Older interviews used one physical/mental list. Re-home those entries
+    // rather than asking for a second copy or silently discarding them.
+    if (!Array.isArray(next.mentalConditions) || !Array.isArray(next.conditions)) return;
+    const typeById={depression:"depression",anxiety:"anxiety",bipolar:"bipolar",schizophrenia:"schizophrenia",suicide_attempt:"other"};
+    const moved=next.conditions.filter(c=>Object.hasOwn(typeById,c.id));
+    if (!moved.length) return;
+    for (const c of moved) next.mentalConditions.push({
+      condition:typeById[c.id],name:c.name||c.id,
+      diagnosed:c.diagnosisDate||"",status:c.status||"",
+      treatment:c.treatment||""
+    });
+    next.conditions=next.conditions.filter(c=>!Object.hasOwn(typeById,c.id));
+    next.mentalHistory="yes";
+    if(!next.conditions.length && next.medicalHistory==="yes")next.medicalHistory="";
+    next.migrated=true;
   }
   function migrate(raw) {
     const next = empty();
@@ -37,6 +64,7 @@ const InterviewState = (() => {
         if (Array.isArray(next[key])) next[key] = Array.isArray(raw[key]) ? raw[key].filter(v => v && typeof v === "object" && !Array.isArray(v)).map(v => ({ ...v })) : [];
         else if (typeof raw[key] === "string" || typeof raw[key] === "number") next[key] = raw[key];
       }
+      separateMentalHistory(next);
       return next;
     }
     // Preserve entered facts for review; discard old favorable defaults and
@@ -58,6 +86,7 @@ const InterviewState = (() => {
       next.medicationHistory = "yes";
     }
     next.migrated = true;
+    separateMentalHistory(next);
     return next;
   }
   return { schemaVersion, empty, migrate };
