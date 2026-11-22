@@ -69,7 +69,7 @@ const VIEWPORTS = [
 ];
 
 const STEPS = [
-  "Product & profile",
+  "Applicant profile",
   "Residency & travel",
   "Tobacco & nicotine",
   "Height & weight",
@@ -84,6 +84,7 @@ const STEPS = [
 
 const server = http.createServer((req, res) => {
   const name = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+  if (name === "/favicon.ico") { res.writeHead(204); res.end(); return; }
   const file = path.resolve(ROOT, "." + (name === "/" ? "/index.html" : name));
   if (!file.startsWith(ROOT + path.sep)) {
     res.writeHead(403);
@@ -225,7 +226,7 @@ async function cycle(page, state, n) {
     sessionStorage.clear();
   });
   await page.reload();
-  await page.waitForSelector("#productId", { state: "attached" });
+  await page.waitForSelector("#dob", { state: "attached" });
 
   // 1. Acknowledgment gate.
   await section(page, state, n, "Acknowledgment gate", async () => {
@@ -302,7 +303,7 @@ async function cycle(page, state, n) {
       localStorage.setItem("hce_state_v1", JSON.stringify({ conditions: [{ id: 12 }] }));
     }, raw);
     await page.reload();
-    await page.waitForSelector("#productId", { state: "attached" });
+    await page.waitForSelector("#dob", { state: "attached" });
     // A browser restores scroll on reload; a reader arriving at the page does not, so
     // measure the layout from the top rather than from wherever the last action ended.
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -408,7 +409,7 @@ async function cycle(page, state, n) {
   await section(page, state, n, "Storage failure", async () => {
     await page.evaluate(() => localStorage.clear());
     await page.reload();
-    await page.waitForSelector("#productId", { state: "attached" }).catch(() => {});
+    await page.waitForSelector("#dob", { state: "attached" }).catch(() => {});
     if (!(await page.locator("#ack-gate").isHidden())) {
       await page.locator("#ack-check").check().catch(() => {});
       await page.locator("#ack-accept").click().catch(() => {});
@@ -419,7 +420,7 @@ async function cycle(page, state, n) {
         throw new DOMException("QuotaExceededError", "QuotaExceededError");
       };
     });
-    await page.locator("[data-field='productId']").selectOption({ index: 1 }).catch(() => {});
+    await page.locator('#dob').fill('1991-10-08').catch(() => {});
     const toast = await page.locator("#toast").textContent().catch(() => "");
     if (!/could not save/i.test(toast || ""))
       record(n, "Storage failure", "missing-warning", `no save warning; toast said "${toast}"`);
@@ -449,7 +450,7 @@ async function cycle(page, state, n) {
 (async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.HCE_BROWSER_PATH ? {executablePath:process.env.HCE_BROWSER_PATH} : {}) });
   const started = Date.now();
   const workerState = Array.from({ length: WORKERS }, (_, i) => ({
     errors: [],

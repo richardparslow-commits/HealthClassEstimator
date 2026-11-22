@@ -21,7 +21,7 @@
    clicks the wake button when the sleep screen is showing and measures how long the
    wake took, waits for the estimator frame, and then judges what a visitor would see —
    the frame is present, it carries this repository's release version, its
-   acknowledgment gate and product select are there, nothing inside it threw, and, when
+   acknowledgment gate and applicant profile are there, nothing inside it threw, and, when
    the way forward is on screen, it takes it: the acknowledgment is ticked, continue is
    pressed, and the interview has to arrive with its steps rendered and focus in it.
 
@@ -151,10 +151,10 @@ async function readManifest({ url, fetchImpl = fetch, timeoutMs = 30000 }) {
 }
 
 // What the estimator's own document carries, and what a stub would not: its engine,
-// its acknowledgment gate and its product select. Bare identifiers, because the
+// its acknowledgment gate and its applicant profile. Bare identifiers, because the
 // controls are built at runtime as well as written into the document — the frame is
 // read back as a serialized DOM, where both forms appear.
-const MARKERS = { engine: "const Engine =", acknowledgment: "ack-check", product: "productId" };
+const MARKERS = { engine: "const Engine =", acknowledgment: "ack-check", profile: "dob" };
 const carriesEstimator = (html) => Object.values(MARKERS).every((marker) => html.includes(marker));
 
 function fail(message) {
@@ -390,7 +390,7 @@ async function measureLayout(page, frame) {
 
 // The gate in the app: the continue button is disabled until the acknowledgment is
 // ticked, accepting hides the gate (the `.hidden` class), renders the interview's step
-// pills into #steps-nav and focuses #productId. Read as visibility rather than as a
+// pills into #steps-nav and focuses #dob. Read as visibility rather than as a
 // class, so a copy that hides the gate some other way is judged by what a visitor sees.
 const GATE_STATE = () => {
   const gate = document.querySelector("#ack-gate");
@@ -504,11 +504,11 @@ async function exerciseInterview(frame, layout, timeoutMs) {
 
   // Focus is what makes the first answer reachable without a mouse; the site's own e2e
   // requires the same of this build in its frame.
-  if (after && after.focused !== "productId")
+  if (after && after.focused !== "dob")
     problems.push(
       "the gate was accepted and the interview rendered, but focus stayed on " +
         JSON.stringify(after.focused) +
-        " instead of the first product question (#productId)",
+        " instead of the first applicant question (#dob)",
     );
 
   return { attempted: true, accepted: true, steps, focused: after ? after.focused : null, problems, reason: null };
@@ -654,7 +654,7 @@ export function verdict({ expectedVersion, observed, deployedManifest = null }) 
         observed.frame.url.replace(/^about:srcdoc$/, "about:srcdoc (the wrapper's frame)") +
         ", release " +
         JSON.stringify(observed.frame.version) +
-        ", acknowledgment gate and product select present",
+        ", acknowledgment gate and applicant profile present",
     );
   if (deployedManifest && deployedManifest.ok) {
     const record = deployedManifest.manifest;
@@ -756,7 +756,7 @@ async function main(argv) {
   // comparison at a staging copy or a local server without editing the declaration.
   const manifestUrl = args.manifest ?? process.env.STREAMLIT_MANIFEST_URL ?? manifestUrlFor(declared.repo);
   const { chromium } = require("playwright");
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.HCE_BROWSER_PATH ? { executablePath: process.env.HCE_BROWSER_PATH } : {}) });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const consoleErrors = [];
   page.on("console", (message) => {

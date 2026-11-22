@@ -282,7 +282,7 @@ const declared=["--declarations",path.join(root,"consumers/website.json")];
 let r2=check(write("declared-page.html",declaredPage),buildPath,declared);
 equal(r2.status,0,"the page that is this build plus its declared adaptations passes\n"+r2.out+r2.err);
 ok(/Declared : consumers\/website.json/.test(r2.out),"the report names the declarations it applied");
-ok(/declared in consumers\/website.json: result-contact-card, no-comparison-table/.test(r2.out),"the pass names the adaptations, not a warning");
+ok(/declared in consumers\/website.json: result-contact-card/.test(r2.out),"the pass names the adaptations, not a warning");
 ok(/The page runs this build/.test(r2.out),"the pass says the page is this build");
 ok(!/check whether the copy invented them/.test(r2.out),"the page's own contact card is no longer called invented");
 ok(!/Bring anything you want to keep back into/.test(r2.out),"nothing is suggested to be ported back from the page");
@@ -291,7 +291,7 @@ equal(composeDeclared(build,declaration.adaptations,[]),declaredDocument,"the ch
 const declaredJson=JSON.parse(execFileSync(process.execPath,[checker,"--consumer",write("declared-json.html",declaredPage),"--build",buildPath,...declared,"--json"],{encoding:"utf8"}));
 equal(declaredJson.declarations.exact,true,"--json records that the page is the composition exactly");
 equal(declaredJson.declarations.problems.length,0,"--json carries no declaration problems");
-equal(declaredJson.declarations.ids.length,4,"--json names all four adaptations");
+equal(declaredJson.declarations.ids.length,3,"--json names all three adaptations");
 ok(declaredJson.declarations.composed>200000,"--json records how much of the page the composition covers");
 
 // 9b. A line nobody declared is drift, even inside a page that carries every declared
@@ -312,12 +312,6 @@ equal(r2.status,1,"a page serving an older build fails, presentation-only change
 ok(/underwriting engine\s+identical/.test(r2.out),"the underwriting components in that fixture really do match");
 ok(/the page is not this build with its declared adaptations/.test(r2.out),"the failure says the page is a different build");
 
-// 9c. The page may not carry what it declares omitted — the claim applicants read.
-r2=check(write("declared-table.html",pageOf(compose(build,["no-comparison-table"]))),buildPath,declared);
-equal(r2.status,1,"a page that still carries the omitted table fails");
-ok(/no-comparison-table: the page still carries/.test(r2.out),"the failure names the adaptation and the statement");
-ok(/which it declares omitted/.test(r2.out),"the failure says what the page claims");
-
 // 9d. A page that drops a declared addition is not the composition either, and the note
 //     names the adaptation rather than leaving a diff to be interpreted.
 r2=check(write("declared-no-card.html",pageOf(compose(build,["result-contact-card"]))),buildPath,declared);
@@ -328,13 +322,10 @@ ok(/not this build with its declared adaptations/.test(r2.out),"the exactness fa
 // 9e. A release that moves an anchor the page's generator inserts at, removes at, or
 //     rewrites must fail here: the page could no longer be regenerated from this build,
 //     and nothing else in this repository can see that.
-r2=check(write("anchor-page.html",declaredPage),write("build-no-insert-anchor.html",build.replace('const refs=node("section","card");','const refs2=node("section","card");')),declared);
+r2=check(write("anchor-page.html",declaredPage),write("build-no-insert-anchor.html",build.replace('const disclaimer=node("section","card");','const disclaimer2=node("section","card");')),declared);
 equal(r2.status,1,"a build that lost the insertion anchor fails");
 ok(/result-contact-card: this build no longer carries the line it is inserted at/.test(r2.out),"the failure names the insertion anchor");
 ok(/the page's generator inserts there and will fail/.test(r2.out),"the failure says what breaks in the page's generator");
-r2=check(write("anchor-page2.html",declaredPage),write("build-no-omit-anchor.html",build.replace("const comparisons=Engine.compare(state);","const comparisons=[];")),declared);
-equal(r2.status,1,"a build that lost the omitted statement fails");
-ok(/no-comparison-table: this build no longer carries the statement that starts/.test(r2.out),"the failure names the omitted statement");
 r2=check(write("anchor-page3.html",declaredPage),write("build-one-link.html",build.replace('href="https://lifeinsurancebrokeradvocate.com/contact" target="_blank"','href="https://lifeinsurancebrokeradvocate.com/contact"')),declared);
 equal(r2.status,1,"a build with one broker link fewer fails");
 ok(/same-origin-contact-links: expected 2 occurrence\(s\)/.test(r2.out),"the failure counts the links the page rewrites");
@@ -347,7 +338,7 @@ ok(/Declarations not found/.test(r2.err),"the failure names the file it looked f
 equal(loadDeclarations("https://example.com/tools/health-class-predictor",null),null,"another origin gets no declarations");
 equal(loadDeclarations(path.join(dir,"plain.html"),null),null,"a local file gets no declarations unless they are named");
 const live=loadDeclarations("https://lifeinsurancebrokeradvocate.com/tools/health-class-predictor",null);
-equal(live?.adaptations.length,4,"the page the declarations name loads them");
+equal(live?.adaptations.length,3,"the page the declarations name loads them");
 equal(live?.file,"consumers/website.json","the loaded declaration names its file");
 
 // 11. The page can be judged against the deployment it claims to be: a commit of the

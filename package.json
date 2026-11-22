@@ -4,7 +4,7 @@
   "private": true,
   "description": "Life-insurance pre-underwriting and case-triage estimator \u2014 dependency-free static web app",
   "scripts": {
-    "test": "node test/engine.test.js",
+    "test": "node test/engine.test.js && node test/profile.test.js",
     "test:parity": "node test/parity.test.js",
     "test:alert": "node test/parity-alert.test.js",
     "check:consumer": "node scripts/check-consumer-parity.js",

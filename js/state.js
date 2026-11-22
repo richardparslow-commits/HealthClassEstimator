@@ -4,7 +4,7 @@ const InterviewState = (() => {
   const schemaVersion = 2;
   function empty() {
     return {
-      schemaVersion, productId: "", dob: "", sex: "", state: "", faceAmount: "", termYears: "", uhlTermPlan: "",
+      schemaVersion, dob: "", sex: "", state: "", faceAmount: "", termYears: "", uhlTermPlan: "",
       policyPurpose: "", income: "", sbliIncome: "", sbliMortgageOnly: "", sbliMortgageAmount: "", existingCoverage: "", existingCarrierCoverage: "", replacement: "", financing: "",
       employment: "", occupation: "", hazardousOccupation: "", aviation: "", hazardousSports: "",
       militaryDeployment: "", forestersDeployment: "", exposureDetails: "", citizenship: "", usResident: "", usSince: "",
@@ -37,7 +37,6 @@ const InterviewState = (() => {
         if (Array.isArray(next[key])) next[key] = Array.isArray(raw[key]) ? raw[key].filter(v => v && typeof v === "object" && !Array.isArray(v)).map(v => ({ ...v })) : [];
         else if (typeof raw[key] === "string" || typeof raw[key] === "number") next[key] = raw[key];
       }
-      if (!Object.prototype.hasOwnProperty.call(PRODUCT_RULES,next.productId)) next.productId = "";
       return next;
     }
     // Preserve entered facts for review; discard old favorable defaults and
