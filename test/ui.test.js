@@ -104,6 +104,7 @@ const server=http.createServer((request,response)=>{
     await framed.goto(local+"/oversized-host");
     const frame=framed.frameLocator("iframe");
     await frame.locator("#dob").waitFor();
+    assert.equal(await frame.locator("#ack-title").evaluate(el=>document.activeElement===el),false,"Embedded modal does not request prohibited initial focus");
     assert.equal(await frame.locator("#productId").count(),0);
     assert.equal(await frame.locator("#ack-accept").isVisible(),true);
     await framed.close();
