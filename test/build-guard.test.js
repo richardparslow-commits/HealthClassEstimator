@@ -26,7 +26,7 @@ function stage(name, doctor = (index) => index) {
   fs.mkdirSync(path.join(dir, "js"));
   fs.copyFileSync(path.join(ROOT, "scripts/build-embedded.js"), path.join(dir, "scripts/build-embedded.js"));
   fs.copyFileSync(path.join(ROOT, "css/styles.css"), path.join(dir, "css/styles.css"));
-  for (const name of ["rules", "state", "engine", "app"]) {
+  for (const name of ["rules", "intake-questions", "state", "engine", "app"]) {
     fs.copyFileSync(path.join(ROOT, `js/${name}.js`), path.join(dir, `js/${name}.js`));
   }
   const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -49,8 +49,8 @@ assert.equal(clean.run.status, 0, "the unmodified tree must build: " + clean.run
 const html = fs.readFileSync(clean.out, "utf8");
 assert.ok(!html.includes('src="js/') && !html.includes('href="css/'), "the build must inline its assets");
 assert.ok(
-  ["const PRODUCT_RULES =", "const InterviewState =", "const Engine =", "const App ="].every((marker) => html.includes(marker)),
-  "the four inlined scripts are present"
+  ["const PRODUCT_RULES =", "const IntakeQuestions =", "const InterviewState =", "const Engine =", "const App ="].every((marker) => html.includes(marker)),
+  "the five inlined scripts are present"
 );
 assert.ok(!html.includes('createElement("script")'), "the loader must be gone from the output");
 

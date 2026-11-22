@@ -11,7 +11,7 @@
 
 <!-- Mandatory acknowledgment gate: the wizard stays inert behind this overlay
      until the user accepts the full acknowledgment — the tool is only an
-     estimating aid, it is not an offer of life insurance, answers are saved
+     history-screening aid, it is not an offer of life insurance, answers are saved
      in this browser only, and each carrier has the final and absolute say. -->
 <div class="ack-gate hidden" id="ack-gate" role="dialog" aria-modal="true" aria-labelledby="ack-title">
   <div class="ack-card">
@@ -30,8 +30,8 @@
     <div class="ack-section">
       <h3>What this tool is</h3>
       <ul class="ack-list">
-        <li>A <strong>free estimating tool</strong> that helps a producer or applicant summarize a person&rsquo;s <strong>self-reported health history</strong> relevant to life insurance before an application is submitted.</li>
-        <li>An <strong>estimate only</strong> &mdash; preliminary, non-binding, and based solely on the information entered.</li>
+        <li>A <strong>free pre-underwriting intake tool</strong> that organizes self-reported medical, lifestyle and nonmedical history for later review by an insurance professional.</li>
+        <li>A <strong>self-reported profile only</strong> &mdash; it does not calculate a carrier health class or determine insurance eligibility.</li>
         <li>Subject in every case to the carrier: <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</li>
       </ul>
     </div>
@@ -42,7 +42,7 @@
         <li><strong>Not an offer of life insurance</strong> &mdash; not a quote, not a guarantee of coverage or price, and not an application.</li>
         <li>It does not issue insurance, bind coverage, or take the place of a carrier underwriter&rsquo;s decision.</li>
         <li>It is <strong>not medical advice</strong> and not a medical diagnostic tool.</li>
-        <li>A favorable estimate does not mean any carrier will offer coverage &mdash; carriers may obtain medical records, prescription history, lab results, consumer reports, and MIB information that change the outcome.</li>
+        <li>A self-reported profile does not establish that a carrier will offer coverage &mdash; insurers may request medical, prescription, laboratory or other underwriting records under their own authorization processes.</li>
       </ul>
     </div>
 
@@ -51,20 +51,21 @@
       <ul class="ack-list">
         <li><strong>Answers are saved automatically in this browser on this device.</strong> They are not sent to us, carriers or other services.</li>
         <li>Every answer stays <strong>in this browser, on this device only</strong>. Your draft uses this browser&rsquo;s local storage. Anyone with access to this browser profile may be able to view it.</li>
+        <li><strong>Do not enter Social Security, bank, routing, government ID, driver&rsquo;s license, tax ID, or policy numbers anywhere in this questionnaire.</strong> Those identifiers are not requested.</li>
         <li>There are no accounts and no answer tracking. Use Delete saved answers on the results page, or clear this site&rsquo;s browser data, to remove your draft.</li>
       </ul>
     </div>
 
     <div class="ack-disclaimer">
       <strong>Legal disclaimer.</strong> This tool is not a medical diagnostic tool and does not
-      issue insurance, bind coverage, or replace a carrier underwriter&rsquo;s decision. The estimate
-      is based only on disclosed information. The carrier may obtain medical records, prescription
+      issue insurance, bind coverage, or replace a carrier underwriter&rsquo;s decision. The profile
+      is based only on self-reported information. The carrier may obtain medical records, prescription
       history, laboratory/paramedical results, consumer reports, and information from other insurers
-      or MIB, subject to authorization &mdash; those sources can change the estimate. Never suggest
+      or MIB, subject to authorization &mdash; those sources can change the eventual underwriting assessment. Never suggest
       withholding information or &ldquo;answering around&rdquo; a condition: applications state that answers
       influence acceptance and that material misrepresentation or nondisclosure can jeopardize
       coverage. Temporary coverage exists only if the exact carrier receipt conditions are met, not
-      because this tool gives a favorable estimate.
+      because this tool presents a health-history profile.
     </div>
 
     <div class="ack-contact-row">
@@ -77,7 +78,7 @@
     <div class="ack-actions">
       <label class="ack-check">
         <input type="checkbox" id="ack-check">
-        <span>I have read and accept the acknowledgment and disclaimer above &mdash; including that this tool is <strong>only an estimating aid</strong>, that it is <strong>not an offer of life insurance</strong>, that <strong>my answers are saved in this browser only</strong>, and that <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</span>
+        <span>I have read and accept the acknowledgment and disclaimer above &mdash; including that this tool is <strong>only an informational history-screening aid</strong>, that it is <strong>not an offer of life insurance</strong>, that <strong>my answers are saved in this browser only</strong>, and that <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</span>
       </label>
       <button class="btn btn-primary" id="ack-accept" type="button" disabled>I acknowledge &mdash; continue</button>
       <p class="ack-hint">You must acknowledge before entering any applicant information.</p>
@@ -152,9 +153,9 @@
       <button class="btn btn-primary" id="btn-next" type="button">Next →</button>
     </div>
     <p class="guardrail-line" id="guardrail-line">
-      Preliminary, non-binding estimate based only on disclosed information. The carrier may obtain medical records,
+      Preliminary, non-binding profile based only on disclosed information. The carrier may obtain medical records,
       prescription history, lab results, consumer reports, and information from other insurers or MIB, which can change
-      this estimate. This tool is not a medical diagnostic tool and does not issue insurance, bind coverage, or replace a
+      the ultimate underwriting outcome. This tool is not a medical diagnostic tool and does not issue insurance, bind coverage, or replace a
       carrier underwriter’s decision.
     </p>
     <div class="footer-links">
@@ -179,9 +180,9 @@
      in order when async=false, preserving the rules -> state -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "89";
+    var HCE_VERSION = "90";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
-    ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
+    ["js/rules.js", "js/intake-questions.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");
       s.src = src + "?v=" + HCE_VERSION;
       s.async = false;

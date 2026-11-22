@@ -43,7 +43,7 @@ const condition={id:"diabetes",name:"Diabetes",diagnosisDate:"2021-05-01",status
 const diagnosed=screen({medicalHistory:"yes",conditions:[condition]});
 equal(diagnosed.status,"review","Reported medical conditions require review, not automatic denial");
 equal(diagnosed.healthClass,null,"No medical diagnosis creates a class or decline");
-contains(diagnosed.concerns,/medical or mental-health/, "Individualized medical review note");
+contains(diagnosed.concerns,/medical history/, "Individualized physical-history review note");
 const nicotine=screen({nicotineHistory:"yes",nicotine:[{product:"cigarette",current:"yes",lastDate:"2026-11-22"}],nicotineComplete:"yes"});
 equal(nicotine.status,"review","Nicotine history is not assumed non-tobacco");
 equal(nicotine.healthClass,null,"Nicotine use is not assigned a fabricated rating");

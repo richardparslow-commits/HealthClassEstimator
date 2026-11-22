@@ -1,6 +1,6 @@
 # HealthClassEstimator
 
-**Release 88 (November 2026): product-neutral health-history intake.** The applicant no longer selects a carrier, product or underwriting route, and the website/Streamlit UI never silently assigns one. The result summarizes disclosed health and nonmedical history, highlights information still needed and flags individual-review considerations; it does not assign a carrier-specific health class, benefit tier, exclusion, approval or price. The prior carrier-rule engine remains available internally for historical verification tests, but is not called by the applicant UI. Engine.profile provides the new neutral results.
+**Release 90 (November 2026): 11-section, deduplicated, carrier-neutral pre-underwriting intake.** The applicant no longer selects a carrier, product or underwriting route, and the website/Streamlit UI never silently assigns one. The result summarizes disclosed health and nonmedical history, highlights information still needed and flags individual-review considerations; it does not assign a carrier-specific health class, benefit tier, exclusion, approval or price. The prior carrier-rule engine remains available internally for historical verification tests, but is not called by the applicant UI. Engine.profile provides the new neutral results.
 
 The browser runtime remains dependency-free JavaScript.
 
@@ -29,7 +29,7 @@ npm run verify:deployed
 npm run verify:deployed -- --json-out deployed.json   # the same verdict, written for the alert
 ```
 
-The standalone output is `dist/app.html`. The builder includes rules, state, engine and UI in that order and stamps the same release version as `index.html`. `npm run release:artifact` writes the Streamlit pair: `app_embedded.html` (the same bytes as `dist/app.html`) plus `app_embedded.manifest.json`, the sha256/size/version/builder record the deployed repository verifies before it serves anything.
+The standalone output is `dist/app.html`. The builder includes rules, the declarative intake questionnaire, state, engine and UI in that order and stamps the same release version as `index.html`. `npm run release:artifact` writes the Streamlit pair: `app_embedded.html` (the same bytes as `dist/app.html`) plus `app_embedded.manifest.json`, the sha256/size/version/builder record the deployed repository verifies before it serves anything.
 
 The second command must be run with the deployed interpreter, not whatever `python3` happens to be: the check fails when the Python running it is not the one the deployment declares. The deployed app's interpreter is declared once, in `richardparslow-commits/health_app.py`'s `.python-version` (`3.12`): a local checkout, this repository's deploy and canary workflows (`python-version-file`), and the dev container all read or match that one file, and `verify-streamlit-live.py` fails when the interpreter running it is not the declared one. Streamlit Community Cloud is the exception it cannot be — Cloud chooses the interpreter in the app's Advanced settings and ignores version files — so the declaration is the instruction for that setting, and the deployed README says so plainly instead of implying a file controls it.
 
@@ -50,7 +50,7 @@ npm run build
 npm run test:ui
 ```
 
-`HCE_BROWSER_PATH` can select an existing Chromium binary. The browser test starts and closes a temporary localhost server, exercises the actual interview controls, checks saved-state migration and mobile layout, and verifies the embedded output. Runtime deployment requires none of these testing dependencies, which is why the job installs Playwright with `--no-save` rather than adding it to this project.
+`HCE_BROWSER_PATH` can select an existing Chromium binary. The browser tests start temporary localhost servers, exercise the actual interview controls and its 11 deduplicated sections, verify branch-triggered follow-ups and the self-harm safety message, check saved-state migration and mobile layout, and verify the embedded output. Runtime deployment requires none of these testing dependencies, which is why the job installs Playwright with `--no-save` rather than adding it to this project.
 
 The randomized soak is a command too, so the 400-cycle run can be repeated rather than remembered:
 

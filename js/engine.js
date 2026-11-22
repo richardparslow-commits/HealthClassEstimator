@@ -1019,8 +1019,8 @@ const Engine = (() => {
     if (nicotine === "never" && nicotineRows?.length)
       add(missing,"Reconcile the no-use answer with saved nicotine entries.");
 
-    const conditionRows = history("medicalHistory","conditions","past and current diagnoses",
-      "Disclosed medical or mental-health history requires individualized review; a condition alone is not an automatic exclusion.");
+    const conditionRows = history("medicalHistory","conditions","past and current physical diagnoses",
+      "Disclosed medical history requires individualized review; a condition alone is not an automatic exclusion.");
     for (const condition of conditionRows) {
       if ((!known(condition.id) || condition.id === "other" && !known(condition.name)) ||
           !known(condition.status) || !known(condition.diagnosisDate))
@@ -1049,6 +1049,9 @@ const Engine = (() => {
       ["careFacility","facility or hospice care"],["homeHealth","home nursing care"],
       ["terminalIllness","terminal illness"],["substanceHistory","substance-use history"],
       ["disabled","recent disability"]]) {
+      // The revised interview gathers substance history once in dated alcohol
+      // and drug records; do not demand the old redundant aggregate answer.
+      if (key === "substanceHistory" && d.intakeRevision === "2026-11") continue;
       if (answer(key,label)) add(concerns,"Reported "+label+" calls for individual review.");
     }
     if (d.pendingCare === "yes" && !known(d.pendingDetails))
@@ -1066,6 +1069,62 @@ const Engine = (() => {
       ["pendingCharges","pending charges"],["probationCurrent","current probation"],
       ["paroleCurrent","current parole"],["financing","premium financing"]]) {
       if (d[key] === "yes") add(otherReview,"Reported "+label+" may affect an insurer's nonmedical review.");
+    }
+    // New carrier-neutral sectioned intake. Legacy fixtures and rule-only
+    // paths do not receive these additional requirements.
+    if (d.intakeRevision === "2026-11") {
+    if (Object.hasOwn(d,"mentalHistory")) {
+      history("mentalHistory","mentalConditions","mental health conditions",
+        "Reported mental health diagnoses or care require individualized review.");
+      if (d.mentalRiskNow === "yes")
+        add(concerns,"Current thoughts of self-harm require immediate support. In the United States, call or text 988; for immediate danger call 911. This tool cannot alert anyone.");
+      else if (!["yes","no"].includes(d.mentalRiskNow))
+        add(missing,"Confirm current safety and whether help is needed.");
+    }
+    for (const [key,label] of [
+      ["militaryService","past military service"],["bankruptcyHistory","past personal/business bankruptcy"],
+      ["existingInsurance","existing insurance or annuities"],["recentApplications","recent insurance applications"],
+      ["travelHistory","foreign travel"],["foreignResidence","foreign residence"],
+      ["hazardousOccupation","occupational hazards"],["mentalHistory","mental health history"],
+      ["alcoholPastYear","alcohol use within the past year"],["alcoholProblem","alcohol misuse or treatment"],
+      ["drugHistory","non-prescribed or illicit drug use"],["licenseRestrictedMedical","medical driving restrictions"],
+      ["supervisionRecent","past court supervision"],["mobilityEquipment","recent mobility or respiratory equipment"],
+      ["transplantRecommended","organ/tissue transplant recommendation"]
+    ]) {
+      if (Object.hasOwn(d,key) && !["yes","no"].includes(d[key]))
+        add(missing,"Confirm "+label+".");
+    }
+    const flagged=[
+      ["mentalWorkImpact","mental-health-related work limitations"],
+      ["mentalPsychiatricCare","psychiatric or hospital mental health care"],
+      ["mentalSuicidalHistory","past suicidal thoughts or attempts"],
+      ["alcoholProblem","alcohol-use problems or treatment"],
+      ["drugHistory","non-prescribed or illicit substance use"],
+      ["prescribedNotTaking","a prescribed medicine not currently being taken"],
+      ["abnormalLabs","abnormal laboratory results under observation"],
+      ["disabilityWork","recent health-related inability to work"],
+      ["transplantRecommended","transplant history or recommendation"],
+      ["covidComplications","recent COVID-19 complications"],
+      ["mobilityEquipment","recent mobility or medical equipment use"]
+    ];
+    for(const [key,label] of flagged)if(d[key]==="yes")add(concerns,"Reported "+label+" requires individual review.");
+    if(Array.isArray(d.substances)&&d.substances.some(r=>r.treatment==="yes"))
+      add(concerns,"Reported advice or treatment for substance use requires individual review.");
+    for(const [key,label] of [
+      ["bankruptcyHistory","bankruptcy history"],["militaryService","military service"],
+      ["foreignResidence","extended foreign residence"],["travelHistory","international travel"],
+      ["hazardousSports","hazardous sports"],["aviation","aviation"],
+      ["recentApplications","recent insurance applications"]
+    ])if(d[key]==="yes")add(otherReview,"Reported "+label+" should be discussed with a licensed broker.");
+    const additionalRecords=[
+      ["bankruptcies","bankruptcy"],["insurancePolicies","existing coverage"],
+      ["recentInsuranceApps","recent application"],["substances","substance-use"],
+      ["mentalConditions","mental-health"],["avocations","avocation"],["flights","aviation"]
+    ];
+    for (const [key,label] of additionalRecords) {
+      if (Object.hasOwn(d,key) && !Array.isArray(d[key]))
+        add(missing,"Recheck the saved "+label+" records.");
+    }
     }
     const status = missing.length ? "needs_details" :
       (concerns.length || otherReview.length) ? "review" : "profile_complete";
