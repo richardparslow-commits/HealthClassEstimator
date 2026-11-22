@@ -402,7 +402,11 @@ const App = (() => {
       if(event.shiftKey&&(active===first||!gate.contains(active))){event.preventDefault();last.focus();}
       else if(!event.shiftKey&&(active===last||!gate.contains(active))){event.preventDefault();first.focus();}
     });
-    if(!acknowledged)$("#ack-title").focus();
+    // Streamlit embeds this document in a cross-origin frame whose Permissions Policy
+    // forbids focus-without-user-activation. The modal remains keyboard reachable;
+    // focus the heading only when the estimator is an actual top-level page.
+    // After the visitor accepts, the click is user-initiated and #dob receives focus.
+    if(!acknowledged && window.self === window.top)$("#ack-title").focus();
     check.addEventListener("change",()=>accept.disabled=!check.checked);
     accept.addEventListener("click",()=>{if(!check.checked)return;try{sessionStorage.setItem("hce_ack_v2","yes");sessionStorage.setItem("hce_ack_time_v2",new Date().toISOString());}catch{}set(false);$("#dob")?.focus();});
   }
