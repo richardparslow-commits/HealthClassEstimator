@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HealthClassEstimator — Life Insurance Pre-Underwriting &amp; Case Triage</title>
-<meta name="description" content="Preliminary life-insurance underwriting-lane estimator for producer case triage. Non-binding; not a medical diagnostic tool.">
+<meta name="description" content="Product-neutral pre-underwriting health-history profile. Non-binding; not a medical diagnostic tool or carrier-class prediction.">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -30,7 +30,7 @@
     <div class="ack-section">
       <h3>What this tool is</h3>
       <ul class="ack-list">
-        <li>A <strong>free estimating tool</strong> that helps a producer or applicant gauge a person&rsquo;s <strong>likely life-insurance health class</strong> before an application is submitted.</li>
+        <li>A <strong>free estimating tool</strong> that helps a producer or applicant summarize a person&rsquo;s <strong>self-reported health history</strong> relevant to life insurance before an application is submitted.</li>
         <li>An <strong>estimate only</strong> &mdash; preliminary, non-binding, and based solely on the information entered.</li>
         <li>Subject in every case to the carrier: <strong>each carrier has the final and absolute say</strong> on underwriting and health class.</li>
       </ul>
@@ -113,7 +113,7 @@
     </div>
     <div class="brand">
       <h1>HealthClassEstimator</h1>
-      <p class="tagline">Life-insurance pre-underwriting &amp; case triage — preliminary, non-binding estimate</p>
+      <p class="tagline">General pre-underwriting health profile — no carrier or product selection</p>
     </div>
     <div class="header-flag header-flag-right" aria-hidden="true">
       <!-- State of Texas flag (inline SVG) -->
@@ -179,7 +179,7 @@
      in order when async=false, preserving the rules -> state -> engine -> app load
      order the app depends on.) */
   (function () {
-    var HCE_VERSION = "87";
+    var HCE_VERSION = "88";
     window.HCE_VERSION = HCE_VERSION; // exposed for the printable acknowledgment record
     ["js/rules.js", "js/state.js", "js/engine.js", "js/app.js"].forEach(function (src) {
       var s = document.createElement("script");

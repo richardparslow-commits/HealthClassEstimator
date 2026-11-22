@@ -55,7 +55,7 @@ const GATE_SCRIPT = {
     "check.addEventListener('change',function(){accept.disabled=!check.checked;});" +
     "accept.addEventListener('click',function(){if(!check.checked)return;gate.classList.add('hidden');" +
     "for(var i=0;i<3;i++){var b=document.createElement('button');b.className='step-pill';b.textContent=(i+1)+'. Step';nav.appendChild(b);}" +
-    "document.getElementById('productId').focus();});})();</script>",
+    "document.getElementById('dob').focus();});})();</script>",
   stuck: "",
   deaf: "<script>document.getElementById('ack-accept').disabled=true;</script>",
 };
@@ -72,7 +72,7 @@ function estimatorDocument(version, extra = "", { gateTop = 0, footerTop = 0, be
     '<div id="ack-gate" style="position:fixed;left:0;right:0;' +
     (gateTop ? "top:" + gateTop + "px;bottom:auto;" : "top:0;bottom:0;") +
     '"><input id="ack-check" type="checkbox"><button id="ack-accept">I acknowledge</button></div>' +
-    '<select id="productId"></select>' +
+    '<select id="dob"></select>' +
     '<footer class="app-footer" style="position:fixed;left:0;right:0;' +
     (footerTop ? "top:" + footerTop + "px;bottom:auto;" : "bottom:0;") +
     '"><button id="btn-next">Next</button></footer>' +
@@ -172,7 +172,7 @@ const DEAD_BUILD = appScript
 // The document each page actually serves into its frame. The manifest has to describe
 // that, not the host page around it, or every case would fail on bytes for the wrong
 // reason. A page served by URL (`/build/...`) is described by the file it loads.
-const STUB_DOC = '<select id="productId"></select><input id="ack-check"><script>const Engine = {};</script>';
+const STUB_DOC = '<select id="dob"></select><input id="ack-check"><script>const Engine = {};</script>';
 const ARTIFACTS = {
   awake: () => estimatorDocument(VERSION),
   nested: () => estimatorDocument(VERSION),
@@ -283,7 +283,7 @@ function run(args) {
   // before this suite, and a skip would report the deployed layout as unverified on the
   // day the build broke.
   ok(fs.existsSync(BUILT_APP), "the deployed-geometry case needs a build — run npm run build first");
-  ok(/Accessible product-specific interview/.test(appScript[1]), "the dead case empties the build's last script block, which is the app's interview");
+  ok(/Accessible, product-neutral intake/.test(appScript[1]), "the dead case empties the build's last script block, which is the app's interview");
   await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   base = "http://127.0.0.1:" + server.address().port;
 
@@ -302,7 +302,7 @@ function run(args) {
   ok(/^PASS — a browser gets this release's bytes from the deployed app\.$/m.test(awake.out), "the verdict says what was proved");
   ok(/State {2}: awake on arrival/.test(awake.out), "and that it arrived awake");
   ok(new RegExp('release "' + VERSION + '"').test(awake.out), "naming the release it found");
-  ok(/Interview : 3 steps after accepting the gate, focus on productId/.test(awake.out), "and the interview the gate led to: " + awake.out);
+  ok(/Interview : 3 steps after accepting the gate, focus on dob/.test(awake.out), "and the interview the gate led to: " + awake.out);
 
   /* --- the release number is not the bytes --------------------------------- */
 
@@ -434,7 +434,7 @@ function run(args) {
   ok(/^PASS — a browser gets this release's bytes from the deployed app\.$/m.test(built.out), "and the verdict says so");
   ok(!/below the fold/.test(built.out), "reporting no unreachable control: " + built.out);
   ok(/Layout : continue button at \d+px, Next at \d+px, frame 2400px tall in a 900px window/.test(built.out), "while naming the geometry it judged");
-  ok(/Interview : [1-9]\d* steps after accepting the gate, focus on productId/.test(built.out), "and reports the interview it took in the real build: " + built.out);
+  ok(/Interview : [1-9]\d* steps after accepting the gate, focus on dob/.test(built.out), "and reports the interview it took in the real build: " + built.out);
 
   /* --- a document is not a tool ------------------------------------------- */
 

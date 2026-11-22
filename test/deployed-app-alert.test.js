@@ -41,7 +41,7 @@ const PASSED = {
   lines: [
     "State  : awake on arrival",
     "URL    : " + APP_URL,
-    'Frame  : 247858 bytes at about:srcdoc (the wrapper\'s frame), release "80", acknowledgment gate and product select present',
+    'Frame  : 247858 bytes at about:srcdoc (the wrapper\'s frame), release "80", acknowledgment gate and applicant profile present',
   ],
 };
 

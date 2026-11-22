@@ -1,4 +1,4 @@
-/* Accessible product-specific interview; all results come from Engine.run. */
+/* Accessible, product-neutral intake; results come from Engine.profile. */
 "use strict";
 const App = (() => {
   const STORAGE_KEY="hce_state_v2", LEGACY_KEY="hce_state_v1", QUARANTINE_KEY="hce_state_v2_unreadable";
@@ -193,35 +193,24 @@ const App = (() => {
     yn(parent,label,key,{render:true});
     if(state[key] === "yes" || state[listKey].length) editor();
   }
-  function product(c) {
-    paragraph(c,"Choose a product and route before estimating. Medical classes, simplified screens and final-expense benefits use different rules.");
-    field(c,"Carrier, product and underwriting route","productId",Object.values(PRODUCT_RULES).map(p=>[p.id,p.carrier+" — "+p.name+" — "+p.route]),{render:true});
-    const p=PRODUCT_RULES[state.productId];
-    if(p){const info=node("div","source-panel");paragraph(info,p.status === "criteria"?"Selected class criteria are reconciled to the listed editions. Every offer remains subject to the carrier.":"Review route: this product's complete rating rules are unresolved. Published exclusions can be checked, but the app will withhold a final class.");
-      (p.sources||[]).forEach(id=>paragraph(info,RULE_SOURCES[id].title+" · "+RULE_SOURCES[id].edition));if(p.scopeNote)paragraph(info,p.scopeNote);c.appendChild(info);}
-    date(c,"Date of birth","dob");field(c,"Sex used for the carrier's underwriting chart","sex",[["male","Male"],["female","Female"],["unknown","Unsure / needs carrier review"]]);
+  // Health-history intake is deliberately not tied to an insurer, plan or underwriting route.
+  function profile(c) {
+    paragraph(c,"Enter the applicant's background. No insurer, policy product or underwriting route is selected or inferred.");
+    date(c,"Date of birth","dob");
+    field(c,"Sex recorded for the application","sex",[["male","Male"],["female","Female"],["unknown","Prefer to review / unsure"]]);
     field(c,"State of residence","state",states);
-    number(c,"Coverage requested ($)","faceAmount",{min:1,step:1000});
-    if(p?.id === "uhl_otherterm")field(c,"United Home Life term plan","uhlTermPlan",[["simple20","Simple Term 20"],["simple30","Simple Term 30"],["simple20rop","Simple Term 20 ROP"]],{hint:"Choose the exact plan. Existing saved drafts do not imply a selection."});
-    if(p?.kind === "term")field(c,"Requested term length","termYears",[[10,"10 years"],[15,"15 years"],[20,"20 years"],[25,"25 years"],[30,"30 years"],[35,"35 years"],[40,"40 years"]],{hint:"Term availability must be confirmed for your age and product."});
+    number(c,"Coverage requested ($), if known","faceAmount",{min:1,step:1000});
     field(c,"Main purpose of coverage","policyPurpose",[["income","Replace earned income"],["mortgage","Mortgage / debt"],["family","Family support"],["estate","Estate planning"],["business","Business"],["final_expense","Final expenses"],["other","Other"]],{render:true});
-    if(state.policyPurpose === "income" && p?.id !== "sbli_easytrak")number(c,"Annual earned income ($)","income");
-    if(p?.id === "sbli_easytrak") {
-      number(c,"Annual income for the EasyTrak quote ($)","sbliIncome",{min:0,hint:"Confirm the income definition with SBLI. Nonworking applicants need a carrier-confirmed financial basis."});
-      if(state.policyPurpose === "mortgage") {
-        field(c,"Is this coverage solely for a mortgage?","sbliMortgageOnly",yesNo,{render:true});
-        if(state.sbliMortgageOnly === "yes")number(c,"Mortgage amount ($)","sbliMortgageAmount",{min:0,hint:"Mortgage-only quotes should not exceed 1.5 times this amount."});
-      }
-    }
-    number(c,"Existing life insurance with all carriers ($)","existingCoverage");
-    if(p?.id.startsWith("foresters_")||p?.id === "corebridge_legacy")number(c,p.id === "corebridge_legacy" ? "Existing AGL GIWL/SIWL coverage ($)" : "Existing Foresters life coverage ($)","existingCarrierCoverage");
-    yn(c,"Will this coverage replace an existing life policy?","replacement");yn(c,"Will the premiums be financed or paid with a loan?","financing");
+    if(state.policyPurpose === "income")number(c,"Annual earned income ($)","income");
+    number(c,"Existing life insurance ($)","existingCoverage");
+    yn(c,"Will this coverage replace an existing life policy?","replacement");
+    yn(c,"Will the premiums be financed or paid with a loan?","financing");
     field(c,"Work status","employment",[["employed","Employed"],["spouse","Nonworking spouse"],["student","Full-time student"],["seeking","Seeking work"],["retired","Retired"],["other","Other"]]);
     text(c,"Occupation (or enter none)","occupation");
-    yn(c,"Does your work involve hazardous duties?","hazardousOccupation");yn(c,"Do you fly as a private pilot or crew member?","aviation");
+    yn(c,"Does your work involve hazardous duties?","hazardousOccupation");
+    yn(c,"Do you fly as a private pilot or crew member?","aviation");
     yn(c,"Do you take part in hazardous sports, racing, scuba or climbing, or plan to?","hazardousSports");
     yn(c,"Are you serving, or under orders to serve, in a hazardous military area or war zone?","militaryDeployment");
-    if(p?.id.startsWith("foresters_"))yn(c,"Are you deployed, or have you received notice of military deployment, to a war zone, an area of conflict or political instability, or a country outside North America?","forestersDeployment");
     text(c,"Details of any hazardous duties, sports or aviation","exposureDetails",{type:"textarea"});
   }
   function residence(c) {
@@ -249,13 +238,13 @@ const App = (() => {
       confirmed(c,"Have you listed every product and its most recent use?","nicotineComplete");
       field(c,"Most recent urine cotinine test result, if available","cotinineResult",[["negative","Negative"],["positive","Positive"],["unknown","No result / unsure"]]);date(c,"Cotinine specimen date","cotinineDate");
     }
-    paragraph(c,"Report all products. An occasional-cigar exception depends on the selected carrier, other tobacco history and test evidence.");
+    paragraph(c,"Report all nicotine and tobacco products. Any occasional-use exception depends on the eventual insurer and supporting evidence; this tool assumes none.");
   }
   function build(c) {
     const r=row(c);number(r,"Height in inches (5 ft 10 in = 70)","heightIn",{min:36,max:100,step:0.5});number(r,"Current weight (lb)","weightLb",{min:30,max:1000});
     field(c,"Weight change in the past 12 months","weightChange",[["none","No meaningful change"],["loss","Lost weight"],["gain","Gained weight"],["unknown","Unsure"]],{render:true});
     if(["loss","gain"].includes(state.weightChange)){number(c,"Weight before the change (lb)","priorWeightLb");date(c,"When did the change occur?","weightChangeDate");field(c,"Reason for the change","weightCause",[["intentional","Intentional diet / exercise / weight-loss medicine"],["illness","Illness"],["pregnancy","Pregnancy"],["surgery","Surgery"],["unknown","Unexplained / unsure"]]);date(c,"Since when has your weight been stable?","stableSince");}
-    paragraph(c,"Weight-loss adjustments and height rounding are product-specific. Unexplained loss and ambiguous chart boundaries go to review.");
+    paragraph(c,"Weight and recent changes are recorded without applying any insurer-specific build chart.");
   }
   function vitals(c) {
     paragraph(c,"Use documented readings. If you do not have the required evidence, leave it unanswered; the result will identify what is needed.");
@@ -264,7 +253,6 @@ const App = (() => {
     yn(c,"Are you treated for high blood pressure?","bpTreatment");yn(c,"Has your clinician described your blood pressure as well controlled?","bpControl");
     const l=row(c);number(l,"Total cholesterol (mg/dL)","cholTotal",{min:40,max:700});number(l,"HDL cholesterol (mg/dL)","cholHdl",{min:5,max:200});
     date(c,"Date of most recent cholesterol test","cholDate");field(c,"What do the entered cholesterol values represent?","cholBasis",[["current","One current test"],["average_12mo","Average of readings over 12 months"],["average_2yr","Documented two-year average"],["unknown","Unsure"]]);yn(c,"Are you treated for high cholesterol?","cholTreatment");
-    if(PRODUCT_RULES[state.productId]?.kind === "final_expense")paragraph(c,"This final-expense product uses its medical questions and benefit tiers, rather than preferred-class blood-pressure and cholesterol bands.");
   }
   function driving(c) {
     screen(c,"Have you ever had a DUI, reckless driving, serious driving offense or license suspension, or any moving violation in the past five years?","drivingHistory","driving",()=>listEditor(c,"driving","Driving event",(card,r,f)=>{
@@ -276,7 +264,7 @@ const App = (() => {
     confirmed(c,"Is the driving history complete, including every DUI and each separate violation?","drivingComplete");
   }
   function criminal(c) {
-    paragraph(c,"A charge, arrest and conviction are different events. Report each accurately; the app applies only the selected product's published screen.");
+    paragraph(c,"A charge, arrest and conviction are different events. Report each accurately; no insurer-specific exclusion is assigned here.");
     screen(c,"Have you ever been arrested, charged or convicted of a felony or misdemeanor, or served probation/parole?","criminalHistory","criminal",()=>listEditor(c,"criminal","Criminal event",(card,r,f)=>{
       f("Type","type",[["felony","Felony"],["misdemeanor","Misdemeanor"],["arrest","Arrest without a confirmed offense type"]]);f("Offense and circumstances","offense");
       f("Charge/arrest date","date",null,{type:"date"});f("Outcome","disposition",[["convicted","Convicted"],["pending","Pending"],["dismissed","Dismissed / acquitted"],["other","Other / unsure"]],{render:true});
@@ -298,27 +286,10 @@ const App = (() => {
       f("Treatment and follow-up (enter none if none)","treatment",null,{type:"textarea"});f("Any complications?","complications",yesNo);f("Any recurrence?","recurrence",yesNo);f("Hospitalized for this condition?","hospitalized",yesNo,{render:true});
       if(r.hospitalized === "yes")f("Most recent related hospitalization","hospitalDate",null,{type:"date"});
       if(r.id === "cancer")f("Cancer type","cancerType",[["basal_cell","Basal cell skin"],["squamous_cell","Squamous cell skin"],["breast","Breast"],["colon","Colon"],["prostate","Prostate"],["leukemia","Leukemia"],["other","Another type"],["unknown","Unsure"]]);
-      if(state.productId === "banner_flex") {
-        if(r.id === "asthma") {f("Asthma attacks in the last 12 months","attacksLastYear",null,{type:"number",min:0,max:365,step:1});f("Days of work missed due to asthma in the last 12 months","missedWorkDays",null,{type:"number",min:0,max:365,step:1});f("Do asthma symptoms restrict daily activities?","activityRestricted",yesNo);}
-        if(r.id === "heart_failure")f("Has a clinician diagnosed cardiomyopathy?","cardiomyopathy",yesNo);
-        if(r.id === "hypertension")f("Has a clinician described current blood pressure as uncontrolled?","bpUncontrolled",yesNo);
-        if(r.id === "diabetes") {f("Physician follow-up for diabetes in the last 24 months?","diabetesFollowUp24mo",yesNo);f("Date of most recent diabetes physician follow-up","diabetesFollowUpDate",null,{type:"date"});f("Has a clinician described blood sugar or A1c as uncontrolled?","sugarUncontrolled",yesNo);f("Diabetic kidney or nephropathy complications?","kidneyComplications",yesNo);}
-        if(r.id === "cancer") {f("Most recent cancer diagnosis, recurrence or treatment date","lastCancerDate",null,{type:"date"});f("Any cancer spread, metastasis or lymph-node involvement?","metastasis",yesNo);f("Any past or pending chemotherapy/radiation?","chemoRadiation",yesNo);}
-      }
-      if(state.productId === "americo" && r.id === "amputation")f("Was the amputation due to disease?","dueToDisease",yesNo);
-      if(state.productId === "americo" && ["hepatitis_b","hepatitis_c"].includes(r.id))f("Has a clinician diagnosed liver disease?","liverDisease",yesNo);
       if(r.id === "lupus")f("Lupus type","lupusType",[["systemic","Systemic (SLE)"],["discoid","Discoid / skin only"],["other","Another type"],["unknown","Unsure"]]);
       if(r.id === "diabetes"){f("Measured A1c","a1c",null,{type:"number",min:1,max:25,step:0.1});f("A1c test date","a1cDate",null,{type:"date"});f("Use insulin?","insulin",yesNo);}
       if(r.id === "atrial_fibrillation"){f("Diagnosed with chronic AF within the last 24 months?","chronic24mo",yesNo);f("Take a daily anticoagulant / blood thinner?","dailyAnticoagulant",yesNo);}
     }));
-    if(state.productId === "americo") {
-      paragraph(c,"Eagle Select asks about these specific past events. Enter the most recent occurrence or use today for ongoing care. A date near the 12-month boundary requires carrier confirmation.");
-      for(const [key,label] of [["Adl","Have you received help with bathing, toileting or dressing because of a debilitating disease, or been bed-bound?"],["Hospice","Have you received hospice care?"],["Oxygen","Have you used supplemental oxygen for breathing (not CPAP alone)?"],["Mobility","Have you been dependent on a wheelchair or motorized mobility device?"]]) {
-        yn(c,label,"americo"+key+"History",{render:true});
-        if(state["americo"+key+"History"] === "yes" || state["americo"+key+"LastDate"])date(c,"Most recent occurrence — "+label,"americo"+key+"LastDate");
-      }
-      paragraph(c,"Pending tests, surgery, hospitalization or results need the exact carrier question and its HIV/AIDS-related exception reviewed. A generic pending-care answer is not treated as an automatic exclusion.");
-    }
     confirmed(c,"Have you disclosed all diagnoses and treatments?","medicalComplete");
     screen(c,"Have you been hospitalized (other than routine childbirth)?","hospitalHistory","hospitals",()=>listEditor(c,"hospitals","Hospitalization",(card,r,f)=>{f("Date","date",null,{type:"date"});f("Reason and outcome","reason");f("Was this only for a minor condition?","minor",yesNo);}));
     screen(c,"Have you had an operation or medical procedure?","surgeryHistory","surgeries",()=>listEditor(c,"surgeries","Procedure",(card,r,f)=>{f("Date","date",null,{type:"date"});f("Reason and recovery","reason");}));
@@ -349,59 +320,57 @@ const App = (() => {
     }));confirmed(c,"Have you confirmed the family history and relevant ages?","familyComplete");
   }
   function review(c) {
-    paragraph(c,"Confirm the histories before estimating. Unknown facts, incomplete application rules and source conflicts will produce a review result.");
+    paragraph(c,"Confirm the information before viewing the general health profile. It does not use carrier, product, underwriting-route or benefit-tier criteria.");
     const details=node("div");details.id="review-details";details.setAttribute("aria-live","polite");
     function refreshDetails() {
-      const out=Engine.run(state.productId,state);
+      const out=Engine.profile(state);
       details.replaceChildren();
       if(out.missing.length){const ul=node("ul");out.missing.forEach(t=>ul.appendChild(node("li",null,t)));details.append(node("h3",null,"Details still needed"),ul);}
     }
     confirmed(c,"Are your answers complete and accurate, including every condition, prescription and relevant event?","historyConfirmed",{onChange:refreshDetails});
     c.appendChild(details);refreshDetails();
-    paragraph(c,"An estimate cannot guarantee coverage, a price or living-benefit riders. The carrier will verify records and financial justification.");
+    paragraph(c,"Only an insurer can determine an actual insurance health class, eligibility or benefit design.");
   }
   const steps=[
-    ["Product & profile",product],["Residency & travel",residence],["Tobacco & nicotine",nicotine],["Height & weight",build],
+    ["Applicant profile",profile],["Residency & travel",residence],["Tobacco & nicotine",nicotine],["Height & weight",build],
     ["Vitals & labs",vitals],["Driving",driving],["Criminal history",criminal],["Medical history",medical],
     ["Prescriptions",medications],["Family history",family],["Review",review]
   ];
-  function resultLabel(o) {
-    if(o.status === "unavailable")return "Product unavailable for this request";
-    if(o.status === "decline_screen")return "Outside this product's published screen";
-    if(o.status !== "estimated")return "Manual underwriting review needed";
-    if(o.kind === "final_expense")return o.benefitTier === "graded" ? "Graded benefit screen" : "Level benefit screen";
-    return (o.displayClass||CLASS_LABELS[o.healthClass]||"Review")+(o.tobaccoBasis === "tobacco" ? " · Tobacco" : " · Non-tobacco");
-  }
-  function sourceText(s) {return s ? s.id+" · "+s.edition+(s.pages?.length ? " · PDF p. "+s.pages.join(", ") : " · Web reference") : "Information / evidence check";}
   function showResults() {
     const target=$("#results-content");target.replaceChildren();target.classList.remove("hidden");$("#step-content").classList.add("hidden");
-    const out=Engine.run(state.productId,state),hero=node("section","result-hero");
-    hero.appendChild(node("div","hero-label",out.carrier+" — "+out.product+" — "+out.route));
-    const resultHeading=node("h2",null,resultLabel(out));resultHeading.id="result-heading";resultHeading.setAttribute("tabindex","-1");hero.appendChild(resultHeading);
-    paragraph(hero,out.status === "estimated" ? "Preliminary result from the modeled source criteria. Carrier records and the current application can change this estimate." : "A final health class or benefit tier is withheld. Review the reasons below with the carrier.","hero-meaning");
-    paragraph(hero,out.confidence.level+" · Assessment date "+out.assessed+" · "+(out.age == null ? "Age unconfirmed" : "Carrier age "+out.age+" ("+out.ageBasis+" birthday)"),"hero-meaning");target.appendChild(hero);
-    if(out.tableRating||out.flatExtra){const box=node("section","card");box.appendChild(node("h3",null,"Separate rating components"));if(out.tableRating)paragraph(box,"Build component: Table "+out.tableRating.label+(out.tableRating.extraPercent?" ("+out.tableRating.extraPercent+"% extra rating)":"")+". Other factors and the final table remain subject to underwriting.");if(out.flatExtra)paragraph(box,out.flatExtra.basis+". "+sourceText(out.flatExtra.source));target.appendChild(box);}
-    const why=node("section","card");why.appendChild(node("h3",null,"Reasons and next steps"));
-    if(!out.issues.length)paragraph(why,"All modeled screens are complete. No underwriting credit or better-class range has been assumed.");
-    const ul=node("ul","decision-list");out.issues.forEach(i=>{const li=node("li");li.appendChild(node("span",null,i.text));li.appendChild(node("small","source-reference",sourceText(i.source)));ul.appendChild(li);});why.appendChild(ul);out.notes.forEach(t=>paragraph(why,t));target.appendChild(why);
-    if(out.kind === "final_expense" && out.status === "estimated"){const tier=node("section","card");tier.appendChild(node("h3",null,"Benefit design"));paragraph(tier,out.benefitTier === "graded" ? "The supplied guide pays 110% of premiums for death in the first two years, then the face amount, subject to policy terms. This is a benefit design, not a preferred health class." : "The source's Level benefit design provides the full benefit from the first year, subject to policy terms. This is separate from premium and tobacco classification.");target.appendChild(tier);}
-    const factors=node("section","card");factors.appendChild(node("h3",null,"How the factors limit this screen"));
-    const factorTable=node("table","domain-table");factorTable.appendChild(node("caption","visually-hidden","How the factors limit this screen"));const factorHead=node("thead"),fh=node("tr");["Factor","Recorded evidence","Modeled limit"].forEach(t=>{const th=node("th",null,t);th.setAttribute("scope","col");fh.appendChild(th);});factorHead.appendChild(fh);factorTable.appendChild(factorHead);const fb=node("tbody");
-    Object.entries(out.domains).filter(([key])=>key!=="classes").forEach(([key,v])=>{const tr=node("tr"),label={build:"Height / weight",nicotine:"Tobacco / nicotine",vitals:"Blood pressure / cholesterol",family:"Family history",driving:"Driving",medical:"Medical"}[key]||key;
-      tr.appendChild(node("td",null,label));const evidence=node("td",null,v.detail||("Weight used: "+v.weight+" lb; BMI "+v.bmi?.toFixed(2)));evidence.appendChild(node("small","source-reference",sourceText(v.source)));tr.appendChild(evidence);
-      const limit=out.kind === "final_expense" ? key === "nicotine" ? out.tobaccoBasis === "non_tobacco" ? "Non-tobacco basis" : out.tobaccoBasis === "tobacco" ? "Tobacco basis" : "Tobacco basis needs review" : "Benefit screen / carrier review" : v.ceiling?CLASS_LABELS[v.ceiling]:"Carrier review";
-      tr.appendChild(node("td",null,limit));fb.appendChild(tr);});factorTable.appendChild(fb);factors.appendChild(labelledRegion("How the factors limit this screen",factorTable));target.appendChild(factors);
-    const comparisons=Engine.compare(state);
-    if(comparisons.length>1){const box=node("section","card");box.appendChild(node("h3",null,"Other products with the same coverage type and route"));paragraph(box,"Listed in carrier order. Term length, riders, price and availability still require confirmation; these are not ranked offers.");
-      const table=node("table","domain-table");table.appendChild(node("caption","visually-hidden","Other products with the same coverage type and route"));const head=node("tr");["Product","Screen result","Source scope"].forEach(t=>{const cell=node("th",null,t);cell.setAttribute("scope","col");head.appendChild(cell);});const th=node("thead");th.appendChild(head);table.appendChild(th);const body=node("tbody");
-      comparisons.forEach(o=>{const tr=node("tr");tr.appendChild(node("td",null,o.carrier+" — "+o.product));tr.appendChild(node("td",null,resultLabel(o)));tr.appendChild(node("td",null,o.verification === "criteria" ? "Selected criteria reconciled" : "Carrier review"));body.appendChild(tr);});table.appendChild(body);box.appendChild(labelledRegion("Other products with the same coverage type and route",table));target.appendChild(box);}
-    const refs=node("section","card");refs.appendChild(node("h3",null,"Source editions used"));out.sources.forEach(s=>{paragraph(refs,s.id+" · "+s.title+" · "+s.edition+(s.pages?.length ? " · Physical PDF pages "+s.pages.join(", ") : " · Web reference"));if(s.url){const a=node("a",null,"Carrier source");a.href=s.url;a.target="_blank";a.rel="noopener noreferrer";refs.appendChild(a);}});target.appendChild(refs);
-    const actions=node("section","card");actions.append(button("Print this result",()=>window.print()),button("Delete saved answers and start over",reset));target.appendChild(actions);
-    $("#btn-next").classList.add("hidden");$("#btn-back").textContent="← Edit answers";$("#btn-back").disabled=false;
-    // The button that asked for the result is now hidden, so focus would fall to
-    // the document. Enter the result instead: the heading carries its name and is
-    // announced once (a live region as well would speak the same result twice).
-    resultHeading.focus();
+    const out=Engine.profile(state),hero=node("section","result-hero");
+    hero.appendChild(node("div","hero-label","Product-neutral health history screening"));
+    const heading=out.status === "needs_details" ? "Additional information needed" :
+      out.status === "review" ? "Disclosed history needs individual underwriting review" :
+      "Reported health profile collected";
+    const resultHeading=node("h2",null,heading);
+    resultHeading.id="result-heading";resultHeading.setAttribute("tabindex","-1");hero.appendChild(resultHeading);
+    paragraph(hero,"No insurer, product, or route was selected. No carrier-specific health class, approval, rating, price, benefit tier or exclusion is inferred.","hero-meaning");
+    paragraph(hero,"Assessment date "+out.assessed+(out.age == null?" · Age unconfirmed":" · Age "+out.age)+" · "+out.completeness,"hero-meaning");
+    target.appendChild(hero);
+
+    const overview=node("section","card");overview.appendChild(node("h3",null,"Recorded health measurements"));
+    const ul=node("ul","decision-list");
+    for(const item of out.measurements)ul.appendChild(node("li",null,item));
+    if(!out.measurements.length)ul.appendChild(node("li",null,"No measurements were entered."));
+    overview.appendChild(ul);target.appendChild(overview);
+
+    const details=node("section","card");details.appendChild(node("h3",null,"Health history requiring attention"));
+    if(!out.concerns.length)paragraph(details,"No specified health-history flags have been reported in the completed answers. This is not a finding of good health or a predicted health class.");
+    const flags=node("ul","decision-list");out.concerns.forEach(item=>flags.appendChild(node("li",null,item)));details.appendChild(flags);target.appendChild(details);
+    if(out.missing.length){
+      const missing=node("section","card");missing.appendChild(node("h3",null,"Information still needed"));
+      const list=node("ul","decision-list");out.missing.forEach(item=>list.appendChild(node("li",null,item)));missing.appendChild(list);target.appendChild(missing);
+    }
+    if(out.otherReview.length){
+      const other=node("section","card");other.appendChild(node("h3",null,"Nonmedical disclosures to review"));
+      const list=node("ul","decision-list");out.otherReview.forEach(item=>list.appendChild(node("li",null,item)));other.appendChild(list);target.appendChild(other);
+    }
+    const disclaimer=node("section","card");disclaimer.appendChild(node("h3",null,"How to use this summary"));
+    paragraph(disclaimer,"This is a general, self-reported pre-underwriting profile, not a validated health-class prediction. Underwriting class and eligibility can only be evaluated for a specific current insurance application by the insurer.");
+    paragraph(disclaimer,"An insurer may obtain additional medical and nonmedical evidence and can reach a different result. Do not use this summary to promise an underwriting outcome.");target.appendChild(disclaimer);
+    const actions=node("section","card");actions.append(button("Print this summary",()=>window.print()),button("Delete saved answers and start over",reset));target.appendChild(actions);
+    $("#btn-next").classList.add("hidden");$("#btn-back").textContent="← Edit answers";$("#btn-back").disabled=false;resultHeading.focus();
   }
   function render() {
     // A question that changes the step rebuilds the step, and the control that had focus with it.
@@ -412,7 +381,7 @@ const App = (() => {
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
     if(unreadableNotice){paragraph(target,"A saved draft on this device could not be read. It has been kept in this browser's storage, and this interview has started fresh.","migration-notice");keptDraftPanel(target);}
-    if(migrationNotice)paragraph(target,"Your previous draft was imported. Select a product and reconfirm the new histories; earlier unchecked boxes and mild/control defaults are not treated as answers.","migration-notice");
+    if(migrationNotice)paragraph(target,"Your previous draft was imported. Reconfirm the histories; former carrier and product choices are ignored, and earlier unchecked boxes and defaults are not treated as answers.","migration-notice");
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
     if(focusStepHeading){focusStepHeading=false;cardHeading.setAttribute("tabindex","-1");cardHeading.focus();}
     $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"Estimate →":"Next →";
@@ -435,7 +404,7 @@ const App = (() => {
     });
     if(!acknowledged)$("#ack-title").focus();
     check.addEventListener("change",()=>accept.disabled=!check.checked);
-    accept.addEventListener("click",()=>{if(!check.checked)return;try{sessionStorage.setItem("hce_ack_v2","yes");sessionStorage.setItem("hce_ack_time_v2",new Date().toISOString());}catch{}set(false);$("#productId")?.focus();});
+    accept.addEventListener("click",()=>{if(!check.checked)return;try{sessionStorage.setItem("hce_ack_v2","yes");sessionStorage.setItem("hce_ack_time_v2",new Date().toISOString());}catch{}set(false);$("#dob")?.focus();});
   }
   function printAck() {
     const popup=window.open("","_blank");if(!popup){toast("Allow the print window to open in this browser.");return;}

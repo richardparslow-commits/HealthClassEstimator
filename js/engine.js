@@ -953,11 +953,134 @@ const Engine = (() => {
       return out;
     }
   }
+  // Product-neutral screening deliberately makes no health-class, carrier, route,
+  // benefit-design or eligibility claim. In particular, never use a default
+  // carrier's rules to turn an unknown product into a favorable class.
+  function profile(input = {}, options = {}) {
+    const d = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const asOf = options.asOf || new Date().toISOString().slice(0,10);
+    if (!date(asOf)) throw new Error("Assessment date must be a valid YYYY-MM-DD date.");
+    const missing = [], concerns = [], otherReview = [], measurements = [];
+    const add = (list, message) => {if (!list.includes(message))list.push(message);};
+    const known = value => value !== "" && value != null && value !== "unknown";
+    const answer = (key, label) => {
+      if (!["yes","no"].includes(d[key])) {add(missing,"Confirm "+label+".");return null;}
+      return d[key] === "yes";
+    };
+    const history = (key, listKey, label, concernText) => {
+      const yes = answer(key,label), rows = d[listKey];
+      if (!Array.isArray(rows) || rows.some(r=>!r || typeof r !== "object" || Array.isArray(r))) {
+        add(missing,"Recheck the saved "+label+" entries.");
+        return [];
+      }
+      if (yes && !rows.length) add(missing,"Provide details for "+label+".");
+      if (yes) add(concerns,concernText);
+      if (yes === false && rows.length) add(missing,"Reconcile "+label+" with its listed entries.");
+      return rows;
+    };
+
+    const age = ageAt(d.dob,asOf);
+    if (age === null) add(missing,"Enter a valid date of birth on or before the assessment date.");
+    else if (age < 18) add(concerns,"Juvenile applications require separate age-appropriate insurance underwriting.");
+    const height = numeric(d.heightIn), weight = numeric(d.weightLb);
+    let bmi = null;
+    if (height === null || height < 36 || height > 100)
+      add(missing,"Enter a valid height in inches.");
+    if (weight === null || weight < 30 || weight > 1000)
+      add(missing,"Enter a valid current weight.");
+    if (height !== null && height >= 36 && height <= 100 &&
+        weight !== null && weight >= 30 && weight <= 1000) {
+      bmi = weight * 703 / (height * height);
+      measurements.push("Height "+height+" in; weight "+weight+" lb; calculated BMI "+bmi.toFixed(1)+".");
+    }
+    if (d.weightChange === "loss" && d.weightCause !== "intentional")
+      add(concerns,"Reported weight loss needs its cause and stability reviewed.");
+    if (d.weightChange === "unknown")
+      add(missing,"Confirm recent weight change.");
+    const sys=numeric(d.bpSys), dia=numeric(d.bpDia);
+    if (sys !== null && dia !== null && sys >= 60 && sys <= 260 && dia >= 30 && dia <= 160)
+      measurements.push("Reported blood pressure "+sys+"/"+dia+" mmHg (not a medical diagnosis).");
+    else if (known(d.bpSys) || known(d.bpDia)) add(missing,"Recheck both blood-pressure values.");
+    const total=numeric(d.cholTotal), hdl=numeric(d.cholHdl);
+    if (total !== null && hdl !== null && total >= 40 && total <= 700 && hdl >= 5 && hdl <= 200)
+      measurements.push("Reported total cholesterol "+total+" mg/dL; HDL "+hdl+" mg/dL.");
+    else if (known(d.cholTotal) || known(d.cholHdl)) add(missing,"Recheck both cholesterol values.");
+
+    const nicotine = d.nicotineHistory;
+    if (!["never","yes"].includes(nicotine)) add(missing,"Confirm tobacco and nicotine history.");
+    const nicotineRows = Array.isArray(d.nicotine) ? d.nicotine : null;
+    if (!nicotineRows || nicotineRows.some(r=>!r || typeof r !== "object" || Array.isArray(r)))
+      add(missing,"Recheck tobacco and nicotine entries.");
+    if (nicotine === "yes") {
+      add(concerns,"Disclosed tobacco or nicotine history needs product-specific timing and evidence reviewed by an insurer.");
+      if (!nicotineRows?.length) add(missing,"List the disclosed tobacco and nicotine products.");
+      if (d.nicotineComplete !== "yes") add(missing,"Confirm the nicotine history is complete.");
+    }
+    if (nicotine === "never" && nicotineRows?.length)
+      add(missing,"Reconcile the no-use answer with saved nicotine entries.");
+
+    const conditionRows = history("medicalHistory","conditions","past and current diagnoses",
+      "Disclosed medical or mental-health history requires individualized review; a condition alone is not an automatic exclusion.");
+    for (const condition of conditionRows) {
+      if ((!known(condition.id) || condition.id === "other" && !known(condition.name)) ||
+          !known(condition.status) || !known(condition.diagnosisDate))
+        add(missing,"Confirm the diagnosis, status and date for every condition.");
+    }
+    const hospitalRows = history("hospitalHistory","hospitals","hospitalizations",
+      "Reported hospitalizations require review of cause and recovery.");
+    const procedureRows = history("surgeryHistory","surgeries","operations and procedures",
+      "Reported surgeries and procedures require review of their reason and outcome.");
+    for (const row of [...hospitalRows,...procedureRows]) {
+      if (!known(row.date) || !known(row.reason)) add(missing,"Confirm date and reason for each hospitalization or procedure.");
+    }
+    history("medicationHistory","medications","prescription history",
+      "Reported prescriptions should be reviewed with their indications, not used as diagnoses.");
+    history("familyHistory","family","biological family history",
+      "Reported family history may warrant closer review; it does not determine a class.");
+    for (const key of ["medicalComplete","medicationsComplete","familyComplete","historyConfirmed"]) {
+      if (d[key] !== "yes") add(missing,"Confirm "+({
+        medicalComplete:"the medical history",medicationsComplete:"the prescription list",
+        familyComplete:"the family history",historyConfirmed:"all submitted answers"
+      })[key]+" is complete.");
+    }
+    for (const [key,label] of [
+      ["pendingCare","pending tests or treatment"],["activeSymptoms","unexplained symptoms"],
+      ["oxygen","prescribed oxygen"],["dialysis","dialysis"],["adlAssistance","daily-living assistance"],
+      ["careFacility","facility or hospice care"],["homeHealth","home nursing care"],
+      ["terminalIllness","terminal illness"],["substanceHistory","substance-use history"],
+      ["disabled","recent disability"]]) {
+      if (answer(key,label)) add(concerns,"Reported "+label+" calls for individual review.");
+    }
+    if (d.pendingCare === "yes" && !known(d.pendingDetails))
+      add(missing,"Describe pending care.");
+    if (d.activeSymptoms === "yes" && !known(d.symptomDetails))
+      add(missing,"Describe unexplained symptoms.");
+    if (d.substanceHistory === "yes" && !known(d.substanceDetails))
+      add(concerns,"Clarify the substance-use treatment and timing.");
+    if (d.marijuana === "current" || d.marijuana === "medical" || d.marijuana === "past")
+      add(concerns,"Disclosed marijuana use needs context and review.");
+    for (const [key,label] of [
+      ["hazardousOccupation","hazardous occupation"],["aviation","private aviation"],
+      ["hazardousSports","hazardous activities"],["militaryDeployment","military deployment"],
+      ["drivingHistory","driving history"],["criminalHistory","criminal history"],
+      ["pendingCharges","pending charges"],["probationCurrent","current probation"],
+      ["paroleCurrent","current parole"],["financing","premium financing"]]) {
+      if (d[key] === "yes") add(otherReview,"Reported "+label+" may affect an insurer's nonmedical review.");
+    }
+    const status = missing.length ? "needs_details" :
+      (concerns.length || otherReview.length) ? "review" : "profile_complete";
+    return {
+      status, assessed:asOf, age, bmi, measurements, missing, concerns, otherReview,
+      completeness:missing.length ? "Information incomplete" : "Entered answers confirmed",
+      healthClass:null, finalClass:null, benefitTier:null,
+      productId:null, carrier:null, route:null
+    };
+  }
   function compare(input,options={}) {
     const selected=Object.prototype.hasOwnProperty.call(PRODUCT_RULES,input?.productId) ? PRODUCT_RULES[input.productId] : null;
     // Same coverage type AND underwriting route; no unlike-product ranking.
     if (!selected || selected.status === "unverified" || selected.kind === "life") return [];
     return Object.values(PRODUCT_RULES).filter(p=>p.kind === selected.kind && p.route === selected.route && p.status !== "unverified").map(p=>run(p.id,input,options));
   }
-  return {run,compare,ageAt,within,shift};
+  return {run,compare,profile,ageAt,within,shift};
 })();
