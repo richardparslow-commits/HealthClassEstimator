@@ -10,6 +10,10 @@ const App = (() => {
   // A draft this build cannot read is copied here before anything overwrites it, so an
   // unreadable save costs a session of answers instead of all of them.
   let unpreserved=null, preserveWarned=false, keptDraftExpanded=false;
+  // The reset asks before it deletes, and the question stays on screen until it is
+  // answered: deleting every draft (including the unreadable ones kept aside) cannot be
+  // undone, so a single press must not do it.
+  let resetConfirm=false;
   const yesNo=[["yes","Yes"],["no","No"],["unknown","Unsure"]];
   const states="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ").map(s=>[s,s]);
   const conditions=[
@@ -44,15 +48,18 @@ const App = (() => {
   function keptDrafts() {
     try{const held=JSON.parse(localStorage.getItem(QUARANTINE_KEY));return Array.isArray(held)?held.filter(r=>r&&typeof r.raw==="string"):[];}catch{return [];}
   }
+  // A data: URL, not a Blob URL: the embedded copy runs under a strict Content-Security-Policy,
+  // and taking the draft away must not depend on what that policy lets the page fetch.
+  function downloadText(text,filename) {
+    const link=node("a","visually-hidden");
+    link.href="data:text/plain;charset=utf-8,"+encodeURIComponent(text);
+    link.download=filename;
+    document.body.appendChild(link);link.click();link.remove();
+  }
   function downloadKept() {
     const kept=keptDrafts();if(!kept.length)return;
     const text=kept.length===1?kept[0].raw:JSON.stringify(kept.map(r=>({savedAt:r.savedAt,key:r.key,draft:r.raw})),null,2);
-    // A data: URL, not a Blob URL: the embedded copy runs under a strict Content-Security-Policy,
-    // and taking the draft away must not depend on what that policy lets the page fetch.
-    const link=node("a","visually-hidden");
-    link.href="data:text/plain;charset=utf-8,"+encodeURIComponent(text);
-    link.download="health-class-draft-kept-"+new Date().toISOString().slice(0,10)+".txt";
-    document.body.appendChild(link);link.click();link.remove();
+    downloadText(text,"health-class-draft-kept-"+new Date().toISOString().slice(0,10)+".txt");
   }
   // Deleting a kept draft is the one action here that cannot be undone, so the list is
   // rewritten without that record and the key is removed once nothing is left: an empty
@@ -442,6 +449,8 @@ const App = (() => {
     const nav=$("#steps-nav");nav.replaceChildren();steps.forEach(([label],i)=>{const b=button((i+1)+". "+label,()=>{step=i;results=false;render();},"step-pill"+(i===step&&!results?" active":""));if(i===step&&!results)b.setAttribute("aria-current","step");nav.appendChild(b);});
     if(results){showResults();return;}
     $("#results-content").classList.add("hidden");$("#step-content").classList.remove("hidden");const target=$("#step-content");target.replaceChildren();
+    if(resetConfirm){resetPanel(target);return;}
+
     if(unreadableNotice){paragraph(target,"A saved draft on this device could not be read. It has been kept in this browser's storage, and this interview has started fresh.","migration-notice");keptDraftPanel(target);}
     if(migrationNotice)paragraph(target,"Your previous draft was imported. Reconfirm the histories; former carrier and product choices are ignored, and earlier unchecked boxes and defaults are not treated as answers.","migration-notice");
     const card=node("section","card"),cardHeading=node("h2",null,steps[step][0]);card.appendChild(cardHeading);steps[step][1](card);target.appendChild(card);
@@ -449,7 +458,66 @@ const App = (() => {
     $("#btn-back").disabled=step===0;$("#btn-back").textContent="← Back";$("#btn-next").classList.remove("hidden");$("#btn-next").textContent=step===steps.length-1?"View profile summary →":"Next →";
     if(keepFocus){const again=document.getElementById(keepFocus);if(again)again.focus({preventScroll:true});}
   }
-  function reset() {state=InterviewState.empty();step=0;results=false;migrationNotice=false;staleAnswers=false;try{localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(LEGACY_KEY);}catch{}drawDraftNotice();render();}
+  // ---- Deleting every saved draft ------------------------------------------------------
+  // hce_state_v2 (current), hce_state_v1 (legacy, migrated on read) and
+  // hce_state_v2_unreadable (drafts this build could not read, kept aside) are all the
+  // applicant's answers in this browser, so "Delete saved answers" has to mean all three.
+  // Each key is removed on its own, and a removal the browser refuses is reported rather
+  // than swallowed: saying the answers are gone when a copy remains is the one thing this
+  // must never do.
+  function removeOwnedDrafts() {
+    const failed=[];
+    for (const key of [STORAGE_KEY,LEGACY_KEY,QUARANTINE_KEY]) {
+      try{localStorage.removeItem(key);if(localStorage.getItem(key)!==null)failed.push(key);}
+      catch{failed.push(key);}
+    }
+    return failed;
+  }
+  function downloadSavedDraft() {
+    // Everything Delete is about to remove, read from storage rather than from the screen,
+    // as one file. The saved draft is included because the applicant may not have realised
+    // this browser holds a copy of what they typed.
+    const parts=[];
+    const current=loadStored(STORAGE_KEY),legacy=loadStored(LEGACY_KEY);
+    if(current.state)parts.push({savedAt:new Date().toISOString(),key:STORAGE_KEY,draft:JSON.stringify(current.state,null,2)});
+    for(const record of keptDrafts())parts.push(record);
+    if(!parts.length&&legacy.state)parts.push({savedAt:new Date().toISOString(),key:LEGACY_KEY,draft:JSON.stringify(legacy.state,null,2)});
+    if(!parts.length)return;
+    downloadText(parts.length===1?parts[0].draft:JSON.stringify(parts,null,2),"health-class-saved-draft-"+new Date().toISOString().slice(0,10)+".txt");
+  }
+  function resetPanel(parent) {
+    const kept=keptDrafts();
+    const box=node("section","card reset-confirm");
+    box.setAttribute("role","alertdialog");box.setAttribute("aria-labelledby","reset-confirm-title");
+    const title=node("h2",null,"Delete all saved answers?");title.id="reset-confirm-title";box.appendChild(title);
+    paragraph(box,"This permanently deletes every draft this app saved in this browser: the current answers, any older saved draft, and the answers are gone from this device. It cannot be undone, and a downloaded copy is not deleted.");
+    if(kept.length)paragraph(box,"It also deletes "+kept.length+" unreadable saved draft"+(kept.length===1?"":"s")+" that this build kept aside. Those cannot be shown on screen, so download them first if you may need them.");
+    const actions=node("div","reset-confirm-actions");
+    actions.appendChild(button("Download saved draft",downloadSavedDraft,"btn btn-ghost"));
+    const cancel=button("Cancel",()=>{resetConfirm=false;results=true;render();},"btn btn-ghost");
+    const del=button("Permanently delete all saved answers",()=>{
+      const failed=removeOwnedDrafts();
+      if(failed.length){
+        // Nothing is cleared from the screen or the warning: the copies that remain must
+        // stay reachable (downloadable) and the applicant must be able to try again.
+        toast("This browser did not delete the saved answers. Nothing was cleared.");
+        const message=box.querySelector(".reset-error")||node("p","reset-error");
+        message.textContent="The saved answers could not be deleted: this browser refused to remove "+failed.length+" stored item"+(failed.length===1?"":"s")+". They are still stored, so you can download them above and try again. If it keeps failing, clear this site's browser data in your browser settings.";
+        box.appendChild(message);message.focus?.();
+        return;
+      }
+      state=InterviewState.empty();step=0;results=false;migrationNotice=false;unreadableNotice=false;staleAnswers=false;unpreserved=null;resetConfirm=false;
+      drawDraftNotice();render();
+    },"btn btn-primary");
+    actions.append(cancel,del);box.appendChild(actions);
+    parent.appendChild(box);
+    del.focus({preventScroll:true});
+  }
+  // The reset control asks; it does not delete. resetPanel() above does, once answered.
+  // `results=false` because the question is drawn in the interview area: rendering with it
+  // still true would re-draw the results page and the question would never appear.
+  function requestReset() { resetConfirm=true; results=false; render(); }
+  function reset() { requestReset(); }
   function ack() {
     const gate=$("#ack-gate"),check=$("#ack-check"),accept=$("#ack-accept");let acknowledged=false;try{acknowledged=sessionStorage.getItem("hce_ack_v2")==="yes";}catch{}
     const surfaces=[$(".app-header"),$("#steps-nav"),$(".app-main"),$(".app-footer")];

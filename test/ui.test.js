@@ -78,6 +78,9 @@ const server=http.createServer((request,response)=>{
     assert.equal(await page.locator("#productId").count(),0);
     assert.doesNotMatch(await page.locator("#results-content").innerText(),/Other products with the same coverage type and route/);
     await page.getByRole("button",{name:"Delete saved answers and start over"}).click();
+    // The reset asks first (HCE-AUD-001): a single press must not delete anything.
+    assert.equal(await page.getByRole("heading",{name:"Delete all saved answers?"}).count(),1,"Reset asks before deleting");
+    await page.getByRole("button",{name:"Permanently delete all saved answers"}).click();
     assert.equal(await page.locator("#dob").inputValue(),"","Reset clears applicant data");
 
     // Old saved carrier IDs are ignored, while the applicant's history is retained.
