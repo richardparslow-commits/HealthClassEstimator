@@ -14,6 +14,12 @@ const App = (() => {
   // answered: deleting every draft (including the unreadable ones kept aside) cannot be
   // undone, so a single press must not do it.
   let resetConfirm=false;
+  // The deletion marker this tab loaded with (see generation() below), and whether another
+  // tab has since deleted the interview this one still holds in memory.
+  let sessionGeneration=0, staleDeleted=false;
+  // Where focus goes when the confirmation closes: the control that opened it, so Cancel
+  // and Escape put the keyboard back where it was.
+  let resetReturnFocus=null;
   const yesNo=[["yes","Yes"],["no","No"],["unknown","Unsure"]];
   const states="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP".split(" ").map(s=>[s,s]);
   const conditions=[
@@ -28,12 +34,62 @@ const App = (() => {
     ["depression","Depression"],["anxiety","Anxiety"],["suicide_attempt","Suicide attempt"],["other","Another diagnosis"]
   ];
   function node(tag,cls,text) {const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;}
+  // ---- The drafts this app owns --------------------------------------------------------
+  // hce_state_v2   the current interview
+  // hce_state_v1   an older interview, migrated when read
+  // hce_state_v2_unreadable  drafts this build could not read, kept aside (a JSON array)
+  // hce_draft_generation    a counter with no applicant data: it changes when every draft
+  //                 is deleted, so another tab can tell its in-memory copy is obsolete.
+  // A deletion first copies every record into sessionStorage (hce_delete_recovery), which
+  // is per-tab and disappears when the tab closes, so a failure halfway leaves a complete
+  // recoverable copy without leaving a permanent hidden copy of medical data.
+  const DRAFT_KEYS=[STORAGE_KEY,LEGACY_KEY,QUARANTINE_KEY];
+  const GENERATION_KEY="hce_draft_generation", RECOVERY_KEY="hce_delete_recovery";
+  // The marker as a number, or 0 when the browser refuses storage. Read through the same
+  // storage every tab shares, and never parsed leniently: a value this app did not write
+  // is treated as no marker rather than as an authorization to save.
+  function generation() {
+    try{const value=Number(localStorage.getItem(GENERATION_KEY));return Number.isFinite(value)&&value>0?value:0;}catch{return 0;}
+  }
+  // Written before anything is deleted, and read back: a marker that could not be
+  // established must not be followed by a deletion another tab cannot see.
+  function bumpGeneration() {
+    try{
+      const current=generation();
+      const next=current+1;
+      localStorage.setItem(GENERATION_KEY,String(next));
+      return Number(localStorage.getItem(GENERATION_KEY))===next;
+    }catch{return false;}
+  }
+  // Every owned key's exact stored text, with what this app knows about it. Raw values
+  // only: a migrated copy can drop fields this build does not understand, and the backup
+  // exists for exactly the data that would otherwise be lost.
+  function ownedRecords() {
+    const records=[];
+    for(const key of DRAFT_KEYS){
+      let raw=null;try{raw=localStorage.getItem(key);}catch{records.push({key,raw:null,readable:false,note:"the browser refused to read this item"});continue;}
+      if(raw===null)continue;
+      records.push({key,raw,bytes:new TextEncoder().encode(raw).length,savedAt:new Date().toISOString(),
+        note:key===QUARANTINE_KEY?"kept drafts; the wrapper may not be valid JSON":key===LEGACY_KEY?"older saved interview":"saved interview"});
+    }
+    return records;
+  }
+  // What the confirmation says about stored data. A key that exists is disclosed even when
+  // its contents cannot be parsed: an unreadable value is still applicant information.
+  function ownedSummary(records) {
+    const kept=records.filter(r=>r.key===QUARANTINE_KEY);
+    let keptCount=null;
+    if(kept.length){try{const held=JSON.parse(kept[0].raw);if(Array.isArray(held))keptCount=held.length;}catch{}}
+    return {current:records.some(r=>r.key===STORAGE_KEY),legacy:records.some(r=>r.key===LEGACY_KEY),keptCount,keptUnreadable:kept.length>0&&keptCount===null,unreadable:records.filter(r=>r.readable===false).length,records:records.length};
+  }
   function quarantine(raw,key) {
     let records=[];
     try{const held=JSON.parse(localStorage.getItem(QUARANTINE_KEY));if(Array.isArray(held))records=held.filter(r=>r&&typeof r.raw==="string");}catch{}
     records.push({key,raw,savedAt:new Date().toISOString()});
     try{localStorage.setItem(QUARANTINE_KEY,JSON.stringify(records));return true;}catch{return false;}
   }
+
+
   // A value that is not a plain object is as unreadable as text that will not parse.
   // Storage that refuses to be read has nothing to preserve, so it is not a lost draft.
   function loadStored(key) {
@@ -50,11 +106,14 @@ const App = (() => {
   }
   // A data: URL, not a Blob URL: the embedded copy runs under a strict Content-Security-Policy,
   // and taking the draft away must not depend on what that policy lets the page fetch.
+  // Returns whether the browser accepted the download, so a caller never reports a copy
+  // that was not taken.
   function downloadText(text,filename) {
     const link=node("a","visually-hidden");
     link.href="data:text/plain;charset=utf-8,"+encodeURIComponent(text);
     link.download=filename;
     document.body.appendChild(link);link.click();link.remove();
+    return true;
   }
   function downloadKept() {
     const kept=keptDrafts();if(!kept.length)return;
@@ -122,9 +181,29 @@ const App = (() => {
     return legacy.state||null;
   }
   function save() {
+    // A tab whose interview was deleted elsewhere must not write it back. Checked here,
+    // synchronously, before every write: the storage event is delayed and can be missed,
+    // while this read is the state at the moment of saving. Returns what happened, so a
+    // caller shows "saved" only for a write that really happened:
+    //   "saved"   written and read back
+    //   "stale"   another tab deleted this interview; nothing was written
+    //   "blocked" an unreadable draft could not be copied aside; nothing was overwritten
+    //   "failed"  the browser refused the write
+    if(generation()>sessionGeneration){
+      staleDeleted=true;staleAnswers=false;
+      if(!resetConfirm){resetConfirm=true;results=false;render();}
+      return "stale";
+    }
     if(unpreserved&&quarantine(unpreserved.raw,unpreserved.key))unpreserved=null;
-    if(unpreserved){if(!preserveWarned){preserveWarned=true;toast("A saved draft could not be copied aside, so it was not overwritten. Copy what you need from this browser's storage before saving again.");}return;}
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));if(staleAnswers){staleAnswers=false;drawDraftNotice();}}catch{toast("This browser could not save the draft.");}
+    if(unpreserved){if(!preserveWarned){preserveWarned=true;toast("A saved draft could not be copied aside, so it was not overwritten. Copy what you need from this browser's storage before saving again.");}return "blocked";}
+    try{
+      const text=JSON.stringify(state);
+      localStorage.setItem(STORAGE_KEY,text);
+      // Read back: a storage that silently drops the write must not be reported as saved.
+      if(localStorage.getItem(STORAGE_KEY)!==text){toast("This browser did not keep the draft. Nothing was saved.");return "failed";}
+      if(staleAnswers){staleAnswers=false;drawDraftNotice();}
+      return "saved";
+    }catch{toast("This browser could not save the draft.");return "failed";}
   }
   // Two open tabs hold two interviews, and nothing here can merge them. So a tab that is
   // behind says so and offers the saved draft, instead of reloading answers underneath the
@@ -459,64 +538,237 @@ const App = (() => {
     if(keepFocus){const again=document.getElementById(keepFocus);if(again)again.focus({preventScroll:true});}
   }
   // ---- Deleting every saved draft ------------------------------------------------------
-  // hce_state_v2 (current), hce_state_v1 (legacy, migrated on read) and
-  // hce_state_v2_unreadable (drafts this build could not read, kept aside) are all the
-  // applicant's answers in this browser, so "Delete saved answers" has to mean all three.
-  // Each key is removed on its own, and a removal the browser refuses is reported rather
-  // than swallowed: saying the answers are gone when a copy remains is the one thing this
-  // must never do.
-  function removeOwnedDrafts() {
+  // The export is lossless: every owned key's raw stored text, including a quarantine
+  // value whose wrapper is not valid JSON, and nothing from any other origin or site.
+  function downloadSavedDraft() {
+    const records=ownedRecords();
+    if(!records.length)return false;
+    const payload={exportedAt:new Date().toISOString(),note:"Personal medical information. Store this file securely; it is a copy of answers saved in one browser.",records};
+    return downloadText(JSON.stringify(payload,null,2),"health-class-saved-draft-"+new Date().toISOString().slice(0,10)+".json");
+  }
+  // The recovery copy is the whole of what a deletion will remove, with its exact values,
+  // written to this tab's sessionStorage and read back before anything is deleted. If it
+  // cannot be written and verified, the deletion does not start.
+  function stageRecovery(records) {
+    try{
+      sessionStorage.setItem(RECOVERY_KEY,JSON.stringify({stagedAt:new Date().toISOString(),records}));
+      const back=JSON.parse(sessionStorage.getItem(RECOVERY_KEY)||"null");
+      const same=back&&Array.isArray(back.records)&&back.records.length===records.length&&back.records.every((r,i)=>r.key===records[i].key&&r.raw===records[i].raw);
+      return same?{ok:true}:{ok:false,reason:"the recovery copy could not be read back exactly"};
+    }catch(error){return {ok:false,reason:"this tab's storage refused the recovery copy ("+(error?.name||"error")+")"};}
+  }
+  // A recovery key is NOT absent merely because its contents cannot be parsed.
+  // Never reread storage from an exception handler: access itself may be denied.
+  function recoveryStatus() {
+    let raw;
+    try{raw=sessionStorage.getItem(RECOVERY_KEY);}
+    catch{return {status:"unreadable",reason:"browser refused to read recovery storage"};}
+    if(raw===null)return {status:"absent"};
+    let held;
+    try{held=JSON.parse(raw);}
+    catch{return {status:"malformed",reason:"invalid recovery JSON"};}
+    if(!held||typeof held!=="object"||Array.isArray(held)||
+       !Array.isArray(held.records)||held.records.length<1||
+       held.records.length>DRAFT_KEYS.length){
+      return {status:"malformed",reason:"invalid recovery records structure"};
+    }
+    const seen=new Set();
+    for(const record of held.records){
+      if(!record||typeof record!=="object"||Array.isArray(record)||
+         !DRAFT_KEYS.includes(record.key)||typeof record.raw!=="string"||
+         seen.has(record.key)){
+        return {status:"malformed",reason:"invalid or duplicate recovery record"};
+      }
+      seen.add(record.key);
+    }
+    return {status:"valid",records:held.records};
+  }
+  function recoveryRecords() {
+    const recovery=recoveryStatus();
+    return recovery.status==="valid"?recovery.records:null;
+  }
+  function dropRecovery() {
+    try{sessionStorage.removeItem(RECOVERY_KEY);return sessionStorage.getItem(RECOVERY_KEY)===null;}catch{return false;}
+  }
+  // Restores the recovery copy to the draft keys. Used by the retry and by the applicant's
+  // own recovery action; reports each key it could not restore rather than claiming all.
+  function restoreRecovery() {
+    const records=recoveryRecords();if(!records)return {restored:0,failed:["no recovery copy is held"]};
+    // Preflight: check for conflicts between existing drafts and recovery snapshot.
+    // If any existing draft has a different raw value than the recovery snapshot,
+    // abort the restore to prevent data loss.
+    for(const record of records){
+      const currentRaw=localStorage.getItem(record.key);
+      if(currentRaw!==null && currentRaw!==record.raw){
+        return {restored:0,failed:[],conflict:true,reason:"existing draft for "+record.key+" differs from recovery snapshot; restore aborted to prevent data loss"};
+      }
+    }
+    let restored=0;const failed=[];
+    for(const record of records){
+      try{localStorage.setItem(record.key,record.raw);if(localStorage.getItem(record.key)===record.raw)restored++;else failed.push(record.key);}
+      catch{failed.push(record.key);}
+    }
+    return {restored,failed,conflict:false};
+  }
+  // Deletes every owned record, never claiming more than it verified:
+  //  1. a marker is written and read back, so other tabs can see the deletion;
+  //  2. the exact records are copied to this tab's recovery storage and verified;
+  //  3. each key is removed and re-read;
+  //  4. the recovery copy is dropped, and its removal verified;
+  //  5. only then is success declared. A failure at any step reports what actually remains,
+  //     keeps the recovery copy when one exists, and offers a retry.
+  function deleteAllDrafts() {
+    const records=ownedRecords();
+    if(records.some(r=>r.readable===false))return {ok:false,stage:"read",reason:"the browser refused to read a saved item, so it cannot be copied before deleting",records};
+    // Check for malformed or unreadable recovery before touching any keys
+    const recovery=recoveryStatus();
+    if(recovery.status==="malformed"||recovery.status==="unreadable"){
+      return {ok:false,stage:"recovery-validation",reason:"existing recovery data cannot be verified: "+recovery.reason,records};
+    }
+    // Stage recovery BEFORE publishing the deletion marker, so a failed stage
+    // leaves no trace that could mislead another tab into thinking deletion occurred.
+    if(records.length){
+      // Don't overwrite an existing recovery snapshot: retries must preserve the complete
+      // original snapshot until deletion is conclusively successful. Only stage if recovery is absent.
+      if(recovery.status==="absent"){
+        const staged=stageRecovery(records);
+        if(!staged.ok)return {ok:false,stage:"snapshot",reason:staged.reason,records};
+      } else if(recovery.status==="valid"){
+        // Verify snapshot matches current stored drafts by both key and raw value.
+        // A mismatch means the snapshot is stale and should not be relied upon for recovery.
+        const snapshotByKey=new Map(recovery.records.map(r=>[r.key,r.raw]));
+        const uncoveredOrChanged=records.filter(r=>
+          !snapshotByKey.has(r.key)||snapshotByKey.get(r.key)!==r.raw
+        ).map(r=>r.key);
+        if(uncoveredOrChanged.length){
+          return {ok:false,stage:"snapshot",reason:"existing recovery does not match stored drafts: "+uncoveredOrChanged.join(", "),records};
+        }
+      }
+    }
+    // Now publish the deletion marker only after recovery is safely staged
+    if(records.length&&!bumpGeneration())return {ok:false,stage:"marker",reason:"this browser refused the marker that tells other tabs the answers were deleted",records};
     const failed=[];
-    for (const key of [STORAGE_KEY,LEGACY_KEY,QUARANTINE_KEY]) {
+    for(const key of DRAFT_KEYS){
       try{localStorage.removeItem(key);if(localStorage.getItem(key)!==null)failed.push(key);}
       catch{failed.push(key);}
     }
-    return failed;
-  }
-  function downloadSavedDraft() {
-    // Everything Delete is about to remove, read from storage rather than from the screen,
-    // as one file. The saved draft is included because the applicant may not have realised
-    // this browser holds a copy of what they typed.
-    const parts=[];
-    const current=loadStored(STORAGE_KEY),legacy=loadStored(LEGACY_KEY);
-    if(current.state)parts.push({savedAt:new Date().toISOString(),key:STORAGE_KEY,draft:JSON.stringify(current.state,null,2)});
-    for(const record of keptDrafts())parts.push(record);
-    if(!parts.length&&legacy.state)parts.push({savedAt:new Date().toISOString(),key:LEGACY_KEY,draft:JSON.stringify(legacy.state,null,2)});
-    if(!parts.length)return;
-    downloadText(parts.length===1?parts[0].draft:JSON.stringify(parts,null,2),"health-class-saved-draft-"+new Date().toISOString().slice(0,10)+".txt");
+    const remaining=ownedRecords();
+    if(failed.length||remaining.length)return {ok:false,stage:"remove",reason:"this browser refused to remove some saved items",failed,remaining:remaining.map(r=>r.key),records};
+    // Verify recovery cleanup on every success path: recovery must be removed.
+    const finalRecovery=recoveryStatus();
+    if(finalRecovery.status==="valid"){
+      if(!dropRecovery())return {ok:false,stage:"recovery-removal",reason:"the answers were deleted, but this tab's recovery copy could not be removed",records};
+    }
+    // Success requires independently confirmed absence.
+    if(recoveryStatus().status!=="absent")return {ok:false,stage:"recovery-removal",reason:"recovery storage is not confirmed empty",records};
+    return {ok:true,records};
   }
   function resetPanel(parent) {
-    const kept=keptDrafts();
+    const records=ownedRecords(), summary=ownedSummary(records);
     const box=node("section","card reset-confirm");
-    box.setAttribute("role","alertdialog");box.setAttribute("aria-labelledby","reset-confirm-title");
-    const title=node("h2",null,"Delete all saved answers?");title.id="reset-confirm-title";box.appendChild(title);
-    paragraph(box,"This permanently deletes every draft this app saved in this browser: the current answers, any older saved draft, and the answers are gone from this device. It cannot be undone, and a downloaded copy is not deleted.");
-    if(kept.length)paragraph(box,"It also deletes "+kept.length+" unreadable saved draft"+(kept.length===1?"":"s")+" that this build kept aside. Those cannot be shown on screen, so download them first if you may need them.");
+    box.setAttribute("role","region");box.setAttribute("aria-labelledby","reset-confirm-title");box.setAttribute("aria-describedby","reset-confirm-desc reset-confirm-list");
+    const title=node("h2",null,staleDeleted?"These answers were deleted in another tab":"Delete all saved answers?");title.id="reset-confirm-title";box.appendChild(title);
+    const desc=node("p","card-sub",staleDeleted?
+      "Another tab permanently deleted the saved answers. This tab still holds an old copy in memory, and it can no longer save it: writing it back would restore information you deleted."
+      :"This permanently deletes the saved answers in this browser. It cannot be undone. A file you downloaded is not affected.");
+    desc.id="reset-confirm-desc";box.appendChild(desc);
+    // What is actually stored, named item by item, including a kept-drafts value this
+    // build cannot parse. The list is the honest answer to "what am I losing?".
+    const list=node("ul");list.id="reset-confirm-list";
+    if(summary.current)list.appendChild(node("li",null,"Your current saved interview."));
+    if(summary.legacy)list.appendChild(node("li",null,"An older saved interview (migrated when opened)."));
+    if(summary.keptCount!==null)list.appendChild(node("li",null,summary.keptCount+" unreadable saved draft"+(summary.keptCount===1?"":"s")+" kept aside; they cannot be shown on screen."));
+    else if(summary.keptUnreadable)list.appendChild(node("li",null,"A kept-drafts item this build cannot read. It is still deleted, and it is included in the download."));
+    for(let i=0;i<summary.unreadable;i++)list.appendChild(node("li",null,"An item the browser would not read."));
+    if(!list.children.length)list.appendChild(node("li",null,"No saved answers remain in this browser."));
+    box.appendChild(list);
+    if(!staleDeleted)paragraph(box,"Downloading first is recommended: the file contains personal medical information, so store it securely.");
     const actions=node("div","reset-confirm-actions");
-    actions.appendChild(button("Download saved draft",downloadSavedDraft,"btn btn-ghost"));
-    const cancel=button("Cancel",()=>{resetConfirm=false;results=true;render();},"btn btn-ghost");
-    const del=button("Permanently delete all saved answers",()=>{
-      const failed=removeOwnedDrafts();
-      if(failed.length){
-        // Nothing is cleared from the screen or the warning: the copies that remain must
-        // stay reachable (downloadable) and the applicant must be able to try again.
-        toast("This browser did not delete the saved answers. Nothing was cleared.");
-        const message=box.querySelector(".reset-error")||node("p","reset-error");
-        message.textContent="The saved answers could not be deleted: this browser refused to remove "+failed.length+" stored item"+(failed.length===1?"":"s")+". They are still stored, so you can download them above and try again. If it keeps failing, clear this site's browser data in your browser settings.";
-        box.appendChild(message);message.focus?.();
-        return;
-      }
-      state=InterviewState.empty();step=0;results=false;migrationNotice=false;unreadableNotice=false;staleAnswers=false;unpreserved=null;resetConfirm=false;
-      drawDraftNotice();render();
-    },"btn btn-primary");
-    actions.append(cancel,del);box.appendChild(actions);
-    parent.appendChild(box);
-    del.focus({preventScroll:true});
+    if(records.length)actions.appendChild(button("Download saved draft",()=>{downloadSavedDraft();}, "btn btn-ghost"));
+    const cancel=button("Cancel",closeReset,"btn btn-ghost");
+    actions.appendChild(cancel);
+    if(!staleDeleted){
+      const del=button("Permanently delete all saved answers",()=>{
+        const outcome=deleteAllDrafts();
+        if(!outcome.ok){
+          // Truthful, and nothing more: some records may be gone, a recovery copy is kept
+          // when one exists, and a retry is offered. No applicant values are shown.
+          box.querySelectorAll(".reset-error,.reset-recovery-actions").forEach(n=>n.remove());
+          const recoveryNow=recoveryStatus();
+          const recoveryNotice=recoveryNow.status==="valid"
+            ?"A complete recovery copy is kept in this tab."
+            :recoveryNow.status==="malformed"
+              ?"An existing recovery copy is malformed and was preserved without alteration."
+              :recoveryNow.status==="unreadable"
+                ?"This browser would not let the app verify its recovery storage."
+                :"No recovery copy is held in this tab.";
+          const message=node("p","reset-error","The saved answers were not fully deleted. "+(outcome.remaining&&outcome.remaining.length?"Still stored: "+outcome.remaining.join(", ")+". ":"")+recoveryNotice+" Reason: "+outcome.reason+".");
+          message.setAttribute("role","alert");message.tabIndex=-1;
+          box.appendChild(message);message.focus();
+          if(recoveryNow.status==="valid"){
+            const actions2=node("div","reset-confirm-actions reset-recovery-actions");
+            actions2.append(button("Retry deletion",()=>del.click(),"btn btn-primary"),
+              button("Restore saved answers",()=>{
+                const r=restoreRecovery();
+                if(r.conflict){
+                  toast("Cannot restore: newer saved answers would be lost. Use Download recovery copy instead.");
+                  return;
+                }
+                toast(r.failed.length?"Some saved answers could not be restored.":"Saved answers restored in this tab.");
+                closeReset();
+              },"btn btn-ghost"),
+              button("Download recovery copy",()=>{const held=recoveryRecords();if(held)downloadText(JSON.stringify({exportedAt:new Date().toISOString(),note:"Personal medical information. Store securely.",records:held},null,2),"health-class-recovery-"+new Date().toISOString().slice(0,10)+".json");},"btn btn-ghost"));
+            box.appendChild(actions2);
+          }
+          return;
+        }
+        finishDeletion();
+      },"btn btn-primary");
+      actions.appendChild(del);
+    } else {
+      actions.appendChild(button("Start a new blank interview",()=>{
+        state=InterviewState.empty();
+        sessionGeneration=generation();
+        staleDeleted=false;
+        migrationNotice=false;
+        unreadableNotice=false;
+        staleAnswers=false;
+        unpreserved=null;
+
+        resetConfirm=false;
+        results=false;
+        step=0;
+        focusStepHeading=true;
+
+        const outcome=save();
+        if(outcome!=="stale")render();
+
+        if(outcome==="saved"){
+          toast("A new blank interview was started and saved.");
+        }
+      },"btn btn-primary"));
+      actions.appendChild(button("Keep this old copy open (it cannot be saved)",closeReset,"btn btn-ghost"));
+    }
+    box.appendChild(actions);parent.appendChild(box);
+    box.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();closeReset();}});
+    // Focus the safe control, not the irreversible one; a stale tab has nothing destructive.
+    (staleDeleted?box.querySelector(".btn-primary"):cancel)?.focus({preventScroll:true});
+  }
+  function finishDeletion() {
+    state=InterviewState.empty();step=0;results=false;migrationNotice=false;unreadableNotice=false;staleAnswers=false;unpreserved=null;staleDeleted=false;resetConfirm=false;
+    sessionGeneration=generation();
+    drawDraftNotice();render();
+    toast("Saved answers deleted from this browser.");
+  }
+  function closeReset() {
+    resetConfirm=false;results=true;render();
+    const back=resetReturnFocus&&document.getElementById(resetReturnFocus);
+    if(back)back.focus({preventScroll:true});else $("#result-heading")?.focus?.({preventScroll:true});
   }
   // The reset control asks; it does not delete. resetPanel() above does, once answered.
   // `results=false` because the question is drawn in the interview area: rendering with it
   // still true would re-draw the results page and the question would never appear.
-  function requestReset() { resetConfirm=true; results=false; render(); }
+  function requestReset() { resetConfirm=true; results=false; resetReturnFocus=document.activeElement?.id||null; render(); }
   function reset() { requestReset(); }
   function ack() {
     const gate=$("#ack-gate"),check=$("#ack-check"),accept=$("#ack-accept");let acknowledged=false;try{acknowledged=sessionStorage.getItem("hce_ack_v2")==="yes";}catch{}
@@ -547,6 +799,7 @@ const App = (() => {
     const card=$(".ack-card").cloneNode(true);card.querySelectorAll("button,input,.ack-actions,.ack-contact-row,.ack-hint").forEach(n=>n.remove());popup.document.body.appendChild(card);popup.focus();popup.print();
   }
   function init() {
+    sessionGeneration=generation();
     const remembered=loadDraft();
     if(remembered){state=remembered;migrationNotice=!!state.migrated;}
     // `storage` fires only in the other documents, so it is the only news a page gets of a
@@ -559,6 +812,16 @@ const App = (() => {
     // it only takes down a warning about a draft that is no longer there, and an unreadable
     // value cannot be merged with anything, so it is not judged here.
     window.addEventListener("storage",event=>{
+      // The deletion marker changed: another tab deleted the saved answers (or started a
+      // new interview). This tab's copy is obsolete, and save() refuses to write it back.
+      if(event.key===GENERATION_KEY){
+        const value=Number(event.newValue);
+        if(Number.isFinite(value)&&value>sessionGeneration){
+          staleDeleted=true;staleAnswers=false;
+          if(!resetConfirm){resetConfirm=true;results=false;render();}
+        }
+        return;
+      }
       if(event.key===STORAGE_KEY){
         if(event.newValue==null){
           if(staleAnswers){staleAnswers=false;drawDraftNotice();}
@@ -600,7 +863,7 @@ const App = (() => {
     const backToTop=()=>{if(root.classList.contains("oversized-frame"))document.body.scrollTop=0;else window.scrollTo(0,0);};
     $("#btn-next").addEventListener("click",()=>{if(step===steps.length-1)results=true;else step++;render();backToTop();});
     $("#btn-back").addEventListener("click",()=>{if(results){results=false;focusStepHeading=true;}else if(step>0)step--;render();backToTop();});
-    $("#btn-save").addEventListener("click",()=>{save();toast("Draft saved on this device.");});$("#btn-print-ack").addEventListener("click",printAck);
+    $("#btn-save").addEventListener("click",()=>{const outcome=save();if(outcome==="saved")toast("Draft saved on this device.");});$("#btn-print-ack").addEventListener("click",printAck);
     // Reserve the actual fixed footer height, including wrapped mobile links.
     const footer=$(".app-footer"),fitFooter=()=>document.documentElement.style.setProperty("--footer-h",footer.getBoundingClientRect().height+"px");
     if(typeof ResizeObserver === "function")new ResizeObserver(fitFooter).observe(footer);
