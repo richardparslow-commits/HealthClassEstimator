@@ -282,17 +282,22 @@ async function cycle(page, state, n) {
     if (!facts.reset) record(n, "Results", "missing-control", "no delete-saved-answers action");
   });
 
-  // 4. Reset from the result.
+  // 4. Reset from the result. It asks first (HCE-AUD-001), so the question is answered;
+  //    the check then covers every application-owned key, including kept drafts.
   await section(page, state, n, "Reset", async () => {
     await page.getByRole("button", { name: "Delete saved answers and start over" }).click();
+    const asked = await page.getByRole("heading", { name: "Delete all saved answers?" }).count();
+    if (!asked) record(n, "Reset", "no-confirmation", "the reset deleted without asking");
+    await page.getByRole("button", { name: "Permanently delete all saved answers" }).click();
     const after = await page.evaluate(() => ({
       heading: document.querySelector("#step-content h2")?.textContent || null,
       v2: localStorage.getItem("hce_state_v2"),
       v1: localStorage.getItem("hce_state_v1"),
+      kept: localStorage.getItem("hce_state_v2_unreadable"),
     }));
     if (!after.heading) record(n, "Reset", "missing-dom", "no step heading after reset");
-    if (after.v2 !== null || after.v1 !== null)
-      record(n, "Reset", "storage-not-cleared", "saved answers survived the reset");
+    if (after.v2 !== null || after.v1 !== null || after.kept !== null)
+      record(n, "Reset", "storage-not-cleared", "saved answers survived the reset: " + JSON.stringify({ v2: !!after.v2, v1: !!after.v1, kept: !!after.kept }));
   });
 
   // 5. Kept-draft panel: read, download, delete.

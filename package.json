@@ -15,7 +15,7 @@
     "build": "node scripts/build-embedded.js",
     "release:artifact": "node scripts/build-embedded.js app_embedded.html && node scripts/write-artifact-manifest.js app_embedded.html",
     "test:manifest": "node test/manifest.test.js",
-    "test:ui": "node test/ui.test.js && node test/intake.test.js",
+    "test:ui": "node test/ui.test.js && node test/intake.test.js && node test/draft-deletion.test.js",
     "soak": "node test/qa-soak.js",
     "test:build": "node test/build.test.js",
     "test:css": "node test/css.test.js",
